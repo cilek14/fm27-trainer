@@ -66,6 +66,12 @@ struct Settings {
     /// (idee en eerste versie: arhxmmmmm, fork forked-fm27-trainer).
     #[serde(default)]
     auto_read: bool,
+    /// Taktik Anlayış (8 alan) + Buy-In verilerini doğrudan FM belleğinden otomatik güncelle.
+    #[serde(default)]
+    auto_memory_sync: bool,
+    /// Hilesiz mod: editör/hile ekranlarını (Kulüp, Kadro, Transfer) gizler ve arka planda %100 kilidini kapatır.
+    #[serde(default = "yes")]
+    no_cheat_mode: bool,
     #[serde(default = "ten")]
     auto_read_secs: u32,
     /// Bij meer dan één manager in de save: de UID van de club van de manager die de app bedient.
@@ -79,7 +85,7 @@ struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { lang: i18n::detect(), rate: 1.17, capture_delay: true, auto_training: true, allow_untested: false, keep_understanding: false, auto_read: false, auto_read_secs: 10, manager_club: None, training_team: None, planner: PlannerSettings::default() }
+        Settings { lang: i18n::detect(), rate: 1.17, capture_delay: true, auto_training: true, allow_untested: false, keep_understanding: false, auto_read: false, auto_memory_sync: false, no_cheat_mode: true, auto_read_secs: 10, manager_club: None, training_team: None, planner: PlannerSettings::default() }
     }
 }
 
@@ -102,6 +108,119 @@ fn settings_file() -> PathBuf {
 
 fn calendar_file() -> PathBuf {
     crate::data_dir().join("calendar.json")
+}
+
+fn bepinex_dump_file() -> PathBuf {
+    crate::data_dir().join("bepinex-tactical-dump.json")
+}
+
+fn find_prefix<'a>(obj: &'a serde_json::Value, prefix: &str) -> Option<&'a serde_json::Value> {
+    let map = obj.as_object()?;
+    let with_colon = format!("{prefix}:");
+    map.iter().find(|(k, _)| k.starts_with(&with_colon) || k.as_str() == prefix).map(|(_, v)| v)
+}
+
+fn parse_num(v: &serde_json::Value) -> Option<f32> {
+    v.as_f64().map(|n| n as f32).or_else(|| v.as_str()?.trim().parse::<f32>().ok())
+}
+
+fn score_of(node: &serde_json::Value) -> Option<f32> {
+    let inner = find_prefix(node, "OverallEffectiveness").unwrap_or(node);
+    let raw = find_prefix(inner, "MaxValue").or_else(|| find_prefix(inner, "MinValue"))?;
+    parse_num(raw).map(|v| v.clamp(0.0, 100.0))
+}
+
+/// BepInEx eklentisinin yazdığı `bepinex-tactical-dump.json` dosyasından 4 bileşen + 17 faktörü okur.
+fn read_bepinex_dump() -> Option<(Effectiveness, String)> {
+    let text = std::fs::read_to_string(bepinex_dump_file()).ok()?;
+    let root: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let updated = root.get("updated_utc")?.as_str()?.to_string();
+    let data = root.get("data")?.as_object()?;
+    let te = data
+        .iter()
+        .find(|(k, _)| k.starts_with("TeamTactic:") && k.ends_with(".TacticalEffectiveness"))
+        .or_else(|| data.iter().find(|(k, _)| k.ends_with(".TacticalEffectiveness")))
+        .map(|(_, v)| v)?;
+
+    let mut eff = Effectiveness::default();
+    let mut found = 0usize;
+
+    if let Some(tu) = find_prefix(te, "TacticalUnderstanding") {
+        if let Some(v) = score_of(tu) {
+            eff.set_component(Component::TacticalUnderstanding, v);
+        }
+        let tu_map: [(&str, Factor); 10] = [
+            ("InPossessionShape", Factor::InPossessionShape),
+            ("PassingStyle", Factor::PassingStyle),
+            ("BuildUpStrategy", Factor::BuildUp),
+            ("ChanceCreation", Factor::ChanceCreation),
+            ("OutOfPossessionShape", Factor::OutOfPossessionShape),
+            ("LineOfEngagement", Factor::LineOfEngagement),
+            ("PressingIntensity", Factor::PressingIntensity),
+            ("PressingTrap", Factor::PressingTrap),
+            ("TacticalAbilityKeyFactor", Factor::PlayerTacticalAbility),
+            ("TacticalComplexity", Factor::TacticalComplexity),
+        ];
+        for (key, factor) in tu_map {
+            if let Some(v) = find_prefix(tu, key).and_then(score_of) {
+                eff.set(factor, v);
+                found += 1;
+            }
+        }
+    }
+
+    if let Some(pa) = find_prefix(te, "PlayerAbility") {
+        if let Some(v) = score_of(pa) {
+            eff.set_component(Component::PlayerAbility, v);
+        }
+        for (key, factor) in [
+            ("CapabilityKeyFactor", Factor::PlayerCapability),
+            ("RoleSuitabilityKeyFactor", Factor::PlayerRoleSuitability),
+        ] {
+            if let Some(v) = find_prefix(pa, key).and_then(score_of) {
+                eff.set(factor, v);
+                found += 1;
+            }
+        }
+    }
+
+    if let Some(bi) = find_prefix(te, "PlayerBuyIn") {
+        if let Some(v) = score_of(bi) {
+            eff.set_component(Component::PlayerBuyIn, v);
+        }
+        for (key, factor) in [
+            ("ManagerSupportKeyFactor", Factor::ManagerialSupport),
+            ("TeammateAndStaffRelationshipsKeyFactor", Factor::TeammatesAndStaffRelationships),
+            ("ManagerTendenciesKeyFactor", Factor::ManagerTendencies),
+        ] {
+            if let Some(v) = find_prefix(bi, key).and_then(score_of) {
+                eff.set(factor, v);
+                found += 1;
+            }
+        }
+    }
+
+    if let Some(nm) = find_prefix(te, "NextMatchInformation") {
+        if let Some(v) = score_of(nm) {
+            eff.set_component(Component::NextMatchInfo, v);
+        }
+        for (key, factor) in [
+            ("QualityOfReportKeyFactor", Factor::QualityOfNextOppositionReport),
+            ("OppositionPlayerKnowledgeKeyFactor", Factor::OppositionPlayerKnowledge),
+        ] {
+            if let Some(v) = find_prefix(nm, key).and_then(score_of) {
+                eff.set(factor, v);
+                found += 1;
+            }
+        }
+    }
+
+    if found < 8 {
+        return None;
+    }
+    let when = chrono::Local::now().format("%d-%m %H:%M");
+    eff.source = format!("FM27 BepInEx · {when}");
+    Some((eff, updated))
 }
 
 // ------------------------------------------------------------------------ app
@@ -154,6 +273,13 @@ struct App {
     calendar: Vec<CalendarWeek>,
     year: Vec<WeekPlan>,
     live: LiveState,
+    /// Son bellek senkronizasyon sürümü (live.memory_rev ile karşılaştırılır)
+    last_memory_rev: u64,
+    /// Kullanıcı "FM belleğinden oku" butonuna bastıysa yenileme sonrası zorla senkronize et
+    memory_sync_pending: bool,
+    /// Son okunan BepInEx dump zaman damgası
+    last_bepinex_utc: String,
+    last_bepinex_check: std::time::Instant,
     /// de tactiek die de tactiekpagina toont (None: de tactiek die in FM in gebruik is)
     tactic_pick: Option<usize>,
     tactics_asked: bool,
@@ -166,6 +292,7 @@ impl App {
         match std::env::var("FM27_LANG").as_deref() {
             Ok("nl") => settings.lang = Lang::Nl,
             Ok("en") => settings.lang = Lang::En,
+            Ok("tr") => settings.lang = Lang::Tr,
             _ => {}
         }
         i18n::set(settings.lang);
@@ -220,6 +347,10 @@ impl App {
                 l.sell.buy = std::env::var("FM27_PAGE").as_deref() == Ok("buy");
                 l
             },
+            last_memory_rev: 0,
+            memory_sync_pending: false,
+            last_bepinex_utc: String::new(),
+            last_bepinex_check: std::time::Instant::now() - std::time::Duration::from_secs(10),
             frames: 0,
         }
     }
@@ -381,19 +512,22 @@ impl App {
                     });
                 });
                 ui.add_space(22.0);
-                ui.label(theme::caps("Menu"));
+                ui.label(theme::caps(t!("Menu", "Menu", "Menü")));
                 ui.add_space(4.0);
                 let items = [
                     (Page::Overview, icon::GAUGE, t!("Overzicht", "Overview")),
-                    (Page::Training, icon::BARBELL, "Training"),
-                    (Page::Planning, icon::CALENDAR_DOTS, "Planning"),
-                    (Page::Club, icon::BANK, "Club"),
+                    (Page::Training, icon::BARBELL, t!("Training", "Training")),
+                    (Page::Planning, icon::CALENDAR_DOTS, t!("Planning", "Planning")),
+                    (Page::Club, icon::BANK, t!("Club", "Club")),
                     (Page::Squad, icon::USERS_THREE, t!("Selectie", "Squad")),
                     (Page::Tactics, icon::STRATEGY, t!("Tactiek", "Tactics")),
-                    (Page::Sell, icon::HANDSHAKE, "Transfers"),
+                    (Page::Sell, icon::HANDSHAKE, t!("Transfers", "Transfers")),
                     (Page::Settings, icon::GEAR_SIX, t!("Instellingen", "Settings")),
                 ];
                 for (p, ic, label) in items {
+                    if self.settings.no_cheat_mode && matches!(p, Page::Club | Page::Squad | Page::Sell) {
+                        continue;
+                    }
                     if theme::nav_item(ui, ic, label, self.page == p).clicked() {
                         self.page = p;
                     }
@@ -403,7 +537,7 @@ impl App {
                     ui.label(theme::faint(format!("v{}", env!("CARGO_PKG_VERSION"))));
                     ui.add_space(6.0);
                     let mut lang = self.settings.lang;
-                    if theme::segmented(ui, &mut lang, &[(Lang::Nl, "Nederlands"), (Lang::En, "English")]) {
+                    if theme::segmented(ui, &mut lang, &[(Lang::Tr, "Türkçe"), (Lang::En, "English"), (Lang::Nl, "Nederlands")]) {
                         self.settings.lang = lang;
                         i18n::set(lang);
                         self.save_settings();
@@ -509,6 +643,51 @@ impl App {
         });
     }
 
+    /// BepInEx köprüsünden (bepinex-tactical-dump.json) 4 bileşen + 17 faktörü kesin değerlerle yükler.
+    fn sync_from_bepinex(&mut self, explicit: bool) {
+        let Some((mut next, updated)) = read_bepinex_dump() else {
+            if explicit {
+                self.set_status(
+                    t!(
+                        "Geen BepInEx-data gevonden. Open in FM27 eenmaal Tactical Effectiveness.",
+                        "No BepInEx data found. Open Tactical Effectiveness once in FM27.",
+                        "BepInEx verisi bulunamadı. FM27'de Taktiksel Verimlilik ekranını bir kez açın."
+                    ),
+                    true,
+                );
+            }
+            return;
+        };
+        if !explicit && updated == self.last_bepinex_utc {
+            return;
+        }
+        self.last_bepinex_utc = updated;
+        let changed = !same_values(&self.eff, &next);
+        if let Some(d) = self.live.club.as_ref().and_then(|c| c.get("today")) {
+            let y = d.get("year").and_then(|x| x.as_i64());
+            let doy = d.get("doy").and_then(|x| x.as_u64());
+            if let (Some(y), Some(doy)) = (y, doy) {
+                next.game_date = NaiveDate::from_yo_opt(y as i32, doy as u32);
+            }
+        }
+        self.eff = next;
+        let _ = crate::save_effectiveness(&self.eff);
+        if changed {
+            self.week_plan = None;
+            self.year.clear();
+        }
+        if explicit || changed {
+            self.set_status(
+                t!(
+                    "Alle 17 factoren exact uit FM27 (BepInEx) gelezen.",
+                    "Read all 17 exact factors from FM27 (BepInEx).",
+                    "17 faktör ve 4 bileşen FM27 (BepInEx) üzerinden kesin değerlerle okundu."
+                ),
+                false,
+            );
+        }
+    }
+
     // -------------------------------------------------------------------- overzicht
 
     fn page_overview(&mut self, ui: &mut Ui, ctx: &egui::Context) {
@@ -518,19 +697,34 @@ impl App {
             t!("Open in FM27 de Breakdown van Tactical Effectiveness en lees hem uit.", "Open the Tactical Effectiveness Breakdown in FM27 and read it.").to_string()
         };
         let busy = self.analysis_rx.is_some();
+        let live_busy = self.live.busy();
         let mut read = false;
+        let mut read_bep = false;
         let mut file = false;
         theme::page_header(ui, "Tactical Effectiveness", &subtitle, |ui| {
             if theme::button(ui, icon::EXPORT, t!("Uit bestand", "From file"), !busy).clicked() {
                 file = true;
             }
-            if theme::primary_button(ui, icon::CAMERA, t!("Lees FM-scherm", "Read FM screen"), !busy).clicked() {
+            if theme::button(ui, icon::CAMERA, t!("Lees FM-scherm", "Read FM screen"), !busy).clicked() {
                 read = true;
             }
-            if busy {
+            if theme::primary_button(
+                ui,
+                icon::BRAIN,
+                t!("Lees uit BepInEx", "Read from BepInEx", "BepInEx'ten oku"),
+                !busy,
+            )
+            .clicked()
+            {
+                read_bep = true;
+            }
+            if busy || live_busy {
                 ui.spinner();
             }
         });
+        if read_bep {
+            self.sync_from_bepinex(true);
+        }
         if read {
             self.last_auto = std::time::Instant::now();
             self.start_analysis(ctx, None);
@@ -538,6 +732,7 @@ impl App {
         if file {
             self.show_file = !self.show_file;
         }
+
         ui.horizontal(|ui| {
             if theme::toggle(ui, &mut self.settings.auto_read).changed() {
                 self.last_auto = std::time::Instant::now() - std::time::Duration::from_secs(600);
@@ -2184,7 +2379,7 @@ impl App {
                     ui.label(theme::ic(icon::TRANSLATE).color(theme::ACCENT));
                     ui.label(t!("Taal", "Language"));
                     let mut lang = self.settings.lang;
-                    if theme::segmented(ui, &mut lang, &[(Lang::Nl, "Nederlands"), (Lang::En, "English")]) {
+                    if theme::segmented(ui, &mut lang, &[(Lang::Tr, "Türkçe"), (Lang::En, "English"), (Lang::Nl, "Nederlands")]) {
                         self.settings.lang = lang;
                         i18n::set(lang);
                         dirty = true;
@@ -2196,6 +2391,25 @@ impl App {
                     dirty |= ui.add(egui::DragValue::new(&mut self.settings.rate).range(0.5..=2.0).speed(0.01).fixed_decimals(2)).changed();
                 });
                 dirty |= ui.checkbox(&mut self.settings.capture_delay, t!("FM eerst naar voren halen bij uitlezen", "Bring FM to front before reading")).changed();
+                ui.add_space(4.0);
+                dirty |= ui
+                    .checkbox(
+                        &mut self.settings.no_cheat_mode,
+                        t!(
+                            "Zonder cheats (verberg editor-pagina's)",
+                            "No-cheat mode (hide editor pages)",
+                            "Hilesiz mod (editör ekranlarını gizle)"
+                        ),
+                    )
+                    .changed();
+                ui.add(
+                    egui::Label::new(theme::dim(t!(
+                        "Verbergt Club, Selectie en Transfers zodat alleen legitieme trainings- en tactiekhulp overblijft.",
+                        "Hides Club, Squad and Transfers so only legitimate training and tactics tools remain.",
+                        "Kulüp, Kadro ve Transfer ekranlarını gizler; yalnızca hilesiz antrenman ve taktik araçları kalır."
+                    )))
+                    .wrap(),
+                );
             });
             theme::card(&mut cols[1], |ui| {
                 ui.label(theme::h2("Planner"));
@@ -2234,6 +2448,60 @@ impl App {
                             "The day after a match gets a tactical session after Recovery."
                         ),
                     }))
+                    .wrap(),
+                );
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(t!(
+                        "Automatisch 'Meer rust' onder conditie (%)",
+                        "Auto 'More rest' below condition (%)",
+                        "Düşük kondisyonda otomatik 'Daha fazla dinlenme' (%)"
+                    ));
+                    dirty |= ui.add(egui::Slider::new(&mut self.settings.planner.auto_light_below, 0.0..=95.0).fixed_decimals(0)).changed();
+                });
+                if let Some(avg) = self.live.avg_condition() {
+                    let active = self.settings.planner.auto_light_below > 0.0 && avg < self.settings.planner.auto_light_below;
+                    let note = if active {
+                        t!(
+                            format!("Selectieconditie {avg:.0}% → 'Meer rust' automatisch actief."),
+                            format!("Squad condition {avg:.0}% → 'More rest' automatically active."),
+                            format!("Kadro kondisyonu %{avg:.0} → 'Daha fazla dinlenme' otomatik aktif.")
+                        )
+                    } else {
+                        t!(
+                            format!("Huidige selectieconditie: {avg:.0}% (0 = uit)."),
+                            format!("Current squad condition: {avg:.0}% (0 = off)."),
+                            format!("Mevcut kadro kondisyonu: %{avg:.0} (0 = kapalı).")
+                        )
+                    };
+                    ui.label(theme::faint(note));
+                }
+                ui.add_space(6.0);
+                dirty |= ui
+                    .checkbox(
+                        &mut self.settings.planner.auto_light_congested,
+                        t!(
+                            "Automatisch 'Meer rust' bij 2+ wedstrijden in een week",
+                            "Auto 'More rest' in weeks with 2+ matches",
+                            "2+ maçlı haftalarda otomatik 'Daha fazla dinlenme'"
+                        ),
+                    )
+                    .changed();
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(t!(
+                        "Automatisch ontwikkelmodus boven tactisch begrip (%)",
+                        "Auto development mode above tactical understanding (%)",
+                        "Tüm taktik alanlar şu seviyenin üstündeyse otomatik Gelişim modu (%)"
+                    ));
+                    dirty |= ui.add(egui::Slider::new(&mut self.settings.planner.auto_dev_above, 0.0..=100.0).fixed_decimals(0)).changed();
+                });
+                ui.add(
+                    egui::Label::new(theme::dim(t!(
+                        "Als alle 8 tactische gebieden boven deze drempel zitten, gaan tactische vakken automatisch naar spelersontwikkeling (0 = uit).",
+                        "When all 8 tactical areas are above this threshold, tactical slots automatically switch to player development (0 = off).",
+                        "8 taktik alanın tamamı bu eşiğin üstündeyken taktik yuvaları otomatik oyuncu gelişimine döner; biri düşerse tekrar taktiğe geçer (0 = kapalı)."
+                    )))
                     .wrap(),
                 );
                 ui.add_space(6.0);
@@ -2358,8 +2626,21 @@ impl eframe::App for App {
         }
         self.live.allow_untested = self.settings.allow_untested;
         self.live.choice = (self.settings.manager_club, self.settings.training_team);
-        self.live.keep_understanding = self.settings.keep_understanding;
+        self.live.keep_understanding = if self.settings.no_cheat_mode { false } else { self.settings.keep_understanding };
+        if self.settings.no_cheat_mode && matches!(self.page, Page::Club | Page::Squad | Page::Sell) {
+            self.page = Page::Overview;
+        }
         self.live.tick(ctx, &self.eff, &self.settings.planner, self.settings.auto_training);
+        // BepInEx köprüsünden gelen kesin Taktiksel Verimlilik verisini otomatik izle (1.5 sn aralıkla)
+        if !self.edit_mode
+            && std::env::var_os("FM27_SNAPSHOT").is_none()
+            && self.last_bepinex_check.elapsed().as_millis() >= 1500
+        {
+            self.last_bepinex_check = std::time::Instant::now();
+            self.sync_from_bepinex(false);
+        }
+        self.last_memory_rev = self.live.memory_rev;
+        let _ = (self.settings.auto_memory_sync, self.memory_sync_pending);
         self.sidebar(ctx);
         egui::CentralPanel::default()
             .frame(Frame::new().fill(theme::BG).inner_margin(Margin { left: 28, right: 28, top: 24, bottom: 16 }))

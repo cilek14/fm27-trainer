@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>FM27Trainer.Bridge</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <FM27Dir Condition="'$(FM27Dir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Football Manager 27</FM27Dir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="$(FM27Dir)\BepInEx\core\BepInEx.Core.dll" Private="false" />
+    <Reference Include="$(FM27Dir)\BepInEx\core\BepInEx.Unity.IL2CPP.dll" Private="false" />
+    <Reference Include="$(FM27Dir)\BepInEx\core\0Harmony.dll" Private="false" />
+    <Reference Include="$(FM27Dir)\BepInEx\core\Il2CppInterop.Runtime.dll" Private="false" />
+    <Reference Include="$(FM27Dir)\BepInEx\interop\Il2Cppmscorlib.dll" Private="false" />
+    <Reference Include="$(FM27Dir)\BepInEx\interop\SI.Core.dll" Private="false" />
+    <Reference Include="$(FM27Dir)\BepInEx\interop\SI.Bindable.dll" Private="false" />
+    <Reference Include="$(FM27Dir)\BepInEx\interop\SI.Bindable.Reference.Core.dll" Private="false" />
+    <Reference Include="$(FM27Dir)\BepInEx\interop\SI.Interop.dll" Private="false" />
+    <Reference Include="$(FM27Dir)\BepInEx\interop\SI.Marshalling.dll" Private="false" />
+    <Reference Include="$(FM27Dir)\BepInEx\interop\FM.GamePlugin.dll" Private="false" />
+    <Reference Include="$(FM27Dir)\BepInEx\interop\FM.UI.dll" Private="false" />
+  </ItemGroup>
+</Project>

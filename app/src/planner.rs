@@ -150,15 +150,47 @@ pub struct PlannerSettings {
     /// wie het tactisch begrip al op 100 % laat houden ("Op 100 % houden" op de Selectie-pagina).
     #[serde(default)]
     pub no_tactical: bool,
+    /// Kadro ortalama kondisyonu bu eşiğin altındaysa otomatik olarak `Load::Light` (Daha fazla dinlenme) uygula (0 = kapalı).
+    #[serde(default = "default_low_cond")]
+    pub auto_light_below: f32,
+    /// 8 taktik alanın tamamı bu eşiğin üstündeyse otomatik Gelişim moduna (`no_tactical`) geç (0 = kapalı).
+    #[serde(default = "default_auto_dev")]
+    pub auto_dev_above: f32,
+    /// Haftada 2 veya daha fazla maç varsa sadece o hafta otomatik `Load::Light` uygula.
+    #[serde(default = "default_true")]
+    pub auto_light_congested: bool,
 }
 
 fn default_block() -> u32 {
     4
 }
 
+fn default_low_cond() -> f32 {
+    78.0
+}
+
+fn default_auto_dev() -> f32 {
+    85.0
+}
+
+fn default_true() -> bool {
+    true
+}
+
 impl Default for PlannerSettings {
     fn default() -> Self {
-        PlannerSettings { bonding_below: 60.0, set_pieces_every: 0, gain_per_session: 2.2, decay_per_week: 0.8, replan_every_weeks: 4, load: Load::Balanced, no_tactical: false }
+        PlannerSettings {
+            bonding_below: 60.0,
+            set_pieces_every: 0,
+            gain_per_session: 2.2,
+            decay_per_week: 0.8,
+            replan_every_weeks: 4,
+            load: Load::Balanced,
+            no_tactical: false,
+            auto_light_below: 78.0,
+            auto_dev_above: 85.0,
+            auto_light_congested: true,
+        }
     }
 }
 
@@ -405,6 +437,17 @@ pub fn plan_week(
     settings: &PlannerSettings,
     season_week_no: u32,
 ) -> WeekPlan {
+    let mut eff_settings = settings.clone();
+    if eff_settings.auto_light_congested && week.match_count() >= 2 {
+        eff_settings.load = Load::Light;
+    }
+    if !eff_settings.no_tactical
+        && eff_settings.auto_dev_above > 0.0
+        && Factor::TACTICAL_AREAS.iter().all(|f| eff.get(*f) >= eff_settings.auto_dev_above)
+    {
+        eff_settings.no_tactical = true;
+    }
+    let settings = &eff_settings;
     let roles = day_roles(week, prev_sunday_match, next_monday_match);
     let post_match_days = roles.iter().filter(|r| **r == DayRole::PostMatch).count() as u32;
     let mut st = WeekState {

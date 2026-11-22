@@ -82,6 +82,8 @@ pub struct LiveState {
     pub squad: Vec<Value>,
     /// tactisch begrip van de selectie (opdracht `understanding`)
     pub understanding: Option<Value>,
+    /// Incremented whenever fresh understanding/squad data arrives from FM memory.
+    pub memory_rev: u64,
     /// editorvlaggen van de manager (opdracht `human_flags`)
     pub human_flags: Option<Value>,
     pub training: Option<Outcome>,
@@ -124,6 +126,7 @@ impl Default for LiveState {
             club: None,
             squad: Vec::new(),
             understanding: None,
+            memory_rev: 0,
             human_flags: None,
             training: None,
             status: String::new(),
@@ -279,6 +282,38 @@ impl LiveState {
         self.club.as_ref()?.get("name")?.as_str().map(str::to_string)
     }
 
+    /// Sağlıklı oyuncuların ortalama kondisyonu (0–100 %).
+    pub fn avg_condition(&self) -> Option<f32> {
+        let mut sum = 0.0_f32;
+        let mut cnt = 0_usize;
+        for p in &self.squad {
+            let injured = p.get("injuries").and_then(|v| v.as_array()).is_some_and(|a| !a.is_empty());
+            if injured {
+                continue;
+            }
+            if let Some(c) = p.get("condition").and_then(|v| v.as_u64()) {
+                if c > 0 {
+                    sum += (c as f32 / 100.0).clamp(0.0, 100.0);
+                    cnt += 1;
+                }
+            }
+        }
+        (cnt > 0).then(|| sum / cnt as f32)
+    }
+
+    /// Kadro kondisyonu eşiğin altındaysa yük profilini otomatik `Light` (Daha fazla dinlenme) yapar.
+    pub fn effective_planner(&self, settings: &PlannerSettings) -> PlannerSettings {
+        let mut s = settings.clone();
+        if s.auto_light_below > 0.0 {
+            if let Some(avg) = self.avg_condition() {
+                if avg < s.auto_light_below {
+                    s.load = crate::planner::Load::Light;
+                }
+            }
+        }
+        s
+    }
+
     /// Voert (optioneel) een opdracht uit en haalt daarna club + selectie op.
     pub fn refresh(&mut self, ctx: &egui::Context, label: &str, action: Option<Value>) {
         if self.rx.is_some() {
@@ -382,7 +417,7 @@ impl LiveState {
             return;
         }
         let (tx, rx) = mpsc::channel();
-        let (eff, settings) = (eff.clone(), settings.clone());
+        let (eff, settings) = (eff.clone(), self.effective_planner(settings));
         let _ = only_new;
         let skip: HashSet<NaiveDate> = HashSet::new();
         let ctx2 = ctx.clone();
@@ -416,6 +451,7 @@ impl LiveState {
                 }
                 if let Some(u) = s.understanding {
                     self.understanding = Some(u);
+                    self.memory_rev = self.memory_rev.wrapping_add(1);
                 }
                 if let Some(f) = s.human_flags {
                     self.human_flags = Some(f);

@@ -389,6 +389,14 @@ impl Effectiveness {
         }
     }
 
+    pub fn set_component(&mut self, c: Component, v: f32) {
+        if let Some(e) = self.components.iter_mut().find(|(x, _)| *x == c) {
+            e.1 = v.clamp(0.0, 100.0);
+        } else {
+            self.components.push((c, v.clamp(0.0, 100.0)));
+        }
+    }
+
     pub fn component(&self, c: Component) -> f32 {
         if let Some((_, v)) = self.components.iter().find(|(x, _)| *x == c) {
             return *v;

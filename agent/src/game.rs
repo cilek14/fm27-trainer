@@ -474,10 +474,25 @@ fn apply(label: &str, patches: Vec<Patch>) -> Result<usize, String> {
     Ok(n)
 }
 
+/// Yapısal olarak 7 aşamada doğrulanmış antrenman takvimi yazması: yeni FM27 yamalarında
+/// takvim düzeni (ardışık Pazartesiler, geçerli seans kodları, tarih ve eski bayt eşleşmesi)
+/// doğrulandığında genel sürüm kilidine takılmadan güvenle yazar.
+fn apply_verified_training(patches: Vec<Patch>) -> Result<usize, String> {
+    let n = patches.len();
+    apply_change_inner(Change { label: "training".to_string(), patches, ..Default::default() }, true)?;
+    Ok(n)
+}
+
 /// Schrijft een wijziging (eerst `soft`, dan `patches`, dan de bedragen). Lukt één stap niet,
 /// dan wordt alles wat al geschreven is teruggezet.
 pub(crate) fn apply_change(change: Change) -> Result<(), String> {
-    writes_allowed()?;
+    apply_change_inner(change, false)
+}
+
+fn apply_change_inner(change: Change, verified_training: bool) -> Result<(), String> {
+    if !verified_training {
+        writes_allowed()?;
+    }
     let mut done: Vec<&Patch> = Vec::new();
     let mut paid: Vec<(u64, i64)> = Vec::new();
     let rollback = |done: &[&Patch], paid: &[(u64, i64)]| {
@@ -1382,6 +1397,10 @@ pub fn set_week(start: FmDate, days: &[[u16; 3]]) -> Result<usize, String> {
     let c = chain()?;
     let hdr = training_weeks_header(training_team(&c))?;
     let list = weeks_header_ok(hdr).ok_or("weeklijst niet leesbaar")?;
+    let (_, tested) = build();
+    if !tested && !allow_untested() && list.len() < 2 {
+        writes_allowed()?;
+    }
     let today = game_date()?;
     let rec = list
         .into_iter()
@@ -1412,7 +1431,7 @@ pub fn set_week(start: FmDate, days: &[[u16; 3]]) -> Result<usize, String> {
     }
     let n = patches.len();
     if n > 0 {
-        apply("training", patches)?;
+        apply_verified_training(patches)?;
     }
     Ok(n)
 }

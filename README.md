@@ -36,6 +36,24 @@ Next Match Info) and 17 key factors that all have to go up through training and 
 reads those values from your game, works out a training plan aimed at your weakest areas, and writes it
 straight into FM's training calendar, week after week.
 
+## Fork Additions
+
+This is a community fork of [SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer) (MIT License) with a focus on legitimate, hands-free training automation and Turkish language support:
+
+- **Optional BepInEx Bridge (`bridge/`):** A tiny (~13 KB) Unity IL2CPP BepInEx 6 plugin (`FM27Trainer.Bridge.dll`) that reads FM27's own `TeamTactic.TacticalEffectiveness` directly from the game — all **4 components and 17 key factors with exact 0–100 integer precision**, without needing OCR. Build with:
+  ```bash
+  dotnet build bridge/FM27Trainer.Bridge.csproj -c Release -p:FM27Dir="PATH_TO_FM27"
+  ```
+  and drop `FM27Trainer.Bridge.dll` into `<FM27>/BepInEx/plugins/FM27Trainer.Bridge/`.
+- **Turkish UI (`Türkçe`):** Full Turkish interface (`app/src/i18n_tr.rs`) with automatic OS locale detection and sidebar/Settings switcher (`Türkçe / English / Nederlands`).
+- **Turkish OCR Fix (`app/src/vision.rs`):** Fixed pie-gauge search cutoff for short labels like Turkish *"Pas Stili"* (`17/17` gauges read cleanly).
+- **No-Cheat Mode (`Hilesiz mod`):** Optionally hides editor tabs (`Club`, `Squad`, `Transfers`) and disables background 100% understanding lock so only legitimate training and tactics tools remain.
+- **Smarter Automated Load & Development Switching (`app/src/planner.rs`, `app/src/live.rs`):**
+  - Automatically switches to *More rest (`Light`)* when healthy squad average condition drops below a configurable threshold (default `78%`).
+  - Automatically switches to *More rest (`Light`)* for congested weeks with `2+` matches.
+  - Automatically switches tactical slots to player development (*No tactical sessions*) once all 8 tactical areas exceed a configurable threshold (default `85%`), and switches back if any area drops below it.
+- **Auto-Verified Training Calendar Writes (`agent/src/game.rs`):** On newer FM27 builds, training-only calendar writes are allowed once all structural safety checks pass (club/date chain, ≥2 ascending Monday weeks, valid session codes, byte-level check & undo), while all other editor writes remain read-only until verified.
+
 ## Features
 
 **Read Tactical Effectiveness.** Open the *Breakdown* in FM and press *Read FM screen*. The app captures the

@@ -4,6 +4,7 @@ mod agent;
 mod export;
 mod gui;
 mod i18n;
+mod i18n_tr;
 mod labels;
 mod live;
 mod live_training;

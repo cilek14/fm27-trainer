@@ -1310,7 +1310,7 @@ pub fn analyze_with_lines(img: &RgbaImage, lines: &[OcrLine]) -> Analysis {
             .filter(|(_, l, _)| (l.yc() - line.yc()).abs() < th && l.x0 > label_end + th)
             .map(|(_, l, _)| l.x0 - th * 0.3)
             .fold(w, f32::min);
-        let limit = next_label_x.min(label_end + th * 22.0);
+        let limit = next_label_x.min(label_end + th.max(18.0) * 32.0);
         if std::env::var_os("FM27_VISION_DEBUG").is_some() {
             eprintln!("label {:<34} regel {:?} eind {label_end:.0} zoek {:.0}..{limit:.0} y {:.0} th {th:.0}", f.label(), line.text, label_end + th * 0.4, line.yc());
         }
