@@ -16,6 +16,8 @@ pub struct WeekPreview {
     pub start: NaiveDate,
     /// FM's naam voor het schema van deze week ("Tactical Focus - Balanced", "Full Week of Rest", …).
     pub name: String,
+    /// Algılanan sezon dönemi (Sezon, Sezon Öncesi, Milli Ara, Kış Arası vb.).
+    pub kind: WeekKind,
     /// Rustweek (vakantie): die laat de app altijd aan FM.
     pub rest: bool,
     pub matches: usize,
@@ -82,13 +84,15 @@ fn is_match_or_travel(d: &[u16; 3]) -> bool {
     d.iter().any(|c| *c == 500 || *c == 402)
 }
 
-fn kind_for(start: NaiveDate) -> WeekKind {
+fn kind_for(start: NaiveDate, match_count: usize) -> WeekKind {
     let mid = start + Duration::days(3);
     match (mid.month(), mid.day()) {
         (6, 20..) => WeekKind::PreSeasonEarly,
         (7, 1..=10) => WeekKind::PreSeasonEarly,
         (7, 11..=21) => WeekKind::PreSeasonMid,
         (7, _) => WeekKind::PreSeasonLate,
+        (12, 15..) | (1, 1..=15) if match_count == 0 => WeekKind::WinterBreak,
+        (8..=12 | 1..=5, _) if match_count == 0 => WeekKind::InternationalBreak,
         _ => WeekKind::Season,
     }
 }
@@ -123,6 +127,7 @@ pub fn run(eff: &Effectiveness, settings: &PlannerSettings, write: bool, skip: &
             out.weeks.push(WeekPreview {
                 start: *start,
                 name: name.clone(),
+                kind: WeekKind::OffSeason,
                 rest: true,
                 matches: 0,
                 focus: "Full Week of Rest".into(),
@@ -139,7 +144,9 @@ pub fn run(eff: &Effectiveness, settings: &PlannerSettings, write: bool, skip: &
         }
         let prev_sun = i > 0 && weeks[i - 1].1[6].contains(&500);
         let next_mon = weeks.get(i + 1).is_some_and(|w| w.1[0].contains(&500));
-        let cw = CalendarWeek { start: *start, kind: kind_for(*start), matches, note: String::new() };
+        let match_count = matches.iter().filter(|m| **m).count();
+        let kind = kind_for(*start, match_count);
+        let cw = CalendarWeek { start: *start, kind, matches, note: String::new() };
         let plan = planner::plan_week(&cw, prev_sun, next_mon, &proj, settings, i as u32 + 1);
         // geschatte vooruitgang: de volgende week mikt op wat dan het zwakst is
         for f in crate::model::Factor::TACTICAL_AREAS {
@@ -185,6 +192,7 @@ pub fn run(eff: &Effectiveness, settings: &PlannerSettings, write: bool, skip: &
         out.weeks.push(WeekPreview {
             start: *start,
             name,
+            kind,
             rest: false,
             matches: matches.iter().filter(|m| **m).count(),
             focus: plan.focus.to_string(),

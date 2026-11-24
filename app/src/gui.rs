@@ -878,6 +878,48 @@ impl App {
             self.team_picker(ui, ctx);
         }
 
+        // ---- hızlı taktik tarzı & kamp seçici
+        theme::card(ui, |ui| {
+            let mut mode_changed = false;
+            ui.horizontal_wrapped(|ui| {
+                ui.label(theme::label_strong(t!("Tactiekstijl:", "Tactic style:", "Taktik tarzı:")));
+                egui::ComboBox::from_id_salt("train_tactic_mode")
+                    .selected_text(self.settings.planner.tactic_mode.label())
+                    .show_ui(ui, |ui| {
+                        for m in planner::TacticMode::ALL {
+                            if ui.selectable_value(&mut self.settings.planner.tactic_mode, m, m.label()).changed() {
+                                mode_changed = true;
+                            }
+                        }
+                    });
+                ui.add_space(14.0);
+                ui.label(theme::label_strong(t!("Kamp:", "Camp:", "Kamp:")));
+                egui::ComboBox::from_id_salt("train_camp_mode")
+                    .selected_text(self.settings.planner.camp_mode.label())
+                    .show_ui(ui, |ui| {
+                        for c in planner::CampMode::ALL {
+                            if ui.selectable_value(&mut self.settings.planner.camp_mode, c, c.label()).changed() {
+                                mode_changed = true;
+                            }
+                        }
+                    });
+                if self.settings.planner.camp_mode != planner::CampMode::Auto {
+                    ui.add_space(8.0);
+                    theme::pill(ui, self.settings.planner.camp_mode.label(), theme::WARNING);
+                }
+            });
+            if self.settings.planner.camp_mode != planner::CampMode::Auto {
+                ui.add_space(4.0);
+                ui.label(theme::faint(self.settings.planner.camp_mode.description()));
+            }
+            if mode_changed {
+                self.save_settings();
+                self.week_plan = None;
+                self.year.clear();
+            }
+        });
+        ui.add_space(10.0);
+
         // ---- statusblok: automatisch bijhouden
         let auto = self.settings.auto_training;
         let accent = if auto && connected { theme::SUCCESS } else { theme::WARNING };
@@ -2428,6 +2470,28 @@ impl App {
                 });
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
+                    ui.label(t!("Tactiekstijl", "Tactic style", "Taktik tarzı"));
+                    egui::ComboBox::from_id_salt("settings_tactic_mode")
+                        .selected_text(self.settings.planner.tactic_mode.label())
+                        .show_ui(ui, |ui| {
+                            for m in planner::TacticMode::ALL {
+                                dirty |= ui.selectable_value(&mut self.settings.planner.tactic_mode, m, m.label()).changed();
+                            }
+                        });
+                });
+                ui.horizontal(|ui| {
+                    ui.label(t!("Speciaal kamp", "Special camp", "Özel kamp modu"));
+                    egui::ComboBox::from_id_salt("settings_camp_mode")
+                        .selected_text(self.settings.planner.camp_mode.label())
+                        .show_ui(ui, |ui| {
+                            for c in planner::CampMode::ALL {
+                                dirty |= ui.selectable_value(&mut self.settings.planner.camp_mode, c, c.label()).changed();
+                            }
+                        });
+                });
+                ui.add(egui::Label::new(theme::dim(self.settings.planner.camp_mode.description())).wrap());
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
                     ui.label(t!("Rust", "Rest"));
                     use planner::Load;
                     dirty |= theme::segmented(
@@ -2757,6 +2821,9 @@ fn week_card(ui: &mut Ui, w: &live_training::WeekPreview, today: Option<NaiveDat
                 return;
             }
             theme::pill(ui, &t!(format!("{} wedstrijd(en)", w.matches), format!("{} match(es)", w.matches)), theme::DANGER);
+            if matches!(w.kind, WeekKind::InternationalBreak | WeekKind::WinterBreak | WeekKind::PreSeasonEarly | WeekKind::PreSeasonMid | WeekKind::PreSeasonLate) {
+                theme::pill(ui, w.kind.label(), theme::INFO);
+            }
             theme::pill(ui, &w.focus, theme::ACCENT);
             let pending = (0..7).filter(|d| w.current[*d] != w.planned[*d]).count();
             if w.written > 0 {
@@ -2793,6 +2860,34 @@ fn week_card(ui: &mut Ui, w: &live_training::WeekPreview, today: Option<NaiveDat
                         ));
                 }
             }
+        });
+        // Haftalık etki özeti: 59 FM27 seansının gerçek etki vektörü [Kondisyon, Yorgunluk, Mutluluk, Sakatlık Riski, Keskinlik]
+        let mut eff_sum = [0i32; 5];
+        for d in 0..7 {
+            for code in w.planned[d] {
+                if code == 500 || code == 402 {
+                    continue;
+                }
+                if let Some(s) = session_by_code(code).and_then(crate::model::session) {
+                    for k in 0..5 {
+                        eff_sum[k] += s.effects[k] as i32;
+                    }
+                }
+            }
+        }
+        let fmt_signed = |v: i32| if v > 0 { format!("+{v}") } else { format!("{v}") };
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            let cond_col = if eff_sum[0] >= -4 { theme::SUCCESS } else if eff_sum[0] >= -10 { theme::WARNING } else { theme::DANGER };
+            let fat_col = if eff_sum[1] >= 0 { theme::SUCCESS } else if eff_sum[1] >= -4 { theme::WARNING } else { theme::DANGER };
+            let hap_col = if eff_sum[2] >= 2 { theme::SUCCESS } else if eff_sum[2] >= -2 { theme::INFO } else { theme::WARNING };
+            let inj_col = if eff_sum[3] >= -8 { theme::SUCCESS } else if eff_sum[3] >= -14 { theme::WARNING } else { theme::DANGER };
+            let shp_col = if eff_sum[4] >= 4 { theme::SUCCESS } else if eff_sum[4] >= 0 { theme::INFO } else { theme::WARNING };
+            theme::pill(ui, &format!("{} {}", t!("Conditie", "Condition", "Kondisyon"), fmt_signed(eff_sum[0])), cond_col);
+            theme::pill(ui, &format!("{} {}", t!("Vermoeidheid", "Fatigue", "Yorgunluk"), fmt_signed(eff_sum[1])), fat_col);
+            theme::pill(ui, &format!("{} {}", t!("Geluk", "Happiness", "Mutluluk"), fmt_signed(eff_sum[2])), hap_col);
+            theme::pill(ui, &format!("{} {}", t!("Blessurerisico", "Injury risk", "Sakatlık riski"), fmt_signed(eff_sum[3])), inj_col);
+            theme::pill(ui, &format!("{} {}", t!("Scherpte", "Sharpness", "Keskinlik"), fmt_signed(eff_sum[4])), shp_col);
         });
     });
 }

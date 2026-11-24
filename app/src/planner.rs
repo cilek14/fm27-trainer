@@ -130,6 +130,160 @@ pub enum Load {
     Intense,
 }
 
+/// Taktik oyun tarzı: taktik aşamasında dengeli öncelik (1.25×/0.90×), gelişim modunda tarza özel seans havuzu.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TacticMode {
+    #[default]
+    Auto,
+    Gegenpress,
+    Possession,
+    WingAttack,
+    LowBlockCounter,
+}
+
+impl TacticMode {
+    pub const ALL: [TacticMode; 5] = [
+        TacticMode::Auto,
+        TacticMode::Gegenpress,
+        TacticMode::Possession,
+        TacticMode::WingAttack,
+        TacticMode::LowBlockCounter,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            TacticMode::Auto => crate::t!("Automatisch (standaard)", "Auto (balanced)", "Otomatik (dengeli)"),
+            TacticMode::Gegenpress => crate::t!("Gegenpress (hoge druk)", "Gegenpress (high press)", "Gegenpress (yüksek pres)"),
+            TacticMode::Possession => crate::t!("Balbezit / Tiki-Taka", "Possession / Tiki-Taka", "Tiki-Taka (topa sahip olma)"),
+            TacticMode::WingAttack => crate::t!("Vleugelspel & snelle aanval", "Wing & fast attack", "Kanat & hızlı hücum"),
+            TacticMode::LowBlockCounter => crate::t!("Verdedigend & counter", "Low block & counter", "Savunma & kontra atak"),
+        }
+    }
+
+    /// Yumuşak ağırlık (1.25× / 1.10× / 0.90×): ana stile öncelik verir ama diğer alanları %85 eşiğinin altında bırakmaz.
+    pub fn weight(self, f: Factor) -> f32 {
+        match self {
+            TacticMode::Auto => 1.0,
+            TacticMode::Gegenpress => match f {
+                Factor::PressingIntensity | Factor::LineOfEngagement | Factor::PressingTrap => 1.25,
+                Factor::OutOfPossessionShape | Factor::ChanceCreation => 1.10,
+                _ => 0.90,
+            },
+            TacticMode::Possession => match f {
+                Factor::PassingStyle | Factor::BuildUp | Factor::InPossessionShape => 1.25,
+                Factor::ChanceCreation => 1.10,
+                _ => 0.90,
+            },
+            TacticMode::WingAttack => match f {
+                Factor::ChanceCreation | Factor::InPossessionShape | Factor::BuildUp => 1.25,
+                Factor::PassingStyle | Factor::PressingIntensity => 1.10,
+                _ => 0.90,
+            },
+            TacticMode::LowBlockCounter => match f {
+                Factor::OutOfPossessionShape | Factor::PressingTrap | Factor::LineOfEngagement => 1.25,
+                Factor::ChanceCreation | Factor::BuildUp => 1.10,
+                _ => 0.90,
+            },
+        }
+    }
+
+    /// Gelişim modunda (otomatik %85+ veya elle) çalışılacak oyun tarzına özel seans havuzu.
+    pub fn development_pool(self) -> &'static [&'static str] {
+        match self {
+            TacticMode::Auto => &DEVELOPMENT,
+            TacticMode::Gegenpress => &[
+                "Transition - Press",
+                "Defending - Engaged",
+                "Attacking - Direct",
+                "Defensive Ball Work",
+                "Technical - Ground Defence",
+                "Transition - Progress",
+                "Individual Development",
+            ],
+            TacticMode::Possession => &[
+                "Possession Ball Work",
+                "Technical - Ball Retention",
+                "Attacking - Patient",
+                "Technical - Chance Creation",
+                "Attacking Ball Work",
+                "Theory - Attacking Shadow Play",
+                "Individual Development",
+            ],
+            TacticMode::WingAttack => &[
+                "Attacking - Wings",
+                "Attacking - Direct",
+                "Technical - Chance Creation",
+                "Technical - Chance Conversion",
+                "Attacking Ball Work",
+                "Set Pieces - Delivery",
+                "Individual Development",
+            ],
+            TacticMode::LowBlockCounter => &[
+                "Defending - Disengaged",
+                "Transition - Restrict",
+                "Transition - Progress",
+                "Technical - Ground Defence",
+                "Technical - Aerial Defence",
+                "Defensive Ball Work",
+                "Individual Development",
+            ],
+        }
+    }
+}
+
+/// Özel haftalık kamp modu (Kondisyon ve Derbi/Final kampları unutulma riskine karşı yalnızca ilk haftaya uygulanır).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CampMode {
+    #[default]
+    Auto,
+    PreSeasonFitness,
+    PlayerDevelopment,
+    BigMatchPrep,
+}
+
+impl CampMode {
+    pub const ALL: [CampMode; 4] = [
+        CampMode::Auto,
+        CampMode::PreSeasonFitness,
+        CampMode::PlayerDevelopment,
+        CampMode::BigMatchPrep,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            CampMode::Auto => crate::t!("Standaard (automatisch)", "Standard (auto)", "Standart (otomatik)"),
+            CampMode::PreSeasonFitness => crate::t!("Conditiekamp (1 week)", "Fitness camp (1 week)", "Kondisyon kampı (1 hafta)"),
+            CampMode::PlayerDevelopment => crate::t!("Spelersontwikkeling", "Player development", "Oyuncu gelişim kampı"),
+            CampMode::BigMatchPrep => crate::t!("Topwedstrijd / Finale (1 week)", "Derby / Final prep (1 week)", "Derbi & Final kampı (1 hafta)"),
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            CampMode::Auto => crate::t!(
+                "Normaal schema op basis van seizoen, wedstrijden en zwakste gebieden.",
+                "Normal schedule based on season phase, fixtures and weakest areas.",
+                "Sezon dönemine, fikstüre ve en zayıf alanlara göre normal otomatik plan."
+            ),
+            CampMode::PreSeasonFitness => crate::t!(
+                "Extra conditie op trainingsdagen (alleen huidige week; wordt automatisch overgeslagen bij lage conditie of 2+ wedstrijden).",
+                "Adds extra conditioning on training days (current week only; automatically skipped on low squad condition or 2+ matches).",
+                "Antrenman günlerine ekstra kondisyon ekler (yalnızca mevcut hafta; düşük kadro kondisyonunda veya 2+ maçta güvenlik için atlanır)."
+            ),
+            CampMode::PlayerDevelopment => crate::t!(
+                "Richt extra en tactische plekken op spelersontwikkeling volgens je tactiekstijl.",
+                "Focuses extra slots on player development matching your chosen tactic style.",
+                "Ekstra yuvaları seçili taktik tarzına uygun oyuncu gelişimi seanslarına ayırır."
+            ),
+            CampMode::BigMatchPrep => crate::t!(
+                "Voegt deze week standaardsituaties en Team Bonding toe voor een belangrijke wedstrijd (alleen huidige week).",
+                "Forces set pieces and Team Bonding this week for a key derby or final (current week only).",
+                "Kritik derbi/final için bu haftaya duran top ve Takım Kaynaşması ekler (yalnızca mevcut hafta)."
+            ),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlannerSettings {
     /// Onder deze Buy-In-score komt er Team Bonding na wedstrijden.
@@ -159,6 +313,12 @@ pub struct PlannerSettings {
     /// Haftada 2 veya daha fazla maç varsa sadece o hafta otomatik `Load::Light` uygula.
     #[serde(default = "default_true")]
     pub auto_light_congested: bool,
+    /// Oyun tarzına göre dengeli ağırlık + özel gelişim havuzu.
+    #[serde(default)]
+    pub tactic_mode: TacticMode,
+    /// Özel kamp modu (Kondisyon / Derbi sadece ilk haftaya uygulanır).
+    #[serde(default)]
+    pub camp_mode: CampMode,
 }
 
 fn default_block() -> u32 {
@@ -190,6 +350,8 @@ impl Default for PlannerSettings {
             auto_light_below: 78.0,
             auto_dev_above: 85.0,
             auto_light_congested: true,
+            tactic_mode: TacticMode::Auto,
+            camp_mode: CampMode::Auto,
         }
     }
 }
@@ -329,8 +491,9 @@ impl WeekState<'_> {
     /// Kies het tactische gebied met het grootste resterende tekort (niet al vandaag gekozen).
     fn pick_tactical(&mut self, today: &[String]) -> Option<String> {
         if self.settings.no_tactical {
-            // de minst gebruikte ontwikkelsessie die vandaag nog niet staat
-            let name = DEVELOPMENT.iter().filter(|n| !today.iter().any(|t| t == *n)).min_by_key(|n| self.used(n)).copied()?;
+            // de minst gebruikte ontwikkelsessie die vandaag nog niet staat (taktik tarzına özel havuz)
+            let pool = self.settings.tactic_mode.development_pool();
+            let name = pool.iter().filter(|n| !today.iter().any(|t| t == *n)).min_by_key(|n| self.used(n)).copied()?;
             return Some(self.take(name));
         }
         if self.tactical_total() >= 16 {
@@ -370,17 +533,34 @@ impl WeekState<'_> {
         "Match Preparation".to_string()
     }
 
-    fn pick_extra(&mut self, today: &[String]) -> String {
+    fn pick_dev(&mut self, today: &[String]) -> String {
+        let pool = self.settings.tactic_mode.development_pool();
+        if let Some(name) = pool.iter().filter(|n| !today.iter().any(|t| t == *n)).min_by_key(|n| self.used(n)).copied() {
+            return self.take(name);
+        }
+        self.take("Individual Development")
+    }
+
+    fn pick_extra(&mut self, today: &[String], active_camp: CampMode) -> String {
+        if active_camp == CampMode::BigMatchPrep && self.used("Team Bonding") < 1 {
+            return self.take("Team Bonding");
+        }
+        if active_camp == CampMode::PlayerDevelopment {
+            return self.pick_dev(today);
+        }
         let buy_in = self.eff.buy_in();
         if buy_in < self.settings.bonding_below && self.used("Team Bonding") + self.bonding_reserved < 2 {
             return self.take("Team Bonding");
         }
-        // erg lage tactical understanding: extra tactische sessie, anders individuele ontwikkeling
+        // erg lage tactical understanding: extra tactische sessie, anders individuele ontwikkeling (tarza özel havuz)
         let tu = (self.eff.phase_score(Phase::InPossession) + self.eff.phase_score(Phase::OutOfPossession)) / 2.0;
         if tu < 45.0 && !self.settings.no_tactical {
             if let Some(t) = self.pick_tactical(today) {
                 return t;
             }
+        }
+        if self.settings.tactic_mode != TacticMode::Auto {
+            return self.pick_dev(today);
         }
         self.take("Individual Development")
     }
@@ -447,27 +627,55 @@ pub fn plan_week(
     {
         eff_settings.no_tactical = true;
     }
+    // Özel kamplar (Kondisyon / Derbi) unutulma riskine karşı yalnızca mevcut/ilk haftaya uygulanır.
+    // Ayrıca Kondisyon kampı, düşük kadro kondisyonu veya 2+ maç (Load::Light) koruması aktifken ağır yükleme yapmaz.
+    let active_camp = match eff_settings.camp_mode {
+        CampMode::PreSeasonFitness if season_week_no == 1 && eff_settings.load != Load::Light => CampMode::PreSeasonFitness,
+        CampMode::BigMatchPrep if season_week_no == 1 => CampMode::BigMatchPrep,
+        CampMode::PlayerDevelopment => CampMode::PlayerDevelopment,
+        _ => CampMode::Auto,
+    };
     let settings = &eff_settings;
-    let roles = day_roles(week, prev_sunday_match, next_monday_match);
+    let mut roles = day_roles(week, prev_sunday_match, next_monday_match);
+    // Milli ara / kış arası (0 maçlı hafta): kadro yorgunsa (Load::Light) hafta ortasına ekstra Recovery günü ekle
+    if matches!(week.kind, WeekKind::InternationalBreak | WeekKind::WinterBreak)
+        && week.match_count() == 0
+        && settings.load == Load::Light
+        && roles[3] == DayRole::Training
+    {
+        roles[3] = DayRole::Recovery;
+    }
     let post_match_days = roles.iter().filter(|r| **r == DayRole::PostMatch).count() as u32;
     let mut st = WeekState {
         bonding_reserved: post_match_days.min(2),
-        deficit: Factor::TACTICAL_AREAS.iter().map(|f| (*f, deficit(eff.get(*f)))).collect(),
+        deficit: Factor::TACTICAL_AREAS
+            .iter()
+            .map(|f| (*f, deficit(eff.get(*f)) * settings.tactic_mode.weight(*f)))
+            .collect(),
         count: HashMap::new(),
         eff,
         settings,
     };
     let matches = week.match_count();
-    let set_piece_week = settings.set_pieces_every > 0 && season_week_no % settings.set_pieces_every == 0;
+    let set_piece_week = active_camp == CampMode::BigMatchPrep
+        || (settings.set_pieces_every > 0 && season_week_no % settings.set_pieces_every == 0);
     // Light Conditioning: één keer in een week met ≤1 wedstrijd (SI doet dat op de 3e dag)
+    // Kondisyon kampı aktifse (ve Load::Light değilse) en fazla 2 kondisyon günü eklenir.
     let mut conditioning_left: u32 = match (week.kind, matches) {
         (k, _) if k.is_preseason() => 0, // voorbereiding regelt het per dag hieronder
         (WeekKind::OffSeason, _) => 0,
+        (WeekKind::WinterBreak, 0) if settings.load != Load::Light => 2,
+        (_, 0 | 1) if active_camp == CampMode::PreSeasonFitness => 2,
         (_, 0 | 1) => 1,
         _ => 0,
     };
     let training_days: Vec<usize> = (0..7).filter(|i| roles[*i] == DayRole::Training).collect();
     let lc_day = if training_days.len() >= 3 { training_days.get(2).copied() } else { training_days.last().copied() };
+    let lc_day2 = if active_camp == CampMode::PreSeasonFitness && training_days.len() >= 2 {
+        training_days.first().copied().filter(|d| Some(*d) != lc_day)
+    } else {
+        None
+    };
 
     let mut days = Vec::new();
     for (i, role) in roles.iter().enumerate() {
@@ -483,9 +691,14 @@ pub fn plan_week(
                 WeekKind::PreSeasonEarly => [Slot::Fixed(if i % 2 == 0 { "Heavy Conditioning" } else { "Conditioning" }), Slot::Tactical, Slot::Tactical],
                 WeekKind::PreSeasonMid => [Slot::Fixed(if i % 3 == 2 { "Heavy Conditioning" } else { "Conditioning" }), Slot::Tactical, Slot::Tactical],
                 WeekKind::PreSeasonLate => [Slot::Fixed(if i % 2 == 0 { "Light Conditioning" } else { "Conditioning" }), Slot::Tactical, Slot::Tactical],
-                _ if conditioning_left > 0 && Some(i) == lc_day => {
+                _ if conditioning_left > 0 && (Some(i) == lc_day || Some(i) == lc_day2) => {
                     conditioning_left -= 1;
-                    [Slot::Fixed("Light Conditioning"), Slot::Tactical, Slot::Tactical]
+                    let cond_name = if active_camp == CampMode::PreSeasonFitness && Some(i) == lc_day2 {
+                        "Conditioning"
+                    } else {
+                        "Light Conditioning"
+                    };
+                    [Slot::Fixed(cond_name), Slot::Tactical, Slot::Tactical]
                 }
                 _ => [Slot::Tactical, Slot::Tactical, Slot::Extra],
             },
@@ -510,7 +723,7 @@ pub fn plan_week(
                             st.take("Rest")
                         }
                     } else {
-                        st.pick_extra(&today)
+                        st.pick_extra(&today, active_camp)
                     }
                 }
             };

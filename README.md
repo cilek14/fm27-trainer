@@ -52,6 +52,12 @@ This is a community fork of [SemHiel2003/fm27-trainer](https://github.com/SemHie
   - Automatically switches to *More rest (`Light`)* when healthy squad average condition drops below a configurable threshold (default `78%`).
   - Automatically switches to *More rest (`Light`)* for congested weeks with `2+` matches.
   - Automatically switches tactical slots to player development (*No tactical sessions*) once all 8 tactical areas exceed a configurable threshold (default `85%`), and switches back if any area drops below it.
+- **Tactic Style & Special Camp Modes (`app/src/planner.rs`, `app/src/gui.rs`):**
+  - *Tactic Style (`Auto / Gegenpress / Possession / Wing & Fast Attack / Low Block & Counter`):* applies balanced priority weights (`1.25×` / `0.90×`) during tactical training and uses a style-specific development session pool once development mode is active.
+  - *Special Camp Modes (`Standard / Fitness Camp / Player Development / Derby & Final Prep`):* 1-week scoped fitness and derby/final camps with automatic safety priority (skipped on low squad condition or `2+` match weeks).
+- **Automatic Break Detection & Weekly Impact Summary (`app/src/live_training.rs`, `app/src/gui.rs`):**
+  - Detects 0-match weeks as *International Break* or *Winter Break* and adapts recovery/conditioning accordingly.
+  - Displays a 5-metric weekly impact summary (*Condition, Fatigue, Happiness, Injury Risk, Sharpness*) on every training week card using FM27's official session effect data.
 - **Auto-Verified Training Calendar Writes (`agent/src/game.rs`):** On newer FM27 builds, training-only calendar writes are allowed once all structural safety checks pass (club/date chain, ≥2 ascending Monday weeks, valid session codes, byte-level check & undo), while all other editor writes remain read-only until verified.
 
 ## Features
