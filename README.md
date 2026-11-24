@@ -37,7 +37,8 @@ Bu proje, **[SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-train
 ### Öne Çıkan Özellikler
 - **Opsiyonel BepInEx Köprüsü (`FM27Trainer.Bridge.dll`):** OCR'a gerek kalmadan FM27'nin kendi `TeamTactic.TacticalEffectiveness` verisini doğrudan oyunun içinden okur — **4 ana bileşen ve 17 kilit faktörün tamamı 0–100 tam sayı hassasiyetiyle**.
 - **Türkçe Arayüz & OCR Düzeltmesi:** Sistem dilinden otomatik Türkçe algılama (`Türkçe / English / Nederlands`) ve Türkçe OCR'daki kısa *"Pas Stili"* etiketi kesilme hatasının giderilmesi (`17/17` hatasız okuma).
-- **Hilesiz Mod (Varsayılan Açık):** Editör/hile sekmelerini (`Kulüp`, `Kadro`, `Transferler`) gizler ve arka planda `%100` aşinalık kilidini kapatır; yalnızca yasal antrenman ve taktik araçları kalır.
+- **%100 Saf Hilesiz Antrenman Sürümü:** Tüm editör/hile sekmeleri (`Kulüp`, `Kadro`, `Transferler`) ve yazma komutları (`bütçe, iyileştir, ceza kaldır, moral, taktik %100, al/sat`) uygulamadan tamamen kaldırılmıştır — teknik olarak yalnızca antrenman takvimine yazabilir.
+- **İlişkiler Odaklı Oyuncu Benimsemesi (`Buy-In`):** `Takım Kaynaşması` yalnızca antrenmanla artabilen *Takım Arkadaşları ve Personel İlişkileri* skoruna göre tetiklenir; ilişkiler çok düşükse (`< %45`) maç ertesi güne otomatik `Sosyal Yardımlaşma (Community Outreach)` de eklenir.
 - **Taktik Tarzı (`TacticMode`):** *Otomatik / Gegenpress / Tiki-Taka / Kanat & Hızlı Hücum / Savunma & Kontra* — taktik aşamasında dengeli öncelik (`1.25×` / `0.90×`), Gelişim modunda seçili oyun tarzına özel 7 seanslık gelişim havuzu.
 - **Özel Kamp Modları (`CampMode`):** *Standart / Kondisyon Kampı (1 hafta) / Oyuncu Gelişim Kampı / Derbi & Final Kampı (1 hafta)* — düşük kadro kondisyonu veya `2+` maçlı haftalarda güvenlik korumaları her zaman öncelikli çalışır.
 - **Akıllı Otomatik Korumalar:**
@@ -63,7 +64,8 @@ A community fork of **[SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/
 ### Key Features
 - **Optional BepInEx Bridge (`FM27Trainer.Bridge.dll`):** Reads FM27's `TeamTactic.TacticalEffectiveness` directly from the game — all **4 components and 17 key factors with exact 0–100 integer precision**, without needing OCR.
 - **Turkish UI & OCR Fix:** Full Turkish interface (`Türkçe / English / Nederlands`) with automatic OS locale detection and fixed pie-gauge cutoff for short Turkish labels (*"Pas Stili"*).
-- **No-Cheat Mode (On by Default):** Hides editor tabs (`Club`, `Squad`, `Transfers`) and disables background 100% familiarity locking so only legitimate training & tactics tools remain.
+- **100% Training-Only Build (No Cheats):** All editor/cheat tabs (`Club`, `Squad`, `Transfers`) and write commands (`finances, heal, lift bans, morale, max familiarity, buy/sell`) are completely removed from the release binary — it can technically only write to the training calendar.
+- **Relationships-Focused Player Buy-In:** `Team Bonding` targets only the trainable *Teammates and Staff Relationships* score (never wasting sharpness on untrainable *Managerial Support*), and adds `Community Outreach` on post-match days when relationships drop below `45%`.
 - **Tactic Style (`TacticMode`):** *Auto / Gegenpress / Possession / Wing & Fast Attack / Low Block & Counter* with balanced priority weights (`1.25×` / `0.90×`) and a style-specific development session pool.
 - **Special Camp Modes (`CampMode`):** 1-week scoped *Fitness Camp* and *Derby & Final Prep* plus *Player Development*, always yielding to fatigue/congestion safety guards.
 - **Automated Training Guards:**

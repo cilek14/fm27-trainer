@@ -719,6 +719,8 @@ pub fn plan_week(
                         st.bonding_reserved = st.bonding_reserved.saturating_sub(1);
                         if eff.buy_in() < settings.bonding_below && st.used("Team Bonding") < 2 {
                             st.take("Team Bonding")
+                        } else if eff.buy_in() < 45.0 && st.used("Community Outreach") == 0 {
+                            st.take("Community Outreach")
                         } else {
                             st.take("Rest")
                         }

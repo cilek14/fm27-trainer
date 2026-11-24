@@ -422,9 +422,9 @@ impl Effectiveness {
         v.iter().sum::<f32>() / v.len().max(1) as f32
     }
 
+    /// Antrenmanla artırılabilen Oyuncu Benimsemesi alt faktörü: Takım Arkadaşları ve Personel İlişkileri.
     pub fn buy_in(&self) -> f32 {
         self.get(Factor::TeammatesAndStaffRelationships)
-            .min(self.get(Factor::ManagerialSupport))
     }
 }
 

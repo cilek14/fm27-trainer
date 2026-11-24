@@ -174,23 +174,12 @@ pub fn dispatch(req: &Value) -> Result<Value, String> {
             Ok(json!({"untested_writes": on}))
         }
         "club" => game::club().map(|c| json!(c)),
-        "set_finances" => {
-            let g = |k: &str| req.get(k).and_then(|v| v.as_i64());
-            game::set_finances(g("transfer_budget"), g("wage_budget"), g("balance")).map(|c| json!(c))
-        }
         "squad" => game::squad().map(|s| json!(s)),
         "teams" => game::teams().map(|t| json!(t)),
         "select" => {
             let club = req.get("club").and_then(|v| v.as_u64()).map(|n| n as u32);
             let team = req.get("team").and_then(|v| v.as_u64()).map(|n| n as usize);
             game::select_team(club, team).map(|t| json!(t))
-        }
-        "heal" => game::heal(&uids(req)).map(|n| json!({"players": n})),
-        "lift_bans" => game::lift_bans(&uids(req)).map(|n| json!({"bans": n})),
-        "inspire" => {
-            let morale = req.get("morale").and_then(|v| v.as_u64()).unwrap_or(20) as u8;
-            let clear = req.get("clear_unhappiness").and_then(|v| v.as_bool()).unwrap_or(true);
-            game::inspire(&uids(req), morale, clear).map(|n| json!({"players": n}))
         }
         "game_date" => game::game_date().map(|d| json!(d)),
         "training_weeks" => game::training_weeks().map(|(today, w)| json!({"today": today, "weeks": w})),
@@ -200,22 +189,48 @@ pub fn dispatch(req: &Value) -> Result<Value, String> {
             game::set_week(start, &days).map(|n| json!({"days": n}))
         }
         "undo" => game::undo_last().map(|l| json!({"undone": l})),
+        "tactics" => tactic::tactics().map(|t| json!(t)),
+        // Editör / hile komutları bu hilesiz antrenman derlemesinde devre dışı (yalnızca cargo test içinde aktif)
+        #[cfg(not(test))]
+        "set_finances" | "heal" | "lift_bans" | "inspire" | "human_flags" | "set_human_flags" | "understanding" | "max_understanding" | "clubs" | "sell" | "buy" | "club_squad" => {
+            Err("Bu sürüm yalnızca hilesiz antrenman içindir / Disabled in training-only build".into())
+        }
+        #[cfg(test)]
+        "set_finances" => {
+            let g = |k: &str| req.get(k).and_then(|v| v.as_i64());
+            game::set_finances(g("transfer_budget"), g("wage_budget"), g("balance")).map(|c| json!(c))
+        }
+        #[cfg(test)]
+        "heal" => game::heal(&uids(req)).map(|n| json!({"players": n})),
+        #[cfg(test)]
+        "lift_bans" => game::lift_bans(&uids(req)).map(|n| json!({"bans": n})),
+        #[cfg(test)]
+        "inspire" => {
+            let morale = req.get("morale").and_then(|v| v.as_u64()).unwrap_or(20) as u8;
+            let clear = req.get("clear_unhappiness").and_then(|v| v.as_bool()).unwrap_or(true);
+            game::inspire(&uids(req), morale, clear).map(|n| json!({"players": n}))
+        }
+        #[cfg(test)]
         "human_flags" => game::human_flags().map(|f| json!(f)),
+        #[cfg(test)]
         "set_human_flags" => {
             let b = |k: &str| req.get(k).and_then(|v| v.as_bool());
             game::set_human_flags(b("registration_anytime"), b("numbers_anytime")).map(|f| json!(f))
         }
+        #[cfg(test)]
         "understanding" => understanding::understanding().map(|u| json!(u)),
-        "tactics" => tactic::tactics().map(|t| json!(t)),
+        #[cfg(test)]
         "max_understanding" => {
             let dry = req.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(false);
             understanding::maximise(&uids(req), dry).map(|m| json!(m))
         }
+        #[cfg(test)]
         "clubs" => {
             let q = req.get("query").and_then(|v| v.as_str()).unwrap_or("");
             let limit = req.get("limit").and_then(|v| v.as_u64()).unwrap_or(20).min(100) as usize;
             sell::find_clubs(q, limit).map(|c| json!(c))
         }
+        #[cfg(test)]
         "sell" | "buy" => {
             let n = |k: &str| req.get(k).and_then(|v| v.as_i64());
             let uid = n("uid").ok_or("uid ontbreekt")? as u32;
@@ -224,6 +239,7 @@ pub fn dispatch(req: &Value) -> Result<Value, String> {
             let dry = req.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(false);
             if cmd == "buy" { sell::buy(uid, club, fee, n("wage"), dry) } else { sell::sell(uid, club, fee, n("wage"), dry) }.map(|s| json!(s))
         }
+        #[cfg(test)]
         "club_squad" => {
             let uid = req.get("club").and_then(|v| v.as_u64()).ok_or("club ontbreekt")? as u32;
             sell::club_squad(uid).map(|s| json!(s))
