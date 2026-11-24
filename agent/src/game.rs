@@ -776,6 +776,7 @@ pub fn select_team(club: Option<u32>, team: Option<usize>) -> Result<Teams, Stri
 #[derive(Serialize)]
 pub struct ClubInfo {
     pub uid: u32,
+    pub manager_runtime_id: u32,
     pub name: String,
     pub balance: i32,
     pub transfer_budget: i32,
@@ -792,9 +793,12 @@ pub(crate) fn club_name(club: u64) -> Option<String> {
 
 pub fn club() -> Result<ClubInfo, String> {
     let c = chain()?;
+    let l = layout();
     let name = club_name(c.club).unwrap_or_else(|| "?".into());
+    let manager_runtime_id = mem::u32_at(c.human + l.staff_identity + l.human_shift + 0x08).unwrap_or(0);
     Ok(ClubInfo {
         uid: mem::u32_at(c.club + CLUB_UID).unwrap_or(0),
+        manager_runtime_id,
         name,
         balance: mem::i32_at(c.finance + FIN_BALANCE).unwrap_or(0),
         transfer_budget: mem::i32_at(c.finance + FIN_TRANSFER).unwrap_or(0),
@@ -844,7 +848,9 @@ pub struct Injury {
 #[derive(Serialize, Clone)]
 pub struct PlayerInfo {
     pub uid: u32,
+    pub runtime_id: u32,
     pub name: String,
+    pub age: Option<u8>,
     pub morale: u8,
     pub condition: u16,
     pub sharpness: u16,
@@ -895,7 +901,7 @@ fn player_shift(p: u64, class: Option<&str>) -> u64 {
     if class.is_some_and(|c| c.contains("PLAYER_AND_NON_PLAYER")) { coach } else { 0 }
 }
 
-fn read_player(p: u64, team: u64) -> Option<PlayerInfo> {
+fn read_player(p: u64, team: u64, today: Option<FmDate>) -> Option<PlayerInfo> {
     let l = layout();
     if mem::u64_at(p + l.p_team)? != team {
         return None;
@@ -906,6 +912,15 @@ fn read_player(p: u64, team: u64) -> Option<PlayerInfo> {
     }
     let shift = player_shift(p, class.as_deref());
     let uid = mem::u32_at(p + l.p_uid + shift)?;
+    let runtime_id = mem::u32_at(p + (l.p_uid - 4) + shift).unwrap_or(0);
+    let age = FmDate::read(p + l.p_first + shift + 0x38).and_then(|bd| {
+        let t = today?;
+        let mut yrs = t.year as i32 - bd.year as i32;
+        if t.doy < bd.doy {
+            yrs -= 1;
+        }
+        (13..=55).contains(&yrs).then_some(yrs as u8)
+    });
     let common = mem::u64_at(p + l.p_common + shift).and_then(name_entry);
     let first = mem::u64_at(p + l.p_first + shift).and_then(name_entry);
     let last = mem::u64_at(p + l.p_last + shift).and_then(name_entry);
@@ -940,7 +955,9 @@ fn read_player(p: u64, team: u64) -> Option<PlayerInfo> {
     }
     Some(PlayerInfo {
         uid,
+        runtime_id,
         name,
+        age,
         morale,
         condition: mem::u16_at(p + l.p_condition).unwrap_or(0),
         sharpness: mem::u16_at(p + l.p_sharpness).unwrap_or(0),
@@ -990,7 +1007,8 @@ fn absence_list(p: u64) -> Option<(u64, Vec<u64>)> {
 /// De spelers van een team (alleen wie zelf naar dat team wijst), op naam.
 pub(crate) fn squad_of(team: u64) -> Result<Vec<PlayerInfo>, String> {
     let (_, players) = pointer_list(team + TEAM_PLAYERS, 200).ok_or("spelerslijst van het team niet leesbaar / team's player list not readable")?;
-    let mut out: Vec<PlayerInfo> = players.into_iter().filter_map(|p| read_player(p, team)).collect();
+    let today = date_via_static().or_else(|| date_via_team(team));
+    let mut out: Vec<PlayerInfo> = players.into_iter().filter_map(|p| read_player(p, team, today)).collect();
     out.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(out)
 }

@@ -5,14 +5,16 @@
 <h1 align="center">FM27 Trainer (TR Fork)</h1>
 
 <p align="center">
-  <strong>Football Manager 27 için hilesiz, akıllı takım antrenmanı otomasyonu ve BepInEx 17/17 Taktiksel Verimlilik okuyucu.<br>
-  Legitimate, hands-free training automation and exact BepInEx Tactical Effectiveness reader for Football Manager 27.</strong>
+  <strong>Football Manager 27 için hilesiz, akıllı antrenman asistanı: takım takvimi otomasyonu, oyuncu bazlı taktik darboğaz raporu ve sakatlık önleyici bireysel yoğunluk.<br>
+  A legitimate, no-cheat training assistant for Football Manager 27: team calendar automation, per-player tactical bottleneck report and injury-safe individual intensity.</strong>
 </p>
 
 <p align="center">
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows">
   <img alt="FM27" src="https://img.shields.io/badge/Football%20Manager-27-c8102e">
   <img alt="Rust" src="https://img.shields.io/badge/built%20with-Rust-dea584?logo=rust">
+  <img alt="BepInEx" src="https://img.shields.io/badge/BepInEx-6%20IL2CPP-5c2d91">
+  <img alt="No cheats" src="https://img.shields.io/badge/cheats-none-3dd68c">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-7c6cff">
 </p>
 
@@ -32,67 +34,126 @@
 <a name="türkçe"></a>
 ## 🇹🇷 Türkçe
 
-Bu proje, **[SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer)** (MIT Lisansı) temel alınarak **hilesiz antrenman otomasyonu**, **OCR'sız kesin Taktiksel Verimlilik okuma (BepInEx köprüsü)** ve **tam Türkçe arayüz** odağıyla geliştirilmiş bir topluluk fork'udur.
+Bu proje, **[SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer)** (MIT) temel alınarak geliştirilmiş bir topluluk fork'udur. Odak noktası **tamamen meşru antrenman yönetimi**dir: oyuncu özellikleri, moral, kondisyon, bütçe ya da mevki bilgisi gibi değerlere **asla dokunulmaz**.
 
-### Öne Çıkan Özellikler
-- **Opsiyonel BepInEx Köprüsü (`FM27Trainer.Bridge.dll`):** OCR'a gerek kalmadan FM27'nin kendi `TeamTactic.TacticalEffectiveness` verisini doğrudan oyunun içinden okur — **4 ana bileşen ve 17 kilit faktörün tamamı 0–100 tam sayı hassasiyetiyle**.
-- **Türkçe Arayüz & OCR Düzeltmesi:** Sistem dilinden otomatik Türkçe algılama (`Türkçe / English / Nederlands`) ve Türkçe OCR'daki kısa *"Pas Stili"* etiketi kesilme hatasının giderilmesi (`17/17` hatasız okuma).
-- **%100 Saf Hilesiz Antrenman Sürümü:** Tüm editör/hile sekmeleri (`Kulüp`, `Kadro`, `Transferler`) ve yazma komutları (`bütçe, iyileştir, ceza kaldır, moral, taktik %100, al/sat`) uygulamadan tamamen kaldırılmıştır — teknik olarak yalnızca antrenman takvimine yazabilir.
-- **İlişkiler Odaklı Oyuncu Benimsemesi (`Buy-In`):** `Takım Kaynaşması` yalnızca antrenmanla artabilen *Takım Arkadaşları ve Personel İlişkileri* skoruna göre tetiklenir; ilişkiler çok düşükse (`< %45`) maç ertesi güne otomatik `Sosyal Yardımlaşma (Community Outreach)` de eklenir.
-- **Taktik Tarzı (`TacticMode`):** *Otomatik / Gegenpress / Tiki-Taka / Kanat & Hızlı Hücum / Savunma & Kontra* — taktik aşamasında dengeli öncelik (`1.25×` / `0.90×`), Gelişim modunda seçili oyun tarzına özel 7 seanslık gelişim havuzu.
-- **Özel Kamp Modları (`CampMode`):** *Standart / Kondisyon Kampı (1 hafta) / Oyuncu Gelişim Kampı / Derbi & Final Kampı (1 hafta)* — düşük kadro kondisyonu veya `2+` maçlı haftalarda güvenlik korumaları her zaman öncelikli çalışır.
-- **Akıllı Otomatik Korumalar:**
-  - Sağlıklı kadro ortalama kondisyonu eşiğin (varsayılan `%78`) altına düştüğünde veya haftada `2+` maç olduğunda otomatik **Daha fazla dinlenme (`Light`)**.
-  - 8 taktik alanın tamamı eşiğin (varsayılan `%85`) üstüne çıktığında otomatik **Gelişim modu**; herhangi biri düştüğünde tekrar taktiğe dönüş.
-  - Fikstürdeki maçsız haftaları otomatik **Milli Ara / Kış Arası** olarak tanıma.
-  - **Antrenmanı otomatik planda tut:** FM yardımcı antrenörünün haftalık takvimi bozmasına karşı 8 saniyede bir kontrol edip geri yükler.
-- **Haftalık 5 Metrikli Etki Özeti:** Her hafta kartının altında FM27'nin gerçek 59 seans verisine göre *Kondisyon, Yorgunluk, Mutluluk, Sakatlık Riski ve Keskinlik* özeti.
-- **Otomatik Takvim Doğrulaması:** Yeni FM27 yamalarında takvim yapısı 7 aşamalı kontrolden geçtiğinde (ardışık haftalar, geçerli seans kodları, eski bayt kontrolü ve geri alma) yalnızca antrenman takvimi yazımına güvenle izin verir; diğer tüm editör yazmaları kilitli kalır.
+### Hilesizlik ilkesi
+
+| Uygulama ne yapar | Uygulama ne yapmaz |
+|---|---|
+| FM'nin kendi antrenman takvimine seans yazar | Oyuncu özelliği / moral / kondisyon / keskinlik değiştirmez |
+| FM'nin kendi *Bireysel Antrenman* menüsü olayıyla yoğunluk seçer | Bütçe, transfer, sakatlık, ceza, taktik anlayış düzenlemez |
+| Kadro, kondisyon ve taktik verimliliğini **salt-okunur** okur | Kulüp / Kadro / Transfer editör ekranı içermez |
+
+### Özellikler
+
+**1. Takım antrenmanı otomasyonu**
+- 17 Taktiksel Verimlilik faktörüne göre en zayıf alanlara odaklanan haftalık plan.
+- **Taktik tarzı:** *Otomatik / Gegenpress / Tiki-Taka / Kanat & Hızlı Hücum / Savunma & Kontra*.
+- **Kamp modları:** *Standart / Kondisyon Kampı / Oyuncu Gelişim Kampı / Derbi & Final Kampı*.
+- **Otomatik korumalar:**
+  - Kadro kondisyonu düşükse (varsayılan `%78`) veya haftada `2+` maç varsa otomatik *Daha fazla dinlenme*.
+  - 8 taktik alanın tamamı `%85` üstündeyse otomatik *Gelişim modu*; biri düşünce taktiğe geri dönüş.
+  - Maçsız haftaları *Milli Ara / Kış Arası* olarak tanıma.
+  - Benimseme (*Buy-In*) için *Takım Kaynaşması* ve ilişkiler `%45` altındaysa *Sosyal Yardımlaşma*.
+- **Planı koru:** FM yardımcısı takvimi bozarsa 8 saniyede bir kontrol edip geri yükler.
+- **Haftalık etki özeti:** Her hafta için *Kondisyon, Yorgunluk, Mutluluk, Sakatlık Riski, Keskinlik*.
+
+**2. Bireysel & Darboğaz sekmesi (yeni)**
+- **Taktiği kim aşağı çekiyor?** Her oyuncunun taktik verimliliği en düşükten yükseğe sıralanır. *Taktik Anlayış, Rol Uyumu, Oyuncu Kalitesi* ve *Benimseme* skorlarından en zayıfı "ana darboğaz" olarak gösterilir ve pratik bir öneri verilir. `<65` filtresiyle yalnızca sorunlu oyuncular listelenebilir.
+- **Sakatlık önleyici akıllı bireysel yoğunluk** (*Yarı / Normal / Çift*): yaş, kondisyon, maç keskinliği, sakatlık ve haftalık maç sayısına göre öneri:
+  - Sakat veya kondisyon `<%70` → *Yarı* + maçta dinlendirme uyarısı.
+  - Kondisyon `<%80` → *Yarı*.
+  - `32+` yaş → en fazla *Normal*; yoğun haftada *Yarı*.
+  - `2+` maçlı hafta → *Çift* kapalı (yalnızca diri ama ritimsiz rotasyon oyuncularına açık).
+  - Rahat hafta + diri genç oyuncu → *Çift* (gelişim).
+- Tek tıkla toplu uygulama, satır bazlı *Yarı / Normal / Çift* butonları ve isteğe bağlı otomatik koruma.
+
+> [!NOTE]
+> Bilinçli olarak **oyuncuları otomatik olarak taktikteki role zorlayan** bir özellik eklenmedi; yedek oyuncuların hiç uygun olmadığı rollere itilmesini önlemek için rol antrenmanı kararı menajerde kalır.
+
+**3. BepInEx köprüsü — OCR'sız kesin okuma (opsiyonel)**
+- `FM27Trainer.Bridge.dll` (v0.6.0), FM27'nin kendi `TeamTactic.TacticalEffectiveness` verisini oyunun içinden okur: **4 bileşen + 17 faktör, 0–100 tam sayı**, ve oyuncu bazlı skorlar.
+- Bireysel yoğunluk değişikliklerini FM'nin resmi `EventFmxPlayerTrainingIntensityLevelChanged` olayıyla gönderir (bellek yazımı yok).
+- Köprü yoksa ekran okuma (OCR) yedek olarak çalışmaya devam eder.
+
+**4. Arayüz**
+- Türkçe / English / Nederlands; sistem dilinden otomatik seçim.
+- Türkçe OCR'da kısa etiket (*"Pas Stili"*) kesilme hatası düzeltildi.
 
 ### Kurulum (Windows)
-1. **[Releases](../../releases/latest)** sayfasından **`FM27 Trainer.exe`** dosyasını indirip doğrudan çalıştırın (ek kurulum gerekmez).
-2. *(Opsiyonel — OCR'sız 17/17 kesin okuma için)* Oyununuzda BepInEx 6 (Unity IL2CPP) kuruluysa **`FM27Trainer.Bridge.dll`** dosyasını `<FM27>\BepInEx\plugins\FM27Trainer.Bridge\` klasörüne kopyalayıp FM27'yi yeniden başlatın.
-3. FM27'yi açıp kaydınızı yükleyin; uygulama otomatik bağlanır.
+1. **[Releases](../../releases/latest)** sayfasından **`FM27 Trainer.exe`** dosyasını indirip çalıştırın.
+2. *(Önerilen)* FM27'de BepInEx 6 (Unity IL2CPP) kuruluysa **`FM27Trainer.Bridge.dll`** dosyasını `<FM27>\BepInEx\plugins\FM27Trainer.Bridge\` klasörüne kopyalayın ve oyunu yeniden başlatın.
+3. FM27'de kaydınızı yükleyin; uygulama otomatik bağlanır.
+4. Oyuncu darboğaz tablosunun dolması için oyunda **Taktiksel Verimlilik** ekranını bir kez açın.
 
 ---
 
 <a name="english"></a>
 ## 🇬🇧 English
 
-A community fork of **[SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer)** (MIT License) focused on legitimate, hands-free training automation, exact OCR-free Tactical Effectiveness reading via an optional BepInEx 6 bridge, and full Turkish support.
+A community fork of **[SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer)** (MIT) focused on **fully legitimate training management**. Player attributes, morale, condition, finances and positional familiarity are **never modified**.
 
-### Key Features
-- **Optional BepInEx Bridge (`FM27Trainer.Bridge.dll`):** Reads FM27's `TeamTactic.TacticalEffectiveness` directly from the game — all **4 components and 17 key factors with exact 0–100 integer precision**, without needing OCR.
-- **Turkish UI & OCR Fix:** Full Turkish interface (`Türkçe / English / Nederlands`) with automatic OS locale detection and fixed pie-gauge cutoff for short Turkish labels (*"Pas Stili"*).
-- **100% Training-Only Build (No Cheats):** All editor/cheat tabs (`Club`, `Squad`, `Transfers`) and write commands (`finances, heal, lift bans, morale, max familiarity, buy/sell`) are completely removed from the release binary — it can technically only write to the training calendar.
-- **Relationships-Focused Player Buy-In:** `Team Bonding` targets only the trainable *Teammates and Staff Relationships* score (never wasting sharpness on untrainable *Managerial Support*), and adds `Community Outreach` on post-match days when relationships drop below `45%`.
-- **Tactic Style (`TacticMode`):** *Auto / Gegenpress / Possession / Wing & Fast Attack / Low Block & Counter* with balanced priority weights (`1.25×` / `0.90×`) and a style-specific development session pool.
-- **Special Camp Modes (`CampMode`):** 1-week scoped *Fitness Camp* and *Derby & Final Prep* plus *Player Development*, always yielding to fatigue/congestion safety guards.
-- **Automated Training Guards:**
-  - Auto *More rest (`Light`)* when healthy squad condition drops below threshold (default `78%`) or in weeks with `2+` matches.
-  - Auto switch to player development once all 8 tactical areas exceed threshold (default `85%`), switching back automatically if any area drops.
-  - Automatic *International Break / Winter Break* detection on 0-match weeks.
-  - Automatic calendar protection (*Keep training on plan automatically*) against FM's assistant overwriting upcoming weeks.
-- **Weekly 5-Metric Impact Summary:** Displays *Condition, Fatigue, Happiness, Injury Risk, Sharpness* totals on every week card using FM27's official 59-session data.
-- **Auto-Verified Training Calendar Writes:** Safely allows training-only calendar writes on newer FM27 builds once all structural safety checks pass (ascending Monday weeks, valid session codes, byte-level check & undo), while keeping all other editor writes read-only.
+### No-cheat principle
+
+| The app does | The app never does |
+|---|---|
+| Write sessions into FM's own training calendar | Change attributes / morale / condition / sharpness |
+| Set intensity through FM's own *Individual Training* UI event | Edit finances, transfers, injuries, bans or tactical familiarity |
+| Read squad, condition and tactical effectiveness **read-only** | Ship any Club / Squad / Transfer editor pages |
+
+### Features
+
+**1. Team training automation**
+- Weekly plans targeting your weakest of the 17 Tactical Effectiveness factors.
+- **Tactic style:** *Auto / Gegenpress / Possession / Wing & Fast Attack / Low Block & Counter*.
+- **Camp modes:** *Standard / Fitness Camp / Player Development / Derby & Final Prep*.
+- **Automatic guards:** extra rest on low squad condition (default `78%`) or `2+` match weeks; development mode once all 8 tactical areas exceed `85%`; international/winter break detection; relationship-focused Buy-In sessions.
+- **Keep on plan:** restores your plan every 8 seconds if FM's assistant overwrites it.
+- **Weekly impact summary:** *Condition, Fatigue, Happiness, Injury Risk, Sharpness* per week.
+
+**2. Individual & Bottlenecks tab (new)**
+- **Who drags the tactic down?** Players sorted from lowest to highest tactical effectiveness, with their weakest component (*Understanding, Role Suitability, Capability, Buy-In*) and practical advice. Optional `<65` filter.
+- **Smart injury-safe individual intensity** (*Half / Normal / Double*) based on age, condition, match sharpness, injury status and weekly fixture load. Veterans (`32+`) are capped at *Normal*; *Double* is disabled in `2+` match weeks except for fresh, under-sharp rotation players.
+- One-click bulk apply, per-row quick buttons and an optional auto-guard toggle.
+
+> [!NOTE]
+> There is intentionally **no automatic forcing of players into tactic roles**, so backups are never pushed into roles that do not suit them.
+
+**3. Optional BepInEx bridge — exact OCR-free reading**
+- `FM27Trainer.Bridge.dll` (v0.6.0) reads FM27's own `TeamTactic.TacticalEffectiveness` (4 components + 17 factors, exact 0–100) plus per-player scores.
+- Sends individual intensity changes via FM's official `EventFmxPlayerTrainingIntensityLevelChanged` event (no memory writes).
+- Screen OCR remains available as a fallback.
+
+**4. Interface**
+- Turkish / English / Dutch with automatic OS locale detection.
 
 ### Install (Windows)
-1. Download **`FM27 Trainer.exe`** from **[Releases](../../releases/latest)** and run it directly.
-2. *(Optional — for exact OCR-free 17/17 reading)* If you have BepInEx 6 (Unity IL2CPP) installed, drop **`FM27Trainer.Bridge.dll`** into `<FM27>\BepInEx\plugins\FM27Trainer.Bridge\` and restart FM27.
+1. Download **`FM27 Trainer.exe`** from **[Releases](../../releases/latest)** and run it.
+2. *(Recommended)* With BepInEx 6 (Unity IL2CPP) installed, copy **`FM27Trainer.Bridge.dll`** into `<FM27>\BepInEx\plugins\FM27Trainer.Bridge\` and restart FM27.
+3. Load your save; the app connects automatically.
+4. Open the **Tactical Effectiveness** screen in FM once to populate the per-player bottleneck table.
 
-### Build from Source
+### Build from source
 ```bash
 # Desktop app (Rust stable)
 cargo build --release -p fm27-trainer
+cargo test --workspace
 
 # Optional BepInEx 6 IL2CPP bridge (.NET 8 SDK)
 dotnet build bridge/FM27Trainer.Bridge.csproj -c Release -p:FM27Dir="PATH_TO_FM27"
 ```
 
+### Project layout
+| Path | Purpose |
+|---|---|
+| `app/` | Desktop app (egui): planner, training, individual tab, OCR |
+| `agent/` | Read-only FM27 memory reader + verified training-calendar writer |
+| `bridge/` | Optional BepInEx 6 IL2CPP plugin (tactical data + intensity events) |
+
 ---
 
 ## Credits & License
 
-- **Original project:** [SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer) by **Sem Hiel** (MIT License).
+- **Original project:** [SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer) by **Sem Hiel** (MIT).
 - **Research & layouts:** FMSuperScout, FMLibreEditor, fm-lens, fmsave. Font: Inter (SIL OFL). Icons: Phosphor (MIT). See [THIRD_PARTY.md](THIRD_PARTY.md).
 - **License:** [MIT](LICENSE)

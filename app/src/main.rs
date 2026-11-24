@@ -5,6 +5,7 @@ mod export;
 mod gui;
 mod i18n;
 mod i18n_tr;
+mod individual;
 mod labels;
 mod live;
 mod live_training;

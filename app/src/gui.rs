@@ -11,6 +11,7 @@ use std::sync::mpsc;
 use crate::agent;
 use crate::export;
 use crate::i18n::{self, Lang};
+use crate::individual::{self, IndividualState};
 use crate::live::LiveState;
 use crate::live_training;
 use crate::model::{Component, Effectiveness, Factor, category_of, level_color, level_name, session_by_code};
@@ -72,6 +73,9 @@ struct Settings {
     /// Hilesiz mod: editör/hile ekranlarını (Kulüp, Kadro, Transfer) gizler ve arka planda %100 kilidini kapatır.
     #[serde(default = "yes")]
     no_cheat_mode: bool,
+    /// Kondisyon değiştikçe önerilen sakatlık önleyici bireysel yoğunluğu otomatik uygula.
+    #[serde(default)]
+    auto_individual_intensity: bool,
     #[serde(default = "ten")]
     auto_read_secs: u32,
     /// Bij meer dan één manager in de save: de UID van de club van de manager die de app bedient.
@@ -85,7 +89,7 @@ struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { lang: i18n::detect(), rate: 1.17, capture_delay: true, auto_training: true, allow_untested: false, keep_understanding: false, auto_read: false, auto_memory_sync: false, no_cheat_mode: true, auto_read_secs: 10, manager_club: None, training_team: None, planner: PlannerSettings::default() }
+        Settings { lang: i18n::detect(), rate: 1.17, capture_delay: true, auto_training: true, allow_untested: false, keep_understanding: false, auto_read: false, auto_memory_sync: false, no_cheat_mode: true, auto_individual_intensity: false, auto_read_secs: 10, manager_club: None, training_team: None, planner: PlannerSettings::default() }
     }
 }
 
@@ -229,6 +233,7 @@ fn read_bepinex_dump() -> Option<(Effectiveness, String)> {
 enum Page {
     Overview,
     Training,
+    Individual,
     Planning,
     Tactics,
     Settings,
@@ -277,6 +282,7 @@ struct App {
     /// Son okunan BepInEx dump zaman damgası
     last_bepinex_utc: String,
     last_bepinex_check: std::time::Instant,
+    individual: IndividualState,
     /// de tactiek die de tactiekpagina toont (None: de tactiek die in FM in gebruik is)
     tactic_pick: Option<usize>,
     tactics_asked: bool,
@@ -304,11 +310,14 @@ impl App {
         // FM27_PAGE=training|planning|tactics|settings opent direct die pagina (handig bij testen)
         let page = match std::env::var("FM27_PAGE").unwrap_or_default().as_str() {
             "training" => Page::Training,
+            "individual" => Page::Individual,
             "planning" => Page::Planning,
             "tactics" => Page::Tactics,
             "settings" => Page::Settings,
             _ => Page::Overview,
         };
+        let mut individual = IndividualState::default();
+        individual.auto_apply_intensity = settings.auto_individual_intensity;
         App {
             page,
             shown_page: None,
@@ -345,6 +354,7 @@ impl App {
             memory_sync_pending: false,
             last_bepinex_utc: String::new(),
             last_bepinex_check: std::time::Instant::now() - std::time::Duration::from_secs(10),
+            individual,
             frames: 0,
         }
     }
@@ -511,6 +521,7 @@ impl App {
                 let items = [
                     (Page::Overview, icon::GAUGE, t!("Overzicht", "Overview")),
                     (Page::Training, icon::BARBELL, t!("Training", "Training")),
+                    (Page::Individual, icon::USERS_THREE, t!("Individueel", "Individual", "Bireysel")),
                     (Page::Planning, icon::CALENDAR_DOTS, t!("Planning", "Planning")),
                     (Page::Tactics, icon::STRATEGY, t!("Tactiek", "Tactics")),
                     (Page::Settings, icon::GEAR_SIX, t!("Instellingen", "Settings")),
@@ -647,9 +658,40 @@ impl App {
             return;
         };
         if !explicit && updated == self.last_bepinex_utc {
+            // Kadro isimleri sonradan yüklendiyse eksik oyuncu isimlerini tamamla
+            if !self.individual.bottlenecks.is_empty() && !self.live.squad.is_empty() {
+                for b in &mut self.individual.bottlenecks {
+                    if b.name.starts_with("Oyuncu #") || b.name == "—" {
+                        if let Some(n) = self.live.squad.iter().find(|p| p.get("runtime_id").and_then(|v| v.as_u64()) == Some(b.runtime_id as u64)).and_then(|p| p.get("name")).and_then(|v| v.as_str()) {
+                            b.name = n.to_string();
+                        }
+                    }
+                }
+            }
             return;
         }
         self.last_bepinex_utc = updated;
+        if let Ok(text) = std::fs::read_to_string(bepinex_dump_file()) {
+            if let Ok(root) = serde_json::from_str::<serde_json::Value>(&text) {
+                let mut names = std::collections::HashMap::new();
+                for p in &self.live.squad {
+                    if let (Some(rid), Some(n)) = (
+                        p.get("runtime_id").and_then(|v| v.as_u64()),
+                        p.get("name").and_then(|v| v.as_str()),
+                    ) {
+                        if rid > 0 {
+                            names.insert(rid as u32, n.to_string());
+                        }
+                    }
+                }
+                let (bottlenecks, intensities, ready) = individual::parse_bepinex_individual(&root, &names);
+                self.individual.bottlenecks = bottlenecks;
+                for (rid, lvl) in intensities {
+                    self.individual.current_intensities.insert(rid, lvl);
+                }
+                self.individual.session_ready = ready;
+            }
+        }
         let changed = !same_values(&self.eff, &next);
         if let Some(d) = self.live.club.as_ref().and_then(|c| c.get("today")) {
             let y = d.get("year").and_then(|x| x.as_i64());
@@ -1883,6 +1925,8 @@ impl eframe::App for App {
         {
             self.last_bepinex_check = std::time::Instant::now();
             self.sync_from_bepinex(false);
+            self.individual.poll_result();
+            self.individual.maybe_auto_apply(&self.live);
         }
         self.last_memory_rev = self.live.memory_rev;
         let _ = (self.settings.auto_memory_sync, self.memory_sync_pending);
@@ -1903,6 +1947,18 @@ impl eframe::App for App {
                     match self.page {
                         Page::Overview => self.page_overview(ui, ctx),
                         Page::Training => self.page_training(ui, ctx),
+                        Page::Individual => {
+                            let mut read_bep = false;
+                            let mut save_auto = false;
+                            individual::render_page(ui, ctx, &mut self.individual, &mut self.live, &mut read_bep, &mut save_auto);
+                            if read_bep {
+                                self.sync_from_bepinex(true);
+                            }
+                            if save_auto {
+                                self.settings.auto_individual_intensity = self.individual.auto_apply_intensity;
+                                self.save_settings();
+                            }
+                        }
                         Page::Planning => self.page_planning(ui),
                         Page::Tactics => self.page_tactics(ui, ctx),
                         Page::Settings => self.page_settings(ui),
