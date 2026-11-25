@@ -20,6 +20,7 @@ mkdir -p dist
 DMG="$PWD/dist/FM27-Training-Assistant-macOS.dmg"
 
 echo "▸ FM27 Training Assistant $VERSION"
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$PWD=/src --remap-path-prefix=$HOME=/home"
 for T in aarch64-apple-darwin x86_64-apple-darwin; do
   cargo build --release -p fm27-trainer -p fm27-agent --target "$T"
 done

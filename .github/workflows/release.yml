@@ -64,7 +64,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace
-      - run: cargo build --release -p fm27-trainer
+      - name: Build release binary (path-clean)
+        shell: pwsh
+        run: |
+          $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = "-C target-feature=+crt-static --remap-path-prefix=$($env:USERPROFILE)\.cargo=/cargo --remap-path-prefix=$($PWD.Path)=/src --remap-path-prefix=$($env:USERPROFILE)=/home"
+          cargo build --release -p fm27-trainer
       - name: Package
         shell: pwsh
         run: |

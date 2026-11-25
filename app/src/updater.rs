@@ -30,7 +30,7 @@ pub struct ReleaseInfo {
 pub enum UpdateStatus {
     Idle,
     Checking,
-    UpToDate { checked_version: String },
+    UpToDate,
     Available(ReleaseInfo),
     Downloading { version: String },
     Applying { version: String },
@@ -113,49 +113,43 @@ impl UpdaterState {
             }
         }
 
-        if let Some(rx) = &self.rx_check {
-            if let Ok(res) = rx.try_recv() {
-                self.rx_check = None;
-                match res {
-                    Ok(Some(info)) => {
-                        let has_asset = info.asset.is_some();
-                        self.status = UpdateStatus::Available(info.clone());
-                        if auto_update && has_asset {
-                            self.start_install(ctx, info);
-                        }
+        if let Some(res) = self.rx_check.as_ref().and_then(|rx| rx.try_recv().ok()) {
+            self.rx_check = None;
+            match res {
+                Ok(Some(info)) => {
+                    let has_asset = info.asset.is_some();
+                    self.status = UpdateStatus::Available(info.clone());
+                    if auto_update && has_asset {
+                        self.start_install(ctx, info);
                     }
-                    Ok(None) => {
-                        self.status = UpdateStatus::UpToDate {
-                            checked_version: CURRENT_VERSION.to_string(),
-                        };
-                    }
-                    Err(e) => {
-                        self.status = UpdateStatus::Error(e);
-                    }
+                }
+                Ok(None) => {
+                    self.status = UpdateStatus::UpToDate;
+                }
+                Err(e) => {
+                    self.status = UpdateStatus::Error(e);
                 }
             }
         }
 
-        if let Some(rx) = &self.rx_install {
-            if let Ok(res) = rx.try_recv() {
-                self.rx_install = None;
-                match res {
-                    Ok(InstallOutcome::Restarting) => {
-                        let version = match &self.status {
-                            UpdateStatus::Downloading { version } | UpdateStatus::Applying { version } => {
-                                version.clone()
-                            }
-                            _ => CURRENT_VERSION.to_string(),
-                        };
-                        self.status = UpdateStatus::Applying { version };
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                    Ok(InstallOutcome::Manual { message }) => {
-                        self.status = UpdateStatus::InstalledManual { message };
-                    }
-                    Err(e) => {
-                        self.status = UpdateStatus::Error(e);
-                    }
+        if let Some(res) = self.rx_install.as_ref().and_then(|rx| rx.try_recv().ok()) {
+            self.rx_install = None;
+            match res {
+                Ok(InstallOutcome::Restarting) => {
+                    let version = match &self.status {
+                        UpdateStatus::Downloading { version } | UpdateStatus::Applying { version } => {
+                            version.clone()
+                        }
+                        _ => CURRENT_VERSION.to_string(),
+                    };
+                    self.status = UpdateStatus::Applying { version };
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                Ok(InstallOutcome::Manual { message }) => {
+                    self.status = UpdateStatus::InstalledManual { message };
+                }
+                Err(e) => {
+                    self.status = UpdateStatus::Error(e);
                 }
             }
         }
@@ -418,12 +412,12 @@ fn download_and_install(info: &ReleaseInfo) -> Result<InstallOutcome, String> {
 
     #[cfg(windows)]
     {
-        return install_windows(&dl_path, &updates_dir);
+        install_windows(&dl_path, &updates_dir)
     }
 
     #[cfg(target_os = "macos")]
     {
-        return install_macos(&dl_path, &updates_dir);
+        install_macos(&dl_path, &updates_dir)
     }
 
     #[cfg(not(any(windows, target_os = "macos")))]
@@ -472,6 +466,22 @@ fn install_windows(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome,
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     let current_exe = std::env::current_exe().map_err(|e| format!("Uygulama yolu alınamadı: {e}"))?;
+    if let Some(parent) = current_exe.parent() {
+        let probe = parent.join(".fm27_update_probe");
+        if std::fs::write(&probe, b"").is_ok() {
+            let _ = std::fs::remove_file(&probe);
+        } else {
+            let _ = Command::new("explorer.exe")
+                .arg(format!("/select,{}", dl_path.display()))
+                .spawn();
+            return Ok(InstallOutcome::Manual {
+                message: format!(
+                    "Bu klasöre yazma izni yok; güncelleme paketi indirildi ve açıldı: {}",
+                    dl_path.display()
+                ),
+            });
+        }
+    }
     let staging = updates_dir.join("staging");
     let lower = dl_path
         .file_name()

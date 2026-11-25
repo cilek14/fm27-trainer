@@ -5,6 +5,9 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <Deterministic>true</Deterministic>
     <FM27Dir Condition="'$(FM27Dir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Football Manager 27</FM27Dir>
   </PropertyGroup>
 

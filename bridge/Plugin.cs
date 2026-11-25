@@ -391,6 +391,34 @@ internal static class InteropChannelPatches
         }
     }
 
+    private static bool HarvestFocusOptionsFromRecord(Record rec, int depth)
+    {
+        if (depth > 3) return false;
+        var added = false;
+        var optId = -1;
+        string? optName = null;
+        var en = rec.GetEnumerator();
+        while (en.MoveNext())
+        {
+            var kv = en.Current;
+            if (kv.Key == KeyOptionId && TryExtractInt(kv.Value, out var id))
+                optId = id;
+            else if (kv.Key == KeyOptionName)
+                optName = kv.Value?.AsString()?.Trim();
+            else if (HarvestFocusOptions(kv.Value, depth + 1))
+                added = true;
+        }
+        if (optId >= 0 && optId <= 100 && !string.IsNullOrWhiteSpace(optName))
+        {
+            if (!FocusOptions.TryGetValue(optId, out var prev) || prev != optName)
+            {
+                FocusOptions[optId] = optName!;
+                added = true;
+            }
+        }
+        return added;
+    }
+
     private static bool HarvestFocusOptions(TypedValue? tv, int depth)
     {
         if (tv == null || tv.IsNull || depth > 3) return false;
@@ -402,32 +430,9 @@ internal static class InteropChannelPatches
 
             var rec = obj.TryCast<Record>();
             if (rec != null)
-            {
-                var optId = -1;
-                string? optName = null;
-                var en = rec.GetEnumerator();
-                while (en.MoveNext())
-                {
-                    var kv = en.Current;
-                    if (kv.Key == KeyOptionId && TryExtractInt(kv.Value, out var id))
-                        optId = id;
-                    else if (kv.Key == KeyOptionName)
-                        optName = kv.Value?.AsString()?.Trim();
-                    else if (HarvestFocusOptions(kv.Value, depth + 1))
-                        added = true;
-                }
-                if (optId >= 0 && optId <= 100 && !string.IsNullOrWhiteSpace(optName))
-                {
-                    if (!FocusOptions.TryGetValue(optId, out var prev) || prev != optName)
-                    {
-                        FocusOptions[optId] = optName!;
-                        added = true;
-                    }
-                }
-                return added;
-            }
+                return HarvestFocusOptionsFromRecord(rec, depth);
 
-            var items = TryEnumerateItems(TypedValue.Create(obj));
+            var items = TryEnumerateItems(tv);
             if (items != null)
             {
                 var limit = Math.Min(items.Count, 80);
@@ -442,7 +447,7 @@ internal static class InteropChannelPatches
                         continue;
                     }
                     var itemRec = cur.TryCast<Record>();
-                    if (itemRec != null && HarvestFocusOptions(TypedValue.Create(itemRec), depth + 1))
+                    if (itemRec != null && HarvestFocusOptionsFromRecord(itemRec, depth + 1))
                         added = true;
                 }
             }

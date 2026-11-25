@@ -85,7 +85,7 @@ FM27'de her hafta antrenman takvimi kurmak, yorgun oyuncuları kollamak ve eksik
 
 #### Windows (10 / 11)
 1. **[İndirme sayfasından](../../releases/latest)** Windows arşivini indirip çıkarın ve **`FM27 Training Assistant.exe`** dosyasını çalıştırın (kurulum gerektirmez).
-2. *(Önerilen — İsteğe bağlı BepInEx eklentisi `v0.7.0`)* Oyununda **BepInEx 6 (Unity IL2CPP)** kuruluysa `FM27Trainer.Bridge.dll` dosyasını şu klasöre kopyalayıp FM27'yi yeniden başlatın:
+2. *(Önerilen — İsteğe bağlı BepInEx eklentisi `v0.7.1`)* Oyununda **BepInEx 6 (Unity IL2CPP)** kuruluysa `FM27Trainer.Bridge.dll` dosyasını şu klasöre kopyalayıp FM27'yi yeniden başlatın:
    ```text
    <FM27 klasörü>\BepInEx\plugins\FM27Trainer.Bridge\
    ```
@@ -183,7 +183,7 @@ Managing training schedules, player fatigue and individual development by hand e
 
 #### Windows (10 / 11)
 1. Download the Windows archive from **[Releases](../../releases/latest)**, extract it, and run **`FM27 Training Assistant.exe`** (portable, no installer needed).
-2. *(Recommended — Optional BepInEx Plugin `v0.7.0`)* If you have **BepInEx 6 (Unity IL2CPP)** installed, copy **`FM27Trainer.Bridge.dll`** into `<FM27 folder>\BepInEx\plugins\FM27Trainer.Bridge\` and restart FM27.
+2. *(Recommended — Optional BepInEx Plugin `v0.7.1`)* If you have **BepInEx 6 (Unity IL2CPP)** installed, copy **`FM27Trainer.Bridge.dll`** into `<FM27 folder>\BepInEx\plugins\FM27Trainer.Bridge\` and restart FM27.
 3. Load your save in FM27 — the app connects automatically:
    - Open **Tactical Effectiveness** in FM once to populate the per-player bottleneck list.
    - Open **Individual Training** in FM once to enable one-click **Additional Focus** writes.
@@ -235,7 +235,7 @@ dotnet build bridge/FM27Trainer.Bridge.csproj -c Release -p:FM27Dir="PATH_TO_FM2
 |---|---|
 | `app/` | Desktop app: planner, training, history trend chart, individual & tactics tabs, OCR |
 | `agent/` | Read-only FM27 memory reader + structurally verified training-calendar writer |
-| `bridge/` | Optional BepInEx 6 IL2CPP plugin (`v0.7.0`): exact tactical data + intensity/focus events |
+| `bridge/` | Optional BepInEx 6 IL2CPP plugin (`v0.7.1`): exact tactical data + intensity/focus events |
 
 Technical notes: [docs/TECHNICAL.md](docs/TECHNICAL.md)
 

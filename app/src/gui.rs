@@ -2,7 +2,7 @@
 
 use anyhow::{Result, anyhow};
 use chrono::{Duration, NaiveDate, Weekday};
-use eframe::egui::{self, Color32, CornerRadius, Frame, Margin, RichText, ScrollArea, Stroke, Ui, vec2};
+use eframe::egui::{self, CornerRadius, Frame, Margin, RichText, ScrollArea, Stroke, Ui, vec2};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -531,7 +531,7 @@ impl App {
             .show(ctx, |ui| {
                 // haarlijn tussen zijbalk en inhoud
                 let edge = ui.max_rect().expand2(vec2(14.0, 20.0));
-                ui.painter().vline(edge.right() - 0.5, edge.y_range(), Stroke::new(1.0, theme::BORDER));
+                ui.painter().vline(edge.right() - 0.5, edge.y_range(), Stroke::new(1.0_f32, theme::BORDER));
                 ui.horizontal(|ui| {
                     theme::brand_logo(ui, 40.0);
                     ui.add_space(2.0);
@@ -575,7 +575,7 @@ impl App {
                         self.save_settings();
                     }
                     ui.add_space(10.0);
-                    Frame::new().fill(theme::SURFACE).stroke(Stroke::new(1.0, theme::BORDER)).corner_radius(CornerRadius::same(12)).inner_margin(Margin::same(12)).show(ui, |ui| {
+                    Frame::new().fill(theme::SURFACE).stroke(Stroke::new(1.0_f32, theme::BORDER)).corner_radius(CornerRadius::same(12)).inner_margin(Margin::same(12)).show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.horizontal(|ui| {
                             let (c, txt) = if !agent::LIVE_SUPPORTED {
@@ -601,7 +601,7 @@ impl App {
             return;
         }
         let (c, ic) = if error { (theme::DANGER, icon::WARNING) } else { (theme::INFO, icon::CHECK_CIRCLE) };
-        Frame::new().fill(theme::tint(c, 0.12)).stroke(Stroke::new(1.0, theme::tint(c, 0.4))).corner_radius(CornerRadius::same(10)).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
+        Frame::new().fill(theme::tint(c, 0.12)).stroke(Stroke::new(1.0_f32, theme::tint(c, 0.4))).corner_radius(CornerRadius::same(10)).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_wrapped(|ui| {
                 ui.label(theme::ic(ic).color(c));
@@ -935,8 +935,8 @@ impl App {
             ui,
             "Training",
             t!(
-                "FM27 Trainer plant je training op je zwakste gebieden en houdt hem in FM's kalender vast.",
-                "FM27 Trainer plans your training on your weakest areas and keeps it in FM's calendar."
+                "FM27 Training Assistant plant je training op je zwakste gebieden en houdt hem in FM's kalender vast.",
+                "FM27 Training Assistant plans your training on your weakest areas and keeps it in FM's calendar."
             ),
             |ui| {
                 if theme::primary_button(ui, icon::LIGHTNING, t!("Zet training nu in FM", "Apply training now"), can).clicked() {
@@ -1014,7 +1014,7 @@ impl App {
         let accent = if auto && connected { theme::SUCCESS } else { theme::WARNING };
         Frame::new()
             .fill(theme::tint(accent, 0.10))
-            .stroke(Stroke::new(1.0, theme::tint(accent, 0.45)))
+            .stroke(Stroke::new(1.0_f32, theme::tint(accent, 0.45)))
             .corner_radius(CornerRadius::same(14))
             .inner_margin(Margin::same(18))
             .show(ui, |ui| {
@@ -1037,8 +1037,8 @@ impl App {
                             )
                         } else if auto {
                             t!(
-                                "FM's assistent plant elke week de komende 1–2 weken opnieuw in. FM27 Trainer controleert elke 8 seconden en zet afwijkingen terug naar jouw plan. Laat de app open terwijl je speelt.",
-                                "FM's assistant re-plans the next 1–2 weeks every week. FM27 Trainer checks every 8 seconds and puts any change back on your plan. Keep the app open while you play."
+                                "FM's assistent plant elke week de komende 1–2 weken opnieuw in. FM27 Training Assistant controleert elke 8 seconden en zet afwijkingen terug naar jouw plan. Laat de app open terwijl je speelt.",
+                                "FM's assistant re-plans the next 1–2 weeks every week. FM27 Training Assistant checks every 8 seconds and puts any change back on your plan. Keep the app open while you play."
                             )
                         } else {
                             t!(
@@ -1795,7 +1795,7 @@ impl App {
                     UpdateStatus::Checking => {
                         theme::pill(ui, t!("Controleren…", "Checking…", "Denetleniyor…"), theme::INFO);
                     }
-                    UpdateStatus::UpToDate { .. } => {
+                    UpdateStatus::UpToDate => {
                         theme::pill(ui, t!("Up-to-date", "Up to date", "Güncel"), theme::SUCCESS);
                     }
                     UpdateStatus::Available(info) => {
@@ -2103,8 +2103,8 @@ impl App {
                     ui.label(RichText::new(t!("Aanpassen op een niet-geteste FM-versie", "Allow changes on an untested FM build")).strong());
                 });
                 ui.add(egui::Label::new(theme::dim(t!(
-                    "FM27 Trainer past alleen iets aan op FM-versies die het kent (Steam op Windows en Mac, Game Pass / Xbox-app op Windows). Op andere versies (na een FM-update, of bijvoorbeeld Epic) staat de app op alleen lezen. Kloppen club, budget en selectie in de app met wat FM laat zien? Dan kun je aanpassen hier toestaan. Elke wijziging wordt eerst gecontroleerd, kan ongedaan worden gemaakt en blijft pas bewaard als je in FM opslaat. Maak eerst een backup van je save.",
-                    "FM27 Trainer only changes things on FM builds it knows (Steam on Windows and Mac, Game Pass / Xbox app on Windows). On other builds (after an FM update, or Epic for example) the app is read-only. Do club, budget and squad in the app match what FM shows? Then you can allow changes here. Every change is checked first, can be undone and only sticks once you save in FM. Back up your save first."
+                    "FM27 Training Assistant past alleen iets aan op FM-versies die het kent (Steam op Windows en Mac, Game Pass / Xbox-app op Windows). Op andere versies (na een FM-update, of bijvoorbeeld Epic) staat de app op alleen lezen. Kloppen club, budget en selectie in de app met wat FM laat zien? Dan kun je aanpassen hier toestaan. Elke wijziging wordt eerst gecontroleerd, kan ongedaan worden gemaakt en blijft pas bewaard als je in FM opslaat. Maak eerst een backup van je save.",
+                    "FM27 Training Assistant only changes things on FM builds it knows (Steam on Windows and Mac, Game Pass / Xbox app on Windows). On other builds (after an FM update, or Epic for example) the app is read-only. Do club, budget and squad in the app match what FM shows? Then you can allow changes here. Every change is checked first, can be undone and only sticks once you save in FM. Back up your save first."
                 )))
                 .wrap());
                 if self.live.connected {
@@ -2151,8 +2151,8 @@ impl App {
             ui.label(theme::h2(t!("Steun de ontwikkeling", "Support development")));
             ui.add_space(6.0);
             ui.add(egui::Label::new(theme::dim(t!(
-                "FM27 Trainer is gratis en blijft gratis. Wil je iets terugdoen voor het werk, dan kan dat met een donatie. Alle functies werken ook zonder.",
-                "FM27 Trainer is free and stays free. If you want to give something back for the work, you can donate. Every feature works without it."
+                "FM27 Training Assistant is gratis en blijft gratis. Wil je iets terugdoen voor het werk, dan kan dat met een donatie. Alle functies werken ook zonder.",
+                "FM27 Training Assistant is free and stays free. If you want to give something back for the work, you can donate. Every feature works without it."
             )))
             .wrap());
             ui.add_space(6.0);
@@ -2445,7 +2445,7 @@ fn plan_grid(ui: &mut Ui, p: &WeekPlan) {
 fn legend(ui: &mut Ui) {
     use crate::model::Category::*;
     ui.horizontal_wrapped(|ui| {
-        ui.label(theme::faint(t!("Omlijnd = door FM27 Trainer gezet · doorgestreept = wat FM wilde ·", "Outlined = set by FM27 Trainer · struck through = what FM wanted ·")));
+        ui.label(theme::faint(t!("Omlijnd = door FM27 Training Assistant gezet · doorgestreept = wat FM wilde ·", "Outlined = set by FM27 Training Assistant · struck through = what FM wanted ·")));
         for c in [TacticalUnderstanding, MatchPreparation, FootballingDevelopment, PhysicalRecovery, ExtraCurricular, Fixed] {
             theme::status_dot(ui, theme::rgb(c.color()));
             ui.label(theme::faint(c.display_label()));

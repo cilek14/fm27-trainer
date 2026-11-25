@@ -6,4 +6,5 @@ __pycache__/
 /FM27 Trainer.exe
 /bridge/bin/
 /bridge/obj/
+/release/
 *.zip

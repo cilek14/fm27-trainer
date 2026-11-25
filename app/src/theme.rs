@@ -159,37 +159,37 @@ pub fn install(ctx: &egui::Context) {
         v.extreme_bg_color = Color32::from_rgb(8, 9, 12);
         v.faint_bg_color = Color32::from_rgb(22, 25, 33);
         v.code_bg_color = SURFACE2;
-        v.window_stroke = Stroke::new(1.0, BORDER);
+        v.window_stroke = Stroke::new(1.0_f32, BORDER);
         v.window_corner_radius = CornerRadius::same(14);
         v.menu_corner_radius = CornerRadius::same(10);
         v.window_shadow = Shadow { offset: [0, 10], blur: 30, spread: 0, color: Color32::from_black_alpha(110) };
         v.popup_shadow = Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(100) };
         v.selection.bg_fill = ACCENT;
-        v.selection.stroke = Stroke::new(1.0, Color32::WHITE);
+        v.selection.stroke = Stroke::new(1.0_f32, Color32::WHITE);
         v.hyperlink_color = ACCENT;
         v.striped = false;
         let r = CornerRadius::same(9);
         let w = &mut v.widgets;
         w.noninteractive.bg_fill = SURFACE;
         w.noninteractive.weak_bg_fill = SURFACE;
-        w.noninteractive.bg_stroke = Stroke::new(1.0, BORDER);
-        w.noninteractive.fg_stroke = Stroke::new(1.0, TEXT);
+        w.noninteractive.bg_stroke = Stroke::new(1.0_f32, BORDER);
+        w.noninteractive.fg_stroke = Stroke::new(1.0_f32, TEXT);
         w.noninteractive.corner_radius = r;
         w.inactive.bg_fill = SURFACE2;
         w.inactive.weak_bg_fill = SURFACE2;
-        w.inactive.bg_stroke = Stroke::new(1.0, BORDER);
-        w.inactive.fg_stroke = Stroke::new(1.0, TEXT);
+        w.inactive.bg_stroke = Stroke::new(1.0_f32, BORDER);
+        w.inactive.fg_stroke = Stroke::new(1.0_f32, TEXT);
         w.inactive.corner_radius = r;
         w.hovered.bg_fill = HOVER;
         w.hovered.weak_bg_fill = HOVER;
-        w.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(58, 64, 82));
-        w.hovered.fg_stroke = Stroke::new(1.5, Color32::WHITE);
+        w.hovered.bg_stroke = Stroke::new(1.0_f32, Color32::from_rgb(58, 64, 82));
+        w.hovered.fg_stroke = Stroke::new(1.5_f32, Color32::WHITE);
         w.hovered.corner_radius = r;
         w.hovered.expansion = 0.0;
         w.active.bg_fill = ACCENT_SOFT;
         w.active.weak_bg_fill = ACCENT_SOFT;
-        w.active.bg_stroke = Stroke::new(1.0, ACCENT);
-        w.active.fg_stroke = Stroke::new(1.5, Color32::WHITE);
+        w.active.bg_stroke = Stroke::new(1.0_f32, ACCENT);
+        w.active.fg_stroke = Stroke::new(1.5_f32, Color32::WHITE);
         w.active.corner_radius = r;
         w.active.expansion = 0.0;
         w.open = w.active;
@@ -274,7 +274,7 @@ pub fn brand_logo(ui: &mut Ui, size: f32) {
 pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     Frame::new()
         .fill(SURFACE)
-        .stroke(Stroke::new(1.0, BORDER))
+        .stroke(Stroke::new(1.0_f32, BORDER))
         .corner_radius(CornerRadius::same(16))
         .inner_margin(Margin::same(20))
         .show(ui, |ui| {
@@ -522,7 +522,7 @@ pub fn segmented_full<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: 
 pub fn session_chip(ui: &mut Ui, text: &str, color: Color32, highlight: bool) -> Response {
     Frame::new()
         .fill(tint(color, if highlight { 0.30 } else { 0.14 }))
-        .stroke(if highlight { Stroke::new(1.0, color) } else { Stroke::NONE })
+        .stroke(if highlight { Stroke::new(1.0_f32, color) } else { Stroke::NONE })
         .corner_radius(CornerRadius::same(6))
         .inner_margin(Margin::symmetric(6, 2))
         .show(ui, |ui| {
