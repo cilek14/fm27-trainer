@@ -30,6 +30,26 @@ impl Component {
         }
     }
 
+    /// Arayüzde seçili dile göre gösterilen bileşen adı.
+    pub fn display_label_for(self, lang: crate::i18n::Lang) -> &'static str {
+        use crate::i18n::Lang::*;
+        match (lang, self) {
+            (Nl, Component::TacticalUnderstanding) => "Tactisch begrip",
+            (Nl, Component::PlayerAbility) => "Spelerskwaliteit",
+            (Nl, Component::PlayerBuyIn) => "Spelersdraagvlak",
+            (Nl, Component::NextMatchInfo) => "Volgende wedstrijd",
+            (Tr, Component::TacticalUnderstanding) => "Taktiksel Anlayış",
+            (Tr, Component::PlayerAbility) => "Oyuncu Yeteneği",
+            (Tr, Component::PlayerBuyIn) => "Oyuncu Benimsemesi",
+            (Tr, Component::NextMatchInfo) => "Sonraki Maç Bilgisi",
+            (En, _) => self.label(),
+        }
+    }
+
+    pub fn display_label(self) -> &'static str {
+        self.display_label_for(crate::i18n::get())
+    }
+
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -118,6 +138,36 @@ impl Factor {
             Factor::QualityOfNextOppositionReport => "Quality of Next Opposition Report",
             Factor::OppositionPlayerKnowledge => "Opposition Player Knowledge",
         }
+    }
+
+    /// Arayüzde seçili dile göre gösterilen faktör adı (Türkçe FM27 karşılıkları).
+    pub fn display_label_for(self, lang: crate::i18n::Lang) -> &'static str {
+        if lang != crate::i18n::Lang::Tr {
+            return self.label();
+        }
+        match self {
+            Factor::InPossessionShape => "Topa Sahipken Diziliş",
+            Factor::PassingStyle => "Pas Stili",
+            Factor::BuildUp => "Oyun Kurma",
+            Factor::ChanceCreation => "Pozisyon Üretme",
+            Factor::OutOfPossessionShape => "Topsuz Alanda Diziliş",
+            Factor::LineOfEngagement => "Karşılama Çizgisi",
+            Factor::PressingIntensity => "Pres Şiddeti",
+            Factor::PressingTrap => "Pres Tuzağı",
+            Factor::PlayerTacticalAbility => "Oyuncu Taktik Yeteneği",
+            Factor::TacticalComplexity => "Taktiksel Karmaşıklık",
+            Factor::PlayerCapability => "Oyuncu Yeterliliği",
+            Factor::PlayerRoleSuitability => "Oyuncu Rol Uygunluğu",
+            Factor::ManagerialSupport => "Menajer Desteği",
+            Factor::TeammatesAndStaffRelationships => "Takım & Personel İlişkileri",
+            Factor::ManagerTendencies => "Menajer Eğilimleri",
+            Factor::QualityOfNextOppositionReport => "Rakip Raporu Kalitesi",
+            Factor::OppositionPlayerKnowledge => "Rakip Oyuncu Bilgisi",
+        }
+    }
+
+    pub fn display_label(self) -> &'static str {
+        self.display_label_for(crate::i18n::get())
     }
 
     pub fn component(self) -> Component {
@@ -218,6 +268,24 @@ impl Category {
             Category::ExtraCurricular => "Extra-Curricular",
             Category::Fixed => "Match / Travel",
         }
+    }
+
+    pub fn display_label_for(self, lang: crate::i18n::Lang) -> &'static str {
+        if lang != crate::i18n::Lang::Tr {
+            return self.label();
+        }
+        match self {
+            Category::TacticalUnderstanding => "Taktiksel Anlayış",
+            Category::MatchPreparation => "Maç Hazırlığı",
+            Category::FootballingDevelopment => "Futbol Gelişimi",
+            Category::PhysicalRecovery => "Fiziksel ve Toparlanma",
+            Category::ExtraCurricular => "Takım Dışı / Sosyal",
+            Category::Fixed => "Maç / Seyahat",
+        }
+    }
+
+    pub fn display_label(self) -> &'static str {
+        self.display_label_for(crate::i18n::get())
     }
 
     /// Kleur voor de GUI en de HTML-export (RGB).
@@ -350,6 +418,83 @@ pub fn session_by_code(code: u16) -> Option<&'static str> {
     SESSIONS.iter().map(|s| s.name).find(|n| session_code(n) == Some(code))
 }
 
+/// 62 FM27 antrenman seansının kullanıcı arayüzünde gösterilecek dil karşılığı.
+/// Canonical İngilizce ad (`SESSIONS[i].name`) planlayıcı ve bellek kodları için aynen korunur.
+pub fn session_display_name_for<'a>(canonical: &'a str, lang: crate::i18n::Lang) -> &'a str {
+    if lang != crate::i18n::Lang::Tr {
+        return canonical;
+    }
+    match canonical {
+        "Passing Style" => "Pas Stili",
+        "Build Up" => "Oyun Kurma",
+        "Chance Creation" => "Pozisyon Üretme",
+        "In Possession Shape" => "Topa Sahipken Diziliş",
+        "Line of Engagement" => "Karşılama Çizgisi",
+        "Pressing Intensity" => "Pres Şiddeti",
+        "Pressing Trap" => "Pres Tuzağı",
+        "Out Of Possession Shape" => "Topsuz Alanda Diziliş",
+        "Press Avoidance" => "Presten Çıkış",
+        "Ball Progression" => "Topu İleri Taşıma",
+        "Final Third" => "Üçüncü Bölge",
+        "Defensive Block" => "Savunma Bloğu",
+        "Defensive Positioning" => "Savunma Pozisyonu",
+        "Defensive Engagement" => "Savunma Baskısı",
+        "Corners" => "Kornerler",
+        "Free Kicks" => "Serbest Vuruşlar",
+        "Penalties" => "Penaltılar",
+        "Individual Development" => "Bireysel Gelişim",
+        "Attacking Ball Work" => "Hücum Topla Çalışma",
+        "Defensive Ball Work" => "Savunma Topla Çalışma",
+        "Possession Ball Work" => "Topa Sahip Olma",
+        "Attacking - Balanced" => "Hücum - Dengeli",
+        "Attacking - Patient" => "Hücum - Sabırlı",
+        "Attacking - Direct" => "Hücum - Direkt",
+        "Attacking - Wings" => "Hücum - Kanatlar",
+        "Defending - Balanced" => "Savunma - Dengeli",
+        "Defending - Engaged" => "Savunma - Baskılı",
+        "Defending - Disengaged" => "Savunma - Geri Çekilen",
+        "Defending - Wide" => "Savunma - Geniş",
+        "Theory - Attacking Shadow Play" => "Teori - Hücum Gölge Oyunu",
+        "Theory - Defensive Shadow Play" => "Teori - Savunma Gölge Oyunu",
+        "Technical - Chance Creation" => "Teknik - Pozisyon Üretme",
+        "Technical - Chance Conversion" => "Teknik - Gol Vuruşu",
+        "Technical - Ball Retention" => "Teknik - Top Tutma",
+        "Technical - Ground Defence" => "Teknik - Yerden Savunma",
+        "Technical - Aerial Defence" => "Teknik - Hava Savunması",
+        "Transition - Restrict" => "Geçiş - Kısıtla",
+        "Transition - Press" => "Geçiş - Pres",
+        "Transition - Progress" => "Geçiş - İlerle",
+        "GK - Balanced" => "Kaleci - Dengeli",
+        "GK - Shot Stopping" => "Kaleci - Şut Kurtarma",
+        "GK - Handling" => "Kaleci - Elle Kontrol",
+        "GK - One On Ones" => "Kaleci - Birebir",
+        "GK - Distribution" => "Kaleci - Oyuna Sokma",
+        "Set Pieces - Delivery" => "Duran Top - Orta",
+        "Set Pieces - Penalties" => "Duran Top - Penaltılar",
+        "Rest" => "Dinlenme",
+        "Recovery" => "Rejenerasyon",
+        "Light Conditioning" => "Hafif Kondisyon",
+        "Conditioning" => "Kondisyon",
+        "Heavy Conditioning" => "Ağır Kondisyon",
+        "Rest (IM)" => "Dinlenme (Maç Arası)",
+        "Recovery (IM)" => "Rejenerasyon (Maç Arası)",
+        "Light Conditioning (IM)" => "Hafif Kondisyon (Maç Arası)",
+        "Team Bonding" => "Takım Kaynaşması",
+        "Community Outreach" => "Sosyal Yardımlaşma",
+        "Travel" => "Seyahat",
+        "Match" => "Maç",
+        "Not Available" => "Müsait Değil",
+        "Match Preparation" => "Maç Hazırlığı",
+        "Tactical Understanding IP" => "Taktik Anlayış (Topla)",
+        "Tactical Understanding OOP" => "Taktik Anlayış (Topsuz)",
+        _ => canonical,
+    }
+}
+
+pub fn session_display_name(canonical: &str) -> &str {
+    session_display_name_for(canonical, crate::i18n::get())
+}
+
 pub fn category_of(name: &str) -> Category {
     session(name).map(|s| s.category).unwrap_or(Category::Fixed)
 }
@@ -462,4 +607,53 @@ pub fn level_color(score: f32) -> [u8; 3] {
         }
     }
     [60, 200, 90]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tr_display_labels_cover_all_components_and_factors() {
+        use crate::i18n::Lang;
+
+        for c in Component::ALL {
+            let tr = c.display_label_for(Lang::Tr);
+            assert!(!tr.is_empty());
+            assert_ne!(tr, c.label(), "component {} should have Turkish label", c.label());
+        }
+        for f in Factor::ALL {
+            let tr = f.display_label_for(Lang::Tr);
+            assert!(!tr.is_empty());
+            assert_ne!(tr, f.label(), "factor {} should have Turkish label", f.label());
+        }
+        for cat in [
+            Category::TacticalUnderstanding,
+            Category::MatchPreparation,
+            Category::FootballingDevelopment,
+            Category::PhysicalRecovery,
+            Category::ExtraCurricular,
+            Category::Fixed,
+        ] {
+            let tr = cat.display_label_for(Lang::Tr);
+            assert!(!tr.is_empty());
+            assert_ne!(tr, cat.label(), "category {} should have Turkish label", cat.label());
+        }
+        // Canonical session keys must remain unchanged for FM27 session lookups.
+        for f in Factor::TACTICAL_AREAS {
+            assert!(session(f.label()).is_some(), "missing session for {}", f.label());
+        }
+    }
+
+    #[test]
+    fn tr_session_names_cover_all_sessions() {
+        use crate::i18n::Lang;
+
+        for s in SESSIONS {
+            let tr = session_display_name_for(s.name, Lang::Tr);
+            assert!(!tr.is_empty(), "empty Turkish name for {}", s.name);
+            assert_ne!(tr, s.name, "session {} should have a Turkish translation", s.name);
+            assert_eq!(session_display_name_for(s.name, Lang::En), s.name);
+        }
+    }
 }

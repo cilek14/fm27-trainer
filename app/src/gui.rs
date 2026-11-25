@@ -10,6 +10,7 @@ use std::sync::mpsc;
 
 use crate::agent;
 use crate::export;
+use crate::history;
 use crate::i18n::{self, Lang};
 use crate::individual::{self, IndividualState};
 use crate::live::LiveState;
@@ -31,14 +32,14 @@ pub fn run() -> Result<()> {
         .unwrap_or([1320.0, 880.0]);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("FM27 Trainer")
+            .with_title("FM27 Training Assistant")
             .with_inner_size(size)
             .with_min_inner_size([1040.0, 660.0])
             .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon/icon_256.png")).unwrap_or_default()),
         ..Default::default()
     };
     eframe::run_native(
-        "FM27 Trainer",
+        "FM27 Training Assistant",
         options,
         Box::new(|cc| {
             theme::install(&cc.egui_ctx);
@@ -76,6 +77,9 @@ struct Settings {
     /// Kondisyon değiştikçe önerilen sakatlık önleyici bireysel yoğunluğu otomatik uygula.
     #[serde(default)]
     auto_individual_intensity: bool,
+    /// Bireysel yoğunluk profili (Korumacı / Dengeli / Gelişim Odaklı).
+    #[serde(default)]
+    intensity_profile: individual::IntensityProfile,
     #[serde(default = "ten")]
     auto_read_secs: u32,
     /// Bij meer dan één manager in de save: de UID van de club van de manager die de app bedient.
@@ -89,7 +93,7 @@ struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { lang: i18n::detect(), rate: 1.17, capture_delay: true, auto_training: true, allow_untested: false, keep_understanding: false, auto_read: false, auto_memory_sync: false, no_cheat_mode: true, auto_individual_intensity: false, auto_read_secs: 10, manager_club: None, training_team: None, planner: PlannerSettings::default() }
+        Settings { lang: i18n::detect(), rate: 1.17, capture_delay: true, auto_training: true, allow_untested: false, keep_understanding: false, auto_read: false, auto_memory_sync: false, no_cheat_mode: true, auto_individual_intensity: false, intensity_profile: individual::IntensityProfile::default(), auto_read_secs: 10, manager_club: None, training_team: None, planner: PlannerSettings::default() }
     }
 }
 
@@ -283,6 +287,7 @@ struct App {
     last_bepinex_utc: String,
     last_bepinex_check: std::time::Instant,
     individual: IndividualState,
+    history: history::HistoryStore,
     /// de tactiek die de tactiekpagina toont (None: de tactiek die in FM in gebruik is)
     tactic_pick: Option<usize>,
     tactics_asked: bool,
@@ -318,10 +323,12 @@ impl App {
         };
         let mut individual = IndividualState::default();
         individual.auto_apply_intensity = settings.auto_individual_intensity;
+        individual.profile = settings.intensity_profile;
         App {
             page,
             shown_page: None,
             eff: crate::load_effectiveness().unwrap_or_default(),
+            history: history::HistoryStore::load(),
             settings,
             status: String::new(),
             status_error: false,
@@ -406,6 +413,16 @@ impl App {
         !self.eff.source.is_empty()
     }
 
+    fn club_history_key(&self) -> String {
+        self.live
+            .club
+            .as_ref()
+            .and_then(|c| c.get("uid"))
+            .and_then(|v| v.as_u64())
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| "default".to_string())
+    }
+
     // -------------------------------------------------------------------- analyse
 
     fn start_analysis(&mut self, ctx: &egui::Context, file: Option<PathBuf>) {
@@ -462,12 +479,16 @@ impl App {
                         }
                     }
                     let _ = crate::save_effectiveness(&self.eff);
+                    let hkey = self.club_history_key();
+                    if self.history.record(&hkey, &self.eff) {
+                        self.history.save();
+                    }
                     let mut msg = t!(format!("{} van 17 meters gelezen.", a.gauges.len()), format!("Read {} of 17 gauges.", a.gauges.len())).to_string();
                     if !a.lang.starts_with("english") {
                         msg.push_str(&format!(" (FM: {})", a.lang));
                     }
                     // een meting die niet bij de kleur van de meter past: laten nakijken
-                    let doubts: Vec<&str> = a.gauges.iter().filter(|g| g.doubt).map(|g| g.factor.label()).collect();
+                    let doubts: Vec<&str> = a.gauges.iter().filter(|g| g.doubt).map(|g| g.factor.display_label()).collect();
                     if !doubts.is_empty() {
                         msg.push(' ');
                         msg.push_str(&t!(
@@ -506,13 +527,12 @@ impl App {
                 let edge = ui.max_rect().expand2(vec2(14.0, 20.0));
                 ui.painter().vline(edge.right() - 0.5, edge.y_range(), Stroke::new(1.0, theme::BORDER));
                 ui.horizontal(|ui| {
-                    Frame::new().fill(theme::ACCENT).corner_radius(CornerRadius::same(11)).inner_margin(Margin::same(7)).show(ui, |ui| {
-                        ui.label(theme::ic(icon::SOCCER_BALL).size(20.0).color(Color32::WHITE));
-                    });
+                    theme::brand_logo(ui, 40.0);
+                    ui.add_space(2.0);
                     ui.vertical(|ui| {
                         ui.add_space(1.0);
-                        ui.label(RichText::new("FM27 Trainer").font(egui::FontId::new(16.0, theme::bold())).color(theme::TEXT));
-                        ui.label(theme::faint("Tactical Effectiveness"));
+                        ui.label(RichText::new("FM27 Training").font(egui::FontId::new(15.0, theme::bold())).color(theme::TEXT));
+                        ui.label(RichText::new("Assistant").font(egui::FontId::new(12.5, theme::semibold())).color(theme::SUCCESS));
                     });
                 });
                 ui.add_space(22.0);
@@ -536,7 +556,7 @@ impl App {
                     ui.label(theme::faint(format!("v{}", env!("CARGO_PKG_VERSION"))));
                     ui.add_space(6.0);
                     let mut lang = self.settings.lang;
-                    if theme::segmented(ui, &mut lang, &[(Lang::Tr, "Türkçe"), (Lang::En, "English"), (Lang::Nl, "Nederlands")]) {
+                    if theme::segmented_full(ui, &mut lang, &[(Lang::Tr, "TR", "Türkçe"), (Lang::En, "EN", "English"), (Lang::Nl, "NL", "Nederlands")]) {
                         self.settings.lang = lang;
                         i18n::set(lang);
                         self.save_settings();
@@ -684,12 +704,15 @@ impl App {
                         }
                     }
                 }
-                let (bottlenecks, intensities, ready) = individual::parse_bepinex_individual(&root, &names);
-                self.individual.bottlenecks = bottlenecks;
-                for (rid, lvl) in intensities {
+                let parsed = individual::parse_bepinex_individual(&root, &names);
+                self.individual.bottlenecks = parsed.bottlenecks;
+                for (rid, lvl) in parsed.intensities {
                     self.individual.current_intensities.insert(rid, lvl);
                 }
-                self.individual.session_ready = ready;
+                for (id, name) in parsed.focus_options {
+                    self.individual.focus_options.insert(id, name);
+                }
+                self.individual.session_ready = parsed.session_ready;
             }
         }
         let changed = !same_values(&self.eff, &next);
@@ -702,6 +725,10 @@ impl App {
         }
         self.eff = next;
         let _ = crate::save_effectiveness(&self.eff);
+        let hkey = self.club_history_key();
+        if self.history.record(&hkey, &self.eff) {
+            self.history.save();
+        }
         if changed {
             self.week_plan = None;
             self.year.clear();
@@ -731,7 +758,11 @@ impl App {
         let mut read = false;
         let mut read_bep = false;
         let mut file = false;
-        theme::page_header(ui, "Tactical Effectiveness", &subtitle, |ui| {
+        theme::page_header(
+            ui,
+            t!("Tactical Effectiveness", "Tactical Effectiveness", "Taktiksel Verimlilik"),
+            &subtitle,
+            |ui| {
             if theme::button(ui, icon::EXPORT, t!("Uit bestand", "From file"), !busy).clicked() {
                 file = true;
             }
@@ -802,13 +833,25 @@ impl App {
         let (msg, err) = (self.status.clone(), self.status_error);
         self.status_line(ui, &msg, err);
 
+        let hkey = self.club_history_key();
+        let diff = self.history.previous_diff(&hkey, &self.eff);
+
         // onderdelen
         ui.columns(4, |cols| {
             for (i, c) in Component::ALL.iter().enumerate() {
                 let v = self.eff.component(*c);
                 let col = theme::rgb(level_color(v));
                 let ic = [icon::TARGET, icon::SOCCER_BALL, icon::USERS_THREE, icon::EYE][i];
-                theme::stat_tile(&mut cols[i], ic, c.label(), &format!("{v:.0}"), level_name(v), col, Some(v));
+                theme::stat_tile_delta(
+                    &mut cols[i],
+                    ic,
+                    c.display_label(),
+                    &format!("{v:.0}"),
+                    level_name(v),
+                    col,
+                    Some(v),
+                    diff.map(|d| d.components[i]),
+                );
             }
         });
         ui.add_space(14.0);
@@ -819,11 +862,12 @@ impl App {
             for (i, c) in Component::ALL.iter().enumerate() {
                 let ui = &mut cols[i];
                 theme::card(ui, |ui| {
-                    ui.label(theme::caps(c.label()));
+                    ui.label(theme::caps(c.display_label()));
                     ui.add_space(6.0);
                     for f in Factor::ALL.iter().filter(|f| f.component() == *c) {
                         let v = self.eff.get(*f);
-                        theme::metric_row(ui, f.label(), v, theme::rgb(level_color(v)));
+                        let fd = diff.and_then(|d| Factor::ALL.iter().position(|x| x == f).map(|idx| d.factors[idx]));
+                        theme::metric_row_delta(ui, f.display_label(), v, theme::rgb(level_color(v)), fd);
                         if self.edit_mode {
                             let mut nv = v;
                             if ui.add(egui::Slider::new(&mut nv, 0.0..=100.0).show_value(false)).changed() && (nv - v).abs() > 0.01 {
@@ -857,13 +901,15 @@ impl App {
             ui.add_space(6.0);
             for (f, v) in self.eff.weakest().into_iter().take(6) {
                 ui.horizontal(|ui| {
-                    ui.add_sized(vec2(250.0, 20.0), egui::Label::new(theme::label_strong(f.label())));
+                    ui.add_sized(vec2(250.0, 20.0), egui::Label::new(theme::label_strong(f.display_label())));
                     theme::pill(ui, &format!("{v:.0} · {}", level_name(v)), theme::rgb(level_color(v)));
                     ui.add(egui::Label::new(theme::dim(f.advice())).wrap());
                 });
                 ui.add_space(4.0);
             }
         });
+        ui.add_space(14.0);
+        history::render_trend_card(ui, self.history.points(&hkey));
     }
 
     // -------------------------------------------------------------------- training
@@ -1035,7 +1081,7 @@ impl App {
             step_card(&mut cols[1], 2, icon::TARGET, t!("Plannen", "Plan"), |ui| {
                 ui.label(theme::dim(t!("Extra aandacht voor:", "Extra focus on:")));
                 for (f, v) in self.eff.weakest().into_iter().filter(|(f, _)| f.is_tactical_area()).take(3) {
-                    theme::pill(ui, &format!("{} · {v:.0}", f.label()), theme::rgb(level_color(v)));
+                    theme::pill(ui, &format!("{} · {v:.0}", f.display_label()), theme::rgb(level_color(v)));
                 }
                 ui.add(egui::Label::new(theme::faint(t!(
                     "Het ritme rond wedstrijden volgt SI's presets; de focus schuift per week mee.",
@@ -1192,10 +1238,10 @@ impl App {
         let mut tab = self.plan_tab;
         theme::page_header(
             ui,
-            "Planning",
+            t!("Planning", "Planning", "Planlama"),
             t!("Week- en seizoensplan als overzicht en export (werkt ook zonder module).", "Weekly and season plan as overview and export (works without the module)."),
             |ui| {
-                theme::segmented(ui, &mut tab, &[(PlanTab::Week, "Week"), (PlanTab::Season, t!("Seizoen", "Season"))]);
+                theme::segmented(ui, &mut tab, &[(PlanTab::Week, t!("Week", "Week", "Hafta")), (PlanTab::Season, t!("Seizoen", "Season"))]);
             },
         );
         self.plan_tab = tab;
@@ -1246,7 +1292,13 @@ impl App {
             theme::card(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(theme::h2(&p.schedule_name));
-                    theme::pill(ui, &format!("Focus: {}", p.focus), theme::ACCENT);
+                    let pf = match p.focus {
+                        "In Possession" => t!("Balbezit", "In Possession", "Topa Sahipken"),
+                        "Out Of Possession" => t!("Balverlies", "Out Of Possession", "Topsuz Alanda"),
+                        "Full Week of Rest" => t!("Rustweek", "Full Week of Rest", "Tam Dinlenme"),
+                        _ => t!("Gebalanceerd", "Balanced", "Dengeli"),
+                    };
+                    theme::pill(ui, &format!("{}: {}", t!("Focus", "Focus", "Odak"), pf), theme::ACCENT);
                 });
                 ui.add_space(8.0);
                 plan_grid(ui, p);
@@ -1956,6 +2008,7 @@ impl eframe::App for App {
                             }
                             if save_auto {
                                 self.settings.auto_individual_intensity = self.individual.auto_apply_intensity;
+                                self.settings.intensity_profile = self.individual.profile;
                                 self.save_settings();
                             }
                         }
@@ -2020,12 +2073,22 @@ fn chip_name(name: &str) -> String {
         .replace("Individual Development", "Individual")
         .replace("Line of Engagement", "Line of Eng.")
         .replace("Pressing Intensity", "Press. Intensity")
+        .replace("Topa Sahipken Diziliş", "Topla Diziliş")
+        .replace("Topsuz Alanda Diziliş", "Topsuz Diziliş")
+        .replace("Taktik Anlayış (Topla)", "Taktik (Topla)")
+        .replace("Taktik Anlayış (Topsuz)", "Taktik (Topsuz)")
+        .replace("Hücum Topla Çalışma", "Hücum Top")
+        .replace("Savunma Topla Çalışma", "Savunma Top")
+        .replace("Hafif Kondisyon", "Hafif Kond.")
+        .replace("Ağır Kondisyon", "Ağır Kond.")
 }
 
 fn chip(ui: &mut Ui, name: &str, highlight: bool, faded: bool) {
     let col = if name == "Match" { theme::DANGER } else { theme::rgb(category_of(name).color()) };
     let col = if faded { theme::tint(col, 0.45) } else { col };
-    theme::session_chip(ui, &chip_name(name), col, highlight).on_hover_text(name);
+    let disp = crate::model::session_display_name(name);
+    let hover = if disp != name { format!("{disp} ({name})") } else { name.to_string() };
+    theme::session_chip(ui, &chip_name(disp), col, highlight).on_hover_text(hover);
 }
 
 fn step_card(ui: &mut Ui, n: u8, icon_s: &str, title: &str, body: impl FnOnce(&mut Ui)) {
@@ -2043,7 +2106,13 @@ fn step_card(ui: &mut Ui, n: u8, icon_s: &str, title: &str, body: impl FnOnce(&m
 }
 
 fn codes_text(c: &[u16; 3]) -> String {
-    c.iter().map(|x| chip_name(session_by_code(*x).unwrap_or("?"))).collect::<Vec<_>>().join(" · ")
+    c.iter()
+        .map(|x| {
+            let name = session_by_code(*x).unwrap_or("?");
+            chip_name(crate::model::session_display_name(name))
+        })
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 fn week_card(ui: &mut Ui, w: &live_training::WeekPreview, today: Option<NaiveDate>, fm_had: &std::collections::HashMap<NaiveDate, [u16; 3]>) {
@@ -2058,7 +2127,13 @@ fn week_card(ui: &mut Ui, w: &live_training::WeekPreview, today: Option<NaiveDat
             if matches!(w.kind, WeekKind::InternationalBreak | WeekKind::WinterBreak | WeekKind::PreSeasonEarly | WeekKind::PreSeasonMid | WeekKind::PreSeasonLate) {
                 theme::pill(ui, w.kind.label(), theme::INFO);
             }
-            theme::pill(ui, &w.focus, theme::ACCENT);
+            let focus_label = match w.focus.as_str() {
+                "In Possession" => t!("Balbezit", "In Possession", "Topa Sahipken"),
+                "Out Of Possession" => t!("Balverlies", "Out Of Possession", "Topsuz Alanda"),
+                "Full Week of Rest" => t!("Rustweek", "Full Week of Rest", "Tam Dinlenme"),
+                _ => t!("Gebalanceerd", "Balanced", "Dengeli"),
+            };
+            theme::pill(ui, focus_label, theme::ACCENT);
             let pending = (0..7).filter(|d| w.current[*d] != w.planned[*d]).count();
             if w.written > 0 {
                 theme::pill(ui, &t!(format!("{} dagen teruggezet", w.written), format!("{} days restored", w.written)), theme::SUCCESS);
@@ -2145,7 +2220,7 @@ fn legend(ui: &mut Ui) {
         ui.label(theme::faint(t!("Omlijnd = door FM27 Trainer gezet · doorgestreept = wat FM wilde ·", "Outlined = set by FM27 Trainer · struck through = what FM wanted ·")));
         for c in [TacticalUnderstanding, MatchPreparation, FootballingDevelopment, PhysicalRecovery, ExtraCurricular, Fixed] {
             theme::status_dot(ui, theme::rgb(c.color()));
-            ui.label(theme::faint(c.label()));
+            ui.label(theme::faint(c.display_label()));
             ui.add_space(8.0);
         }
     });

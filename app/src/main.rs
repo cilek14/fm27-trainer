@@ -3,6 +3,7 @@
 mod agent;
 mod export;
 mod gui;
+mod history;
 mod i18n;
 mod i18n_tr;
 mod individual;

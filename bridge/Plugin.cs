@@ -16,7 +16,7 @@ using SI.Interop;
 
 namespace FM27Trainer.Bridge;
 
-[BepInPlugin("com.fm27trainer.bridge", "FM27 Trainer Bridge", "0.6.0")]
+[BepInPlugin("com.fm27trainer.bridge", "FM27 Training Assistant Bridge", "0.7.0")]
 public sealed class Plugin : BasePlugin
 {
     internal static ManualLogSource LogSource = null!;
@@ -36,7 +36,7 @@ public sealed class Plugin : BasePlugin
         Directory.CreateDirectory(OutDir);
         _harmony = new Harmony("com.fm27trainer.bridge");
         _harmony.PatchAll(typeof(InteropChannelPatches));
-        Log.LogInfo("FM27 Trainer Bridge 0.6.0 loaded. Watching TacticalEffectiveness + Players + Legitimate Intensity Events.");
+        Log.LogInfo("FM27 Training Assistant Bridge 0.7.0 loaded. Watching TacticalEffectiveness + Players + Intensity/Focus Events.");
     }
 }
 
@@ -44,6 +44,7 @@ internal enum ChannelKind
 {
     TacticalEffectiveness,
     PlayerIntensity,
+    FocusOptions,
 }
 
 internal sealed record ChannelInfo(ChannelKind Kind, string RefName, string PropertyName, uint RuntimeId = 0);
@@ -52,12 +53,20 @@ internal sealed class IntensityCommandPayload
 {
     public uint manager_runtime_id { get; set; }
     public List<IntensityCommandItem>? items { get; set; }
+    public List<FocusCommandItem>? focus_items { get; set; }
 }
 
 internal sealed class IntensityCommandItem
 {
     public uint runtime_id { get; set; }
     public int level { get; set; }
+}
+
+internal sealed class FocusCommandItem
+{
+    public uint runtime_id { get; set; }
+    public int option_id { get; set; }
+    public string? name { get; set; }
 }
 
 internal static class InteropChannelPatches
@@ -70,6 +79,11 @@ internal static class InteropChannelPatches
     private const int PersonTag = 0x01000000;
 
     private const uint EventPlayerIntensityChanged = 1735948081u; // InteropEventIDs.EventFmxPlayerTrainingIntensityLevelChanged
+    private const uint EventPlayerFocusChanged = 1280659764u;     // InteropEventIDs.EventFmxPlayerTrainingFocusChanged
+    private const uint KeyFocusFlagA = 1299866233u;
+    private const uint KeyFocusFlagB = 1500668246u;
+    private const uint KeyFocusInner = 1916366157u;
+
     private const uint KeyOptionId = 1886680684u;
     private const uint KeyOptionName = 1903577654u;
     private const uint KeyConfirmFlagA = 1215644527u;
@@ -77,6 +91,7 @@ internal static class InteropChannelPatches
 
     private static readonly ConcurrentDictionary<int, ChannelInfo> Tracked = new();
     private static readonly ConcurrentDictionary<uint, int> CurrentIntensities = new();
+    private static readonly ConcurrentDictionary<int, string> FocusOptions = new();
     private static readonly object WriteLock = new();
 
     private static volatile int _sessionId;
@@ -108,6 +123,13 @@ internal static class InteropChannelPatches
             if (playerRuntimeId != 0 && propName.EndsWith("IndividualTrainingIntensity", StringComparison.OrdinalIgnoreCase))
             {
                 Tracked[key.GetHashCode()] = new ChannelInfo(ChannelKind.PlayerIntensity, "PlayerTraining", propName, playerRuntimeId);
+                return;
+            }
+
+            if (propName.IndexOf("AdditionalFocus", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("IndividualTrainingType", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                Tracked[key.GetHashCode()] = new ChannelInfo(ChannelKind.FocusOptions, DescribeSource(source), propName, playerRuntimeId);
             }
         }
         catch (Exception ex)
@@ -149,19 +171,36 @@ internal static class InteropChannelPatches
             try { File.Delete(Plugin.CmdPath); } catch { }
 
             var cmd = JsonSerializer.Deserialize<IntensityCommandPayload>(raw);
-            if (cmd?.items == null || cmd.items.Count == 0)
+            if (cmd == null)
                 return;
 
-            ApplyIntensityCommands(__instance, cmd);
+            var hasIntensity = cmd.items != null && cmd.items.Count > 0;
+            var hasFocus = cmd.focus_items != null && cmd.focus_items.Count > 0;
+            if (!hasIntensity && !hasFocus)
+                return;
+
+            ApplyCommands(__instance, cmd);
         }
         catch (Exception ex)
         {
-            Plugin.LogSource.LogWarning($"Intensity cmd err: {ex.Message}");
+            Plugin.LogSource.LogWarning($"Training cmd err: {ex.Message}");
             WriteCommandResult(0, new List<string> { ex.Message });
         }
     }
 
-    private static void ApplyIntensityCommands(GameInteropSubsystem subsystem, IntensityCommandPayload cmd)
+    private static InteropReference BuildPlayerTargetRef(int mgrVal, uint runtimeId)
+    {
+        var pairs = new Il2CppSystem.Collections.Generic.List<InteropReference.Pair>();
+        pairs.Add(new InteropReference.Pair(PairRefType, 77));
+        if (_sessionId != 0)
+            pairs.Add(new InteropReference.Pair(PairSession, _sessionId));
+        pairs.Add(new InteropReference.Pair(PairManager, mgrVal));
+        pairs.Add(new InteropReference.Pair(PairPerson, PersonTag | (int)runtimeId));
+        pairs.Add(new InteropReference.Pair(PairContextFlag, 1));
+        return new InteropReference(pairs);
+    }
+
+    private static void ApplyCommands(GameInteropSubsystem subsystem, IntensityCommandPayload cmd)
     {
         var errors = new List<string>();
         var applied = 0;
@@ -176,53 +215,86 @@ internal static class InteropChannelPatches
             return;
         }
 
-        foreach (var item in cmd.items!)
+        if (cmd.items != null)
         {
-            if (item.runtime_id == 0) continue;
-            var level = Math.Clamp(item.level, 0, 2);
-            var label = level switch
+            foreach (var item in cmd.items)
             {
-                0 => "Half Intensity",
-                2 => "Double Intensity",
-                _ => "Normal Intensity",
-            };
+                if (item.runtime_id == 0) continue;
+                var level = Math.Clamp(item.level, 0, 2);
+                var label = level switch
+                {
+                    0 => "Half Intensity",
+                    2 => "Double Intensity",
+                    _ => "Normal Intensity",
+                };
 
-            try
-            {
-                var pairs = new Il2CppSystem.Collections.Generic.List<InteropReference.Pair>();
-                pairs.Add(new InteropReference.Pair(PairRefType, 77));
-                if (_sessionId != 0)
-                    pairs.Add(new InteropReference.Pair(PairSession, _sessionId));
-                pairs.Add(new InteropReference.Pair(PairManager, mgrVal));
-                pairs.Add(new InteropReference.Pair(PairPerson, PersonTag | (int)item.runtime_id));
-                pairs.Add(new InteropReference.Pair(PairContextFlag, 1));
+                try
+                {
+                    var targetRef = BuildPlayerTargetRef(mgrVal, item.runtime_id);
+                    var dataRef = new DynamicReference();
+                    var dict = dataRef.Cast<Il2CppSystem.Collections.Generic.Dictionary<uint, TypedValue>>();
 
-                var targetRef = new InteropReference(pairs);
+                    var dn = new DynamicNumber();
+                    dn.Set(level);
+                    dict[KeyOptionId] = TypedValue.CreateValueType(dn);
+                    dict[KeyOptionName] = TypedValue.Create(label);
+                    dict[KeyConfirmFlagA] = TypedValue.Create(true);
+                    dict[KeyConfirmFlagB] = TypedValue.Create(true);
 
-                var dataRef = new DynamicReference();
-                var dict = dataRef.Cast<Il2CppSystem.Collections.Generic.Dictionary<uint, TypedValue>>();
-
-                var dn = new DynamicNumber();
-                dn.Set(level);
-                dict[KeyOptionId] = TypedValue.CreateValueType(dn);
-                dict[KeyOptionName] = TypedValue.Create(label);
-                dict[KeyConfirmFlagA] = TypedValue.Create(true);
-                dict[KeyConfirmFlagB] = TypedValue.Create(true);
-
-                subsystem.SendEvent(EventPlayerIntensityChanged, targetRef, TypedValue.Create(dataRef));
-                CurrentIntensities[item.runtime_id] = level;
-                applied++;
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"id={item.runtime_id}: {ex.Message}");
+                    subsystem.SendEvent(EventPlayerIntensityChanged, targetRef, TypedValue.Create(dataRef));
+                    CurrentIntensities[item.runtime_id] = level;
+                    applied++;
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"intensity id={item.runtime_id}: {ex.Message}");
+                }
             }
         }
 
-        Plugin.LogSource.LogInfo($"Applied legitimate training intensity for {applied} player(s) (errors={errors.Count}).");
+        if (cmd.focus_items != null)
+        {
+            foreach (var item in cmd.focus_items)
+            {
+                if (item.runtime_id == 0) continue;
+                try
+                {
+                    ApplyFocusItem(subsystem, mgrVal, item);
+                    applied++;
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"focus id={item.runtime_id}: {ex.Message}");
+                }
+            }
+        }
+
+        Plugin.LogSource.LogInfo($"Applied legitimate training command for {applied} item(s) (errors={errors.Count}).");
         WriteCommandResult(applied, errors);
         if (_lastEntryKey != null && _lastTacticalDump != null)
             WriteLatest(_lastEntryKey, _lastTacticalDump);
+    }
+
+    private static void ApplyFocusItem(GameInteropSubsystem subsystem, int mgrVal, FocusCommandItem item)
+    {
+        var targetRef = BuildPlayerTargetRef(mgrVal, item.runtime_id);
+
+        var outerRef = new DynamicReference();
+        var outer = outerRef.Cast<Il2CppSystem.Collections.Generic.Dictionary<uint, TypedValue>>();
+        outer[KeyFocusFlagA] = TypedValue.Create(true);
+        outer[KeyFocusFlagB] = TypedValue.Create(true);
+        outer[KeyConfirmFlagA] = TypedValue.Create(true);
+
+        var innerRef = new DynamicReference();
+        var inner = innerRef.Cast<Il2CppSystem.Collections.Generic.Dictionary<uint, TypedValue>>();
+        var dn = new DynamicNumber();
+        dn.Set(item.option_id);
+        inner[KeyOptionId] = TypedValue.CreateValueType(dn);
+        if (!string.IsNullOrWhiteSpace(item.name))
+            inner[KeyOptionName] = TypedValue.Create(item.name);
+
+        outer[KeyFocusInner] = TypedValue.Create(innerRef);
+        subsystem.SendEvent(EventPlayerFocusChanged, targetRef, TypedValue.Create(outerRef));
     }
 
     private static void WriteCommandResult(int applied, List<string> errors)
@@ -281,6 +353,13 @@ internal static class InteropChannelPatches
                 return;
             }
 
+            if (info.Kind == ChannelKind.FocusOptions)
+            {
+                if (HarvestFocusOptions(value, 0) && _lastEntryKey != null && _lastTacticalDump != null)
+                    WriteLatest(_lastEntryKey, _lastTacticalDump);
+                return;
+            }
+
             var dumped = DumpTypedValue(value, 0);
             if (dumped == null) return;
 
@@ -293,6 +372,68 @@ internal static class InteropChannelPatches
         {
             Plugin.LogSource.LogWarning($"CaptureValue err: {ex.Message}");
         }
+    }
+
+    private static bool HarvestFocusOptions(TypedValue? tv, int depth)
+    {
+        if (tv == null || tv.IsNull || depth > 3) return false;
+        var added = false;
+        try
+        {
+            var obj = tv.Get();
+            if (obj == null) return false;
+
+            var rec = obj.TryCast<Record>();
+            if (rec != null)
+            {
+                var optId = -1;
+                string? optName = null;
+                var en = rec.GetEnumerator();
+                while (en.MoveNext())
+                {
+                    var kv = en.Current;
+                    if (kv.Key == KeyOptionId && TryExtractInt(kv.Value, out var id))
+                        optId = id;
+                    else if (kv.Key == KeyOptionName)
+                        optName = kv.Value?.AsString()?.Trim();
+                    else if (HarvestFocusOptions(kv.Value, depth + 1))
+                        added = true;
+                }
+                if (optId >= 0 && optId <= 100 && !string.IsNullOrWhiteSpace(optName))
+                {
+                    if (!FocusOptions.TryGetValue(optId, out var prev) || prev != optName)
+                    {
+                        FocusOptions[optId] = optName!;
+                        added = true;
+                    }
+                }
+                return added;
+            }
+
+            var enumerable = obj.TryCast<Il2CppSystem.Collections.IEnumerable>();
+            if (enumerable != null)
+            {
+                var en = enumerable.GetEnumerator();
+                var count = 0;
+                while (en.MoveNext() && count < 80)
+                {
+                    count++;
+                    var cur = en.Current;
+                    if (cur == null) continue;
+                    var itemTv = cur.TryCast<TypedValue>();
+                    if (itemTv != null)
+                    {
+                        if (HarvestFocusOptions(itemTv, depth + 1)) added = true;
+                        continue;
+                    }
+                    var itemRec = cur.TryCast<Record>();
+                    if (itemRec != null && HarvestFocusOptions(TypedValue.Create(itemRec), depth + 1))
+                        added = true;
+                }
+            }
+        }
+        catch { }
+        return added;
     }
 
     private static bool TryExtractInt(TypedValue? tv, out int val)
@@ -488,11 +629,16 @@ internal static class InteropChannelPatches
                 foreach (var kv in CurrentIntensities)
                     intensities[kv.Key.ToString()] = kv.Value;
 
+                var focusOpts = new Dictionary<string, string>();
+                foreach (var kv in FocusOptions)
+                    focusOpts[kv.Key.ToString()] = kv.Value;
+
                 var payload = new Dictionary<string, object?>
                 {
                     ["updated_utc"] = System.DateTime.UtcNow.ToString("O"),
                     ["session_ready"] = _sessionId != 0,
                     ["current_intensities"] = intensities,
+                    ["focus_options"] = focusOpts,
                     ["data"] = new Dictionary<string, object?>
                     {
                         [entryKey] = dumped

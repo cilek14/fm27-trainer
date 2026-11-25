@@ -83,7 +83,7 @@ fn legend() -> String {
     use crate::model::Category::*;
     let mut h = String::from("<div class=\"legend\">");
     for c in [TacticalUnderstanding, MatchPreparation, FootballingDevelopment, PhysicalRecovery, ExtraCurricular, Fixed] {
-        let _ = write!(h, "<span><i style=\"background:{}\"></i>{}</span>", rgb(c.color()), c.label());
+        let _ = write!(h, "<span><i style=\"background:{}\"></i>{}</span>", rgb(c.color()), c.display_label());
     }
     h.push_str("</div>");
     h
@@ -96,7 +96,7 @@ fn effectiveness_cards(eff: &Effectiveness) -> String {
         let _ = write!(
             h,
             "<div class=\"card\"><h3>{}</h3><div class=\"f\"><span>{}</span><b>{:.0}</b></div><div class=\"bar\"><i style=\"width:{:.0}%;background:{}\"></i></div>",
-            c.label(),
+            c.display_label(),
             crate::t!("onderdeel", "component"),
             v,
             v,
@@ -107,7 +107,7 @@ fn effectiveness_cards(eff: &Effectiveness) -> String {
             let _ = write!(
                 h,
                 "<div class=\"f\"><span>{}</span><b>{:.0}</b></div><div class=\"bar\"><i style=\"width:{:.0}%;background:{}\"></i></div>",
-                f.label(),
+                f.display_label(),
                 v,
                 v,
                 rgb(level_color(v))
@@ -152,7 +152,7 @@ fn projection_svg(plans: &[WeekPlan], start: &Effectiveness) -> String {
     }
     svg.push_str("</svg><div class=\"legend\">");
     for (k, f) in Factor::TACTICAL_AREAS.iter().enumerate() {
-        let _ = write!(svg, "<span><i style=\"background:{}\"></i>{}</span>", colors[k], f.label());
+        let _ = write!(svg, "<span><i style=\"background:{}\"></i>{}</span>", colors[k], f.display_label());
     }
     svg.push_str("</div>");
     svg
@@ -187,7 +187,7 @@ pub fn html_report(title: &str, eff: &Effectiveness, plans: &[WeekPlan]) -> Stri
         let _ = write!(
             h,
             "<tr><td><b>{}</b><br><span class=\"note\">{} · {}</span></td><td style=\"width:60%\">{}</td></tr>",
-            f.label(),
+            f.display_label(),
             level_name(v),
             format!("{v:.0}"),
             esc(f.advice())

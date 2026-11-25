@@ -755,7 +755,7 @@ pub fn plan_week(
     let mut notes = Vec::new();
     for (f, v) in eff.weakest().into_iter().filter(|(f, _)| !f.is_tactical_area()).take(4) {
         if v < 50.0 {
-            notes.push(format!("{} ({:.0}): {}", f.label(), v, f.advice()));
+            notes.push(format!("{} ({:.0}): {}", f.display_label(), v, f.advice()));
         }
     }
 

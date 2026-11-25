@@ -213,7 +213,61 @@ pub fn faint(s: impl Into<String>) -> RichText {
     RichText::new(s).size(12.0).color(TEXT_FAINT)
 }
 pub fn caps(s: impl Into<String>) -> RichText {
-    RichText::new(s.into().to_uppercase()).font(FontId::new(11.0, semibold())).color(TEXT_FAINT)
+    let raw = s.into();
+    let up = if crate::i18n::is_tr() {
+        raw.replace('i', "İ").replace('ı', "I").to_uppercase()
+    } else {
+        raw.to_uppercase()
+    };
+    RichText::new(up).font(FontId::new(11.0, semibold())).color(TEXT_FAINT)
+}
+
+/// Özel çizilmiş taktik saha arması logosu ("FM27 Training Assistant").
+pub fn brand_logo(ui: &mut Ui, size: f32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
+    let p = ui.painter();
+    let cr = CornerRadius::same((size * 0.27).round() as u8);
+
+    // Koyu zümrüt taktik tahtası zemini
+    let bg = Color32::from_rgb(17, 52, 43);
+    let top_hi = Color32::from_rgb(24, 72, 58);
+    p.rect_filled(rect, cr, bg);
+    let hi_rect = egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x, rect.center().y));
+    p.rect_filled(hi_rect, CornerRadius { nw: cr.nw, ne: cr.ne, sw: 0, se: 0 }, mix(bg, top_hi, 0.55));
+    p.rect_stroke(rect, cr, Stroke::new(1.2_f32, mix(SUCCESS, Color32::WHITE, 0.2)), egui::StrokeKind::Inside);
+
+    // Saha orta çizgisi ve dairesi (silik)
+    let pitch_col = Color32::from_rgba_unmultiplied(61, 214, 140, 70);
+    let pad = size * 0.16;
+    p.line_segment(
+        [egui::pos2(rect.left() + pad, rect.center().y), egui::pos2(rect.right() - pad, rect.center().y)],
+        Stroke::new(1.0_f32, pitch_col),
+    );
+    p.circle_stroke(rect.center(), size * 0.18, Stroke::new(1.0_f32, pitch_col));
+
+    // 3 taktik noktası + yükselen gelişim oku
+    let w = rect.width();
+    let h = rect.height();
+    let pt = |nx: f32, ny: f32| egui::pos2(rect.left() + w * nx, rect.top() + h * ny);
+    let bl = pt(0.27, 0.71);
+    let br = pt(0.68, 0.71);
+    let mid = pt(0.47, 0.52);
+    let tip = pt(0.75, 0.25);
+
+    p.line_segment([br, mid], Stroke::new(1.6_f32, Color32::from_rgba_unmultiplied(238, 240, 245, 130)));
+    p.line_segment([bl, mid], Stroke::new(2.2_f32, SUCCESS));
+    p.line_segment([mid, tip], Stroke::new(2.4_f32, Color32::WHITE));
+
+    // Ok ucu
+    let wing_l = pt(0.57, 0.27);
+    let wing_r = pt(0.73, 0.43);
+    p.line_segment([tip, wing_l], Stroke::new(2.2_f32, Color32::WHITE));
+    p.line_segment([tip, wing_r], Stroke::new(2.2_f32, Color32::WHITE));
+
+    p.circle_filled(bl, (size * 0.068).max(2.2), SUCCESS);
+    p.circle_filled(br, (size * 0.058).max(2.0), Color32::from_rgba_unmultiplied(238, 240, 245, 190));
+    p.circle_filled(mid, (size * 0.062).max(2.0), Color32::WHITE);
+    p.circle_filled(tip, (size * 0.065).max(2.2), ACCENT_HI);
 }
 
 // ---- bouwstenen -----------------------------------------------------------------
@@ -230,18 +284,17 @@ pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
         .inner
 }
 
-/// Paginakop: titel + ondertitel links, acties rechts.
+/// Paginakop: titel + acties op de eerste rij, ondertitel eronder zodat niets overlapt.
 pub fn page_header(ui: &mut Ui, title_text: &str, subtitle: &str, actions: impl FnOnce(&mut Ui)) {
     ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.label(title(title_text));
-            if !subtitle.is_empty() {
-                ui.label(dim(subtitle));
-            }
-        });
+        ui.label(title(title_text));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), actions);
     });
-    ui.add_space(18.0);
+    if !subtitle.is_empty() {
+        ui.add_space(2.0);
+        ui.add(egui::Label::new(dim(subtitle)).wrap());
+    }
+    ui.add_space(16.0);
 }
 
 pub fn progress(ui: &mut Ui, value: f32, height: f32, color: Color32) {
@@ -278,6 +331,19 @@ pub fn ring(ui: &mut Ui, value: f32, size: f32, color: Color32) {
 
 /// Tegel met een groot getal; met `bar` een ring rechts die de waarde toont.
 pub fn stat_tile(ui: &mut Ui, icon_s: &str, label: &str, value: &str, sub: &str, color: Color32, bar: Option<f32>) {
+    stat_tile_delta(ui, icon_s, label, value, sub, color, bar, None);
+}
+
+pub fn stat_tile_delta(
+    ui: &mut Ui,
+    icon_s: &str,
+    label: &str,
+    value: &str,
+    sub: &str,
+    color: Color32,
+    bar: Option<f32>,
+    delta: Option<f32>,
+) {
     card(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(ic(icon_s).size(15.0).color(color));
@@ -286,7 +352,15 @@ pub fn stat_tile(ui: &mut Ui, icon_s: &str, label: &str, value: &str, sub: &str,
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                ui.label(RichText::new(value).font(FontId::new(32.0, bold())).color(TEXT));
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(value).font(FontId::new(32.0, bold())).color(TEXT));
+                    if let Some(d) = delta.filter(|x| x.abs() >= 1.0) {
+                        let up = d > 0.0;
+                        let dc = if up { SUCCESS } else { DANGER };
+                        let txt = if up { format!("▲+{:.0}", d) } else { format!("▼{:.0}", d) };
+                        ui.label(RichText::new(txt).font(FontId::new(12.0, semibold())).color(dc));
+                    }
+                });
                 if !sub.is_empty() {
                     ui.label(RichText::new(sub).size(12.5).color(if bar.is_some() { color } else { TEXT_FAINT }));
                 }
@@ -395,6 +469,47 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
     changed
 }
 
+/// Mevcut genişliğe tam oturan kompakt segment seçici (ör. yan menüdeki `TR | EN | NL`).
+pub fn segmented_full<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &str, &str)]) -> bool {
+    let n = options.len().max(1);
+    let total = ui.available_width().max(90.0);
+    let h = 30.0;
+    let gap = 2.0;
+    let seg_w = ((total - 6.0 - gap * (n - 1) as f32) / n as f32).max(20.0);
+    let font = FontId::new(12.5, medium());
+    let (rect, _) = ui.allocate_exact_size(vec2(total, h), Sense::hover());
+    let p = ui.painter().clone();
+    p.rect_filled(rect, CornerRadius::same(9), SURFACE2);
+    let mut x = rect.left() + 3.0;
+    let mut changed = false;
+    for (v, label, tip) in options {
+        let r = egui::Rect::from_min_size(egui::pos2(x, rect.top() + 3.0), vec2(seg_w, h - 6.0));
+        let resp = ui
+            .interact(r, ui.id().with(("segmented_full", *label)), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text(*tip);
+        let sel = *value == *v;
+        if sel {
+            p.rect_filled(r, CornerRadius::same(7), ACCENT);
+        } else if resp.hovered() {
+            p.rect_filled(r, CornerRadius::same(7), HOVER);
+        }
+        p.text(
+            r.center(),
+            egui::Align2::CENTER_CENTER,
+            *label,
+            font.clone(),
+            if sel { Color32::WHITE } else { TEXT_DIM },
+        );
+        if resp.clicked() && !sel {
+            *value = *v;
+            changed = true;
+        }
+        x += seg_w + gap;
+    }
+    changed
+}
+
 /// Sessie als gekleurde chip.
 pub fn session_chip(ui: &mut Ui, text: &str, color: Color32, highlight: bool) -> Response {
     Frame::new()
@@ -417,12 +532,24 @@ pub fn status_dot(ui: &mut Ui, color: Color32) {
 
 /// Rij met naam, waarde en een dunne balk (voor de factors).
 pub fn metric_row(ui: &mut Ui, name: &str, value: f32, color: Color32) {
+    metric_row_delta(ui, name, value, color, None);
+}
+
+pub fn metric_row_delta(ui: &mut Ui, name: &str, value: f32, color: Color32, delta: Option<f32>) {
     let w = ui.available_width();
+    let d_opt = delta.filter(|x| x.abs() >= 1.0);
+    let reserve = if d_opt.is_some() { 68.0 } else { 44.0 };
     ui.horizontal(|ui| {
-        ui.allocate_ui_with_layout(vec2((w - 44.0).max(40.0), 18.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        ui.allocate_ui_with_layout(vec2((w - reserve).max(40.0), 18.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.add(egui::Label::new(RichText::new(name).size(13.0).color(TEXT_DIM)).truncate()).on_hover_text(name);
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if let Some(d) = d_opt {
+                let up = d > 0.0;
+                let dc = if up { SUCCESS } else { DANGER };
+                let txt = if up { format!("▲+{:.0}", d) } else { format!("▼{:.0}", d) };
+                ui.label(RichText::new(txt).font(FontId::new(11.0, semibold())).color(dc));
+            }
             ui.label(RichText::new(format!("{value:.0}")).font(FontId::new(13.5, semibold())).color(color));
         });
     });
