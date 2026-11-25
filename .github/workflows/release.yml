@@ -18,7 +18,7 @@ permissions:
 jobs:
   macos:
     if: github.event_name != 'workflow_dispatch' || inputs.platform != 'windows'
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
