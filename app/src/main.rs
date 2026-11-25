@@ -14,6 +14,7 @@ mod model;
 mod planner;
 mod tactics;
 mod theme;
+mod updater;
 mod vision;
 
 use anyhow::{Context, Result};

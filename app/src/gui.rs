@@ -19,6 +19,7 @@ use crate::model::{Component, Effectiveness, Factor, category_of, level_color, l
 use crate::planner::{self, CalendarOptions, CalendarWeek, PlannerSettings, WeekKind, WeekPlan, unique_schedules};
 use crate::t;
 use crate::theme::{self, icon};
+use crate::updater::{self, UpdateStatus, UpdaterState};
 use crate::vision;
 
 pub fn run() -> Result<()> {
@@ -88,12 +89,15 @@ struct Settings {
     /// Het team waarvan de app de training plant (plek in de teamlijst van de club; None = eigen team).
     #[serde(default)]
     training_team: Option<usize>,
+    /// Otomatik güncelleme: yeni sürüm varsa arka planda indirip uygular.
+    #[serde(default = "yes")]
+    auto_update: bool,
     planner: PlannerSettings,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { lang: i18n::detect(), rate: 1.17, capture_delay: true, auto_training: true, allow_untested: false, keep_understanding: false, auto_read: false, auto_memory_sync: false, no_cheat_mode: true, auto_individual_intensity: false, intensity_profile: individual::IntensityProfile::default(), auto_read_secs: 10, manager_club: None, training_team: None, planner: PlannerSettings::default() }
+        Settings { lang: i18n::detect(), rate: 1.17, capture_delay: true, auto_training: true, allow_untested: false, keep_understanding: false, auto_read: false, auto_memory_sync: false, no_cheat_mode: true, auto_individual_intensity: false, intensity_profile: individual::IntensityProfile::default(), auto_read_secs: 10, manager_club: None, training_team: None, auto_update: true, planner: PlannerSettings::default() }
     }
 }
 
@@ -287,6 +291,7 @@ struct App {
     last_bepinex_utc: String,
     last_bepinex_check: std::time::Instant,
     individual: IndividualState,
+    updater: UpdaterState,
     history: history::HistoryStore,
     /// de tactiek die de tactiekpagina toont (None: de tactiek die in FM in gebruik is)
     tactic_pick: Option<usize>,
@@ -362,6 +367,7 @@ impl App {
             last_bepinex_utc: String::new(),
             last_bepinex_check: std::time::Instant::now() - std::time::Duration::from_secs(10),
             individual,
+            updater: UpdaterState::default(),
             frames: 0,
         }
     }
@@ -553,7 +559,14 @@ impl App {
                     ui.add_space(2.0);
                 }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                    ui.label(theme::faint(format!("v{}", env!("CARGO_PKG_VERSION"))));
+                    ui.horizontal(|ui| {
+                        ui.label(theme::faint(format!("v{}", env!("CARGO_PKG_VERSION"))));
+                        if let Some(ver) = self.updater.available_version().map(str::to_string) {
+                            if theme::small_button(ui, &format!("↑ v{ver}"), true).clicked() {
+                                self.page = Page::Settings;
+                            }
+                        }
+                    });
                     ui.add_space(6.0);
                     let mut lang = self.settings.lang;
                     if theme::segmented_full(ui, &mut lang, &[(Lang::Tr, "TR", "Türkçe"), (Lang::En, "EN", "English"), (Lang::Nl, "NL", "Nederlands")]) {
@@ -1694,9 +1707,222 @@ impl App {
         );
     }
 
+    fn render_update_banner(&mut self, ui: &mut Ui, ctx: &egui::Context) {
+        enum BannerKind {
+            Available(updater::ReleaseInfo),
+            Working(String),
+        }
+        let kind = match &self.updater.status {
+            UpdateStatus::Available(info) if !self.settings.auto_update => BannerKind::Available(info.clone()),
+            UpdateStatus::Downloading { version } => BannerKind::Working(t!(
+                format!("Update v{version} wordt gedownload…"),
+                format!("Downloading update v{version}…"),
+                format!("v{version} güncellemesi indiriliyor…")
+            )),
+            UpdateStatus::Applying { version } => BannerKind::Working(t!(
+                format!("Update v{version} wordt toegepast, app herstart…"),
+                format!("Applying update v{version}, restarting…"),
+                format!("v{version} yükleniyor, uygulama yeniden başlatılıyor…")
+            )),
+            _ => return,
+        };
+
+        let col = matches!(kind, BannerKind::Available(_))
+            .then_some(theme::SUCCESS)
+            .unwrap_or(theme::INFO);
+        Frame::new()
+            .fill(theme::tint(col, 0.12))
+            .stroke(Stroke::new(1.0_f32, theme::tint(col, 0.42)))
+            .corner_radius(CornerRadius::same(10))
+            .inner_margin(Margin::symmetric(12, 8))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal_wrapped(|ui| match kind {
+                    BannerKind::Available(info) => {
+                        ui.label(theme::ic(icon::SPARKLE).color(theme::SUCCESS));
+                        ui.label(
+                            RichText::new(t!(
+                                format!("Nieuwe versie beschikbaar: v{}", info.version),
+                                format!("New version available: v{}", info.version),
+                                format!("Yeni sürüm mevcut: v{}", info.version)
+                            ))
+                            .strong()
+                            .color(theme::TEXT),
+                        );
+                        if info.asset.is_some() {
+                            if theme::small_button(
+                                ui,
+                                t!("Nu installeren", "Install & restart", "Şimdi yükle ve yeniden başlat"),
+                                !self.updater.busy(),
+                            )
+                            .clicked()
+                            {
+                                self.updater.start_install(ctx, info);
+                            }
+                        } else if theme::small_button(ui, "GitHub Releases", true).clicked() {
+                            open_path(std::path::Path::new(&info.html_url));
+                        }
+                    }
+                    BannerKind::Working(msg) => {
+                        ui.label(theme::ic(icon::ARROWS_CLOCKWISE).color(theme::INFO));
+                        ui.label(RichText::new(msg).color(theme::TEXT));
+                    }
+                });
+            });
+        ui.add_space(12.0);
+    }
+
+    fn update_card(&mut self, ui: &mut Ui, ctx: &egui::Context, dirty: &mut bool) {
+        let mut trigger_check = false;
+        let mut trigger_install: Option<updater::ReleaseInfo> = None;
+
+        theme::card(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(theme::ic(icon::ARROWS_CLOCKWISE).color(theme::ACCENT_HI).size(18.0));
+                ui.label(theme::h2(t!("Versie & updates", "Version & Updates", "Sürüm ve Güncellemeler")));
+                theme::pill(ui, &format!("v{}", updater::CURRENT_VERSION), theme::ACCENT);
+                let os_label = if cfg!(windows) {
+                    "Windows"
+                } else if cfg!(target_os = "macos") {
+                    "macOS"
+                } else {
+                    std::env::consts::OS
+                };
+                theme::pill(ui, os_label, theme::INFO);
+
+                match &self.updater.status {
+                    UpdateStatus::Idle => {}
+                    UpdateStatus::Checking => {
+                        theme::pill(ui, t!("Controleren…", "Checking…", "Denetleniyor…"), theme::INFO);
+                    }
+                    UpdateStatus::UpToDate { .. } => {
+                        theme::pill(ui, t!("Up-to-date", "Up to date", "Güncel"), theme::SUCCESS);
+                    }
+                    UpdateStatus::Available(info) => {
+                        theme::pill(
+                            ui,
+                            &t!(
+                                format!("Nieuw: v{}", info.version),
+                                format!("Available: v{}", info.version),
+                                format!("Yeni: v{}", info.version)
+                            ),
+                            theme::SUCCESS,
+                        );
+                    }
+                    UpdateStatus::Downloading { version } => {
+                        theme::pill(
+                            ui,
+                            &t!(
+                                format!("v{version} downloaden…"),
+                                format!("Downloading v{version}…"),
+                                format!("v{version} indiriliyor…")
+                            ),
+                            theme::INFO,
+                        );
+                    }
+                    UpdateStatus::Applying { version } => {
+                        theme::pill(
+                            ui,
+                            &t!(
+                                format!("v{version} installeren…"),
+                                format!("Installing v{version}…"),
+                                format!("v{version} yükleniyor…")
+                            ),
+                            theme::WARNING,
+                        );
+                    }
+                    UpdateStatus::InstalledManual { .. } => {
+                        theme::pill(ui, t!("Gedownload", "Downloaded", "İndirildi"), theme::SUCCESS);
+                    }
+                    UpdateStatus::Error(_) => {
+                        theme::pill(ui, t!("Fout", "Error", "Hata"), theme::DANGER);
+                    }
+                }
+            });
+
+            ui.add_space(8.0);
+            ui.horizontal_wrapped(|ui| {
+                if theme::toggle(ui, &mut self.settings.auto_update).changed() {
+                    *dirty = true;
+                }
+                ui.label(theme::label_strong(t!(
+                    "Updates automatisch downloaden en installeren",
+                    "Automatically download and install updates",
+                    "Güncellemeleri otomatik indir ve uygula"
+                )));
+                ui.label(theme::faint(t!(
+                    "(Controleert bij opstarten via GitHub Releases en herstart automatisch)",
+                    "(Checks GitHub Releases on launch, downloads the latest package and restarts automatically)",
+                    "(Açılışta GitHub Releases'tan denetler; yeni sürüm varsa indirip kendini otomatik yeniler)"
+                )));
+            });
+
+            match &self.updater.status {
+                UpdateStatus::Error(err) => {
+                    ui.add_space(6.0);
+                    ui.add(egui::Label::new(RichText::new(err).size(12.5).color(theme::DANGER)).wrap());
+                }
+                UpdateStatus::InstalledManual { message } => {
+                    ui.add_space(6.0);
+                    ui.add(egui::Label::new(RichText::new(message).size(12.5).color(theme::SUCCESS)).wrap());
+                }
+                UpdateStatus::Available(info) if !info.notes.is_empty() => {
+                    ui.add_space(6.0);
+                    let preview: String = info.notes.lines().take(3).collect::<Vec<_>>().join(" · ");
+                    let clipped: String = if preview.chars().count() > 220 {
+                        format!("{}…", preview.chars().take(220).collect::<String>())
+                    } else {
+                        preview
+                    };
+                    ui.add(egui::Label::new(theme::dim(clipped)).wrap());
+                }
+                _ => {}
+            }
+
+            ui.add_space(10.0);
+            ui.horizontal_wrapped(|ui| {
+                if theme::button(
+                    ui,
+                    icon::ARROWS_CLOCKWISE,
+                    t!("Controleren op updates", "Check for updates", "Güncellemeleri denetle"),
+                    !self.updater.busy(),
+                )
+                .clicked()
+                {
+                    trigger_check = true;
+                }
+                if let UpdateStatus::Available(info) = &self.updater.status {
+                    if info.asset.is_some() {
+                        let lbl = t!(
+                            format!("v{} installeren en herstarten", info.version),
+                            format!("Install v{} & restart", info.version),
+                            format!("v{} yükle ve yeniden başlat", info.version)
+                        );
+                        if theme::primary_button(ui, icon::SPARKLE, &lbl, !self.updater.busy()).clicked() {
+                            trigger_install = Some(info.clone());
+                        }
+                    }
+                }
+                if theme::button(ui, icon::EXPORT, "GitHub Releases", true).clicked() {
+                    open_path(std::path::Path::new(updater::RELEASES_PAGE));
+                }
+            });
+        });
+
+        if trigger_check {
+            self.updater.start_check(ctx);
+        }
+        if let Some(info) = trigger_install {
+            self.updater.start_install(ctx, info);
+        }
+    }
+
     fn page_settings(&mut self, ui: &mut Ui) {
         theme::page_header(ui, t!("Instellingen", "Settings"), "", |_| {});
+        let ctx = ui.ctx().clone();
         let mut dirty = false;
+        self.update_card(ui, &ctx, &mut dirty);
+        ui.add_space(14.0);
         ui.columns(2, |cols| {
             theme::card(&mut cols[0], |ui| {
                 ui.label(theme::h2(t!("Algemeen", "General")));
@@ -1955,6 +2181,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.snapshot(ctx);
         self.poll_analysis(ctx);
+        self.updater.tick(ctx, self.settings.auto_update);
         // automatisch uitlezen: niet tijdens handmatig aanpassen en nooit tijdens een testopname
         if self.settings.auto_read
             && !self.edit_mode
@@ -1996,6 +2223,7 @@ impl eframe::App for App {
                     let t = theme::enter(ctx, 0.22);
                     ui.set_opacity(0.25 + 0.75 * t);
                     ui.add_space(8.0 * (1.0 - t));
+                    self.render_update_banner(ui, ctx);
                     match self.page {
                         Page::Overview => self.page_overview(ui, ctx),
                         Page::Training => self.page_training(ui, ctx),
@@ -2019,7 +2247,7 @@ impl eframe::App for App {
                     ui.add_space(20.0);
                 });
             });
-        if self.analysis_rx.is_some() || self.live.busy() {
+        if self.analysis_rx.is_some() || self.live.busy() || self.updater.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         } else if self.settings.auto_read {
             ctx.request_repaint_after(std::time::Duration::from_secs(1));
