@@ -5,16 +5,17 @@
 <h1 align="center">FM27 Training Assistant</h1>
 
 <p align="center">
-  <strong>Football Manager 27 için hilesiz akıllı antrenman asistanı.<br>
-  A no-cheat smart training assistant for Football Manager 27.</strong>
+  <strong>Football Manager 27 için hilesiz, akıllı antrenman asistanı.<br>
+  A no-cheat, smart training assistant for Football Manager 27.</strong>
 </p>
 
 <p align="center">
+  <img alt="Version" src="https://img.shields.io/badge/release-v1.2.0-7c6cff">
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows">
   <img alt="FM27" src="https://img.shields.io/badge/Football%20Manager-27-c8102e">
   <img alt="BepInEx" src="https://img.shields.io/badge/BepInEx-6%20IL2CPP-5c2d91">
   <img alt="No cheats" src="https://img.shields.io/badge/hile-yok%20%2F%20no%20cheats-3dd68c">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-7c6cff">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-646b7d">
 </p>
 
 <p align="center">
@@ -24,7 +25,13 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/training.png" alt="FM27 Training Assistant" width="92%">
+  <img src="docs/images/overview.png" alt="FM27 Training Assistant — Taktiksel Verimlilik" width="92%">
+</p>
+
+<p align="center">
+  <img src="docs/images/training.png" alt="Planlama ve Türkçe Seanslar" width="45%">
+  &nbsp;
+  <img src="docs/images/individual.png" alt="Bireysel ve Darboğaz" width="45%">
 </p>
 
 ---
@@ -34,64 +41,80 @@
 
 ### Bu program ne işe yarar?
 
-FM27'de antrenmanı her hafta elle ayarlamak zahmetlidir. **FM27 Training Assistant** bu işi senin yerine yapar:
+FM27'de her hafta antrenman takvimi kurmak, yorgun oyuncuları kollamak ve eksik alanları takip etmek çok zaman alır. **FM27 Training Assistant** bunları senin yerine düzenli ve hilesiz şekilde yapar:
 
-- Takımının **hangi taktik konularda zayıf olduğuna** bakar ve haftalık antrenmanı ona göre hazırlar.
-- **Zaman içindeki taktiksel gelişimini** (`▲/▼` haftalık değişim ve trend grafiğiyle) takip eder.
-- Yorgun oyuncuları ve yoğun fikstürü fark edip **gerektiğinde dinlenmeye ağırlık verir**.
-- **Taktiğe en az uyum sağlayan oyuncuları** listeler.
-- Her oyuncu için **sakatlık riskini düşüren antrenman yoğunluğunu** ve **rol zorlamadan Ek Odak (Additional Focus)** önerir.
+- Takımının **hangi taktik konularda zayıf olduğuna** bakar ve haftalık programı buna göre hazırlar.
+- **Zaman içindeki taktiksel gelişimini** (`▲+X` / `▼-X` farkları ve trend grafiğiyle) kaydedip gösterir.
+- Kadro yorgunluğunu ve yoğun maç takvimini görüp **gerektiğinde otomatik dinlendirir**.
+- **Taktiği aşağı çeken oyuncuları** ve nerede zorlandıklarını listeler.
+- Her oyuncu için **sakatlık önleyici bireysel yoğunluk** ve **rol zorlamadan Ek Odak (Additional Focus)** önerir.
 
 ### Hile var mı?
 
-**Hayır.** Program yalnızca FM'de senin de elle yapabileceğin şeyleri yapar:
+**Hayır.** Program yalnızca oyunun kendi içinde senin de elle yapabileceğin işlemleri uygular:
 
-| ✅ Yapar | ❌ Yapmaz |
+| ✅ Ne yapar? | ❌ Ne yapmaz? |
 |---|---|
-| Antrenman takvimini doldurur | Oyuncu özelliklerini yükseltmez |
-| Oyuncuların antrenman yoğunluğunu ve Ek Odak'ını seçer | Moral, kondisyon veya form değiştirmez |
-| Kadro ve özellik bilgilerini **salt-okunur** okur | Para, transfer, sakatlık veya ceza ile oynamaz |
+| FM27'nin antrenman takvimine seans yazar | Oyuncu özelliklerini (CA/PA, hız vb.) yükseltmez |
+| Bireysel yoğunluğu ve Ek Odak seçimini FM menüsünden uygular | Moral, kondisyon veya maç keskinliği düzenlemez |
+| Kadro, fikstür, yaş ve özellik bilgilerini **salt-okunur** okur | Bütçe, transfer, sakatlık veya ceza değiştirmez |
 
-### Ne yapabilirsin?
+### Ekranlar ve özellikler
 
 **📊 Genel Bakış — Taktiksel Verimlilik & Gelişim Trendi**
-- 4 ana bileşen ve 17 faktör tamamen Türkçe gösterilir.
-- Kulüp bazlı geçmiş tutulur: bir önceki ölçüme göre değişimler (`▲+5`, `▼-2`) ve gelişim grafiği görünür.
+- 4 ana bileşen ve 17 faktör tamamen Türkçe isimleriyle gösterilir.
+- Kulübün için önceki ölçümlere göre değişimler (`▲+5`, `▼-2`) ve **Zaman İçinde Gelişim Trendi** grafiği otomatik oluşur.
 
-**📅 Antrenman sekmesi — takım antrenmanı**
-- 62 FM27 seansının tamamı Türkçe adlarıyla gösterilir.
-- Oyun tarzını (`Gegenpress`, `Tiki-Taka`, `Kanat`, `Savunma & Kontra`) ve özel kampı (`Kondisyon`, `Oyuncu Gelişimi`, `Derbi/Final`) seçebilirsin.
-- Kadro yorgunsa veya haftada `2+` maç varsa otomatik dinlendirir; takım taktiği öğrendiğinde gelişim moduna geçer.
-- FM yardımcı antrenörü takvimi değiştirirse planını 8 saniyede bir kontrol edip geri yükler.
+**📅 Antrenman & Planlama — Takım Antrenmanı**
+- 62 FM27 seansının tamamı Türkçe adlarıyla görünür (üzerine gelince İngilizcesi de çıkar).
+- Oyun tarzı (`Gegenpress`, `Tiki-Taka`, `Kanat`, `Savunma & Kontra`, `Otomatik`) ve özel kamp modları (`Kondisyon`, `Oyuncu Gelişimi`, `Derbi/Final`) seçilebilir.
+- Kadro yorulursa (`< %78` veya haftada `2+` maç) otomatik daha fazla dinlenme koyar; 8 taktik alan `%85` üstüne çıktığında otomatik gelişim moduna geçer.
+- FM yardımcı antrenörü programı değiştirirse 8 saniyede bir kontrol edip senin planını geri koyar.
 
-**👤 Bireysel sekmesi — radar, darboğaz, yoğunluk ve Ek Odak**
-- **Maç Öncesi Risk Radarı:** Haftalık maç sayısı, kritik kondisyonlu oyuncular, korumadaki veteran sayısı ve ortalama kadro hazırlığı.
-- **"Taktiği kim aşağı çekiyor?"** listesi: taktiğe uyumu en düşük oyuncuları ve ana darboğazlarını sıralar.
-- **Akıllı yoğunluk + 3 Hazır Profil (`Korumacı` / `Dengeli` / `Gelişim Odaklı`):** Yaş, kondisyon, keskinlik, sakatlık ve haftalık maç sayısına göre *Yarı / Normal / Çift* önerir ve tek tıkla FM'ye uygular.
-- **Rol Zorlamadan Ek Odak (Additional Focus):** Her oyuncunun yalnızca kendi doğal mevkisindeki en zayıf kilit özellik grubunu bulup önerir ve tek tıkla uygular. Yedek oyuncular asla uygun olmayan taktik rollerine zorlanmaz.
+**👤 Bireysel & Darboğaz — Oyuncu Yönetimi**
+- **Maç Öncesi Risk Radarı:** Haftalık maç sayısı, kritik kondisyonlu/sakat oyuncu sayısı, korumadaki veteranlar ve kadro hazırlığı.
+- **"Taktiği kim aşağı çekiyor?"**: Oyuncuları taktik uyum puanına göre en düşükten yükseğe sıralar, asıl sorununu (*Taktik Anlayış, Rol Uyumu, Kalite, Benimseme*) gösterir.
+- **Akıllı Yoğunluk + 3 Profil (`Korumacı` / `Dengeli` / `Gelişim Odaklı`):** Yaş, kondisyon, maç keskinliği, sakatlık ve haftalık maç yüküne göre *Yarı / Normal / Çift* önerir ve tek tıkla FM'ye uygular.
+- **Rol Zorlamadan Ek Odak (*Additional Focus*):** Her oyuncunun sadece kendi doğal mevkisindeki (*Kaleci, Stoper, Bek, Orta Saha, Kanat/OOS, Santrfor*) en düşük kilit özellik grubunu bulur; sakat ve `32+` yaş oyunculara fiziksel yük bindirmeyen odak önerir.
 
-### Kurulum (Windows)
+**🎯 Taktikler**
+- Seçili taktiğe göre en iyi ilk 11 yerleşimini ve daha uygun rol önerilerini gösterir (salt-okunur).
 
-1. **[İndirme sayfasından](../../releases/latest)** `FM27 Trainer.exe` dosyasını indirip çalıştır. Kurulum gerekmez.
-2. FM27'yi aç ve kariyerini yükle. Program oyuna kendiliğinden bağlanır.
+### Kurulum ve İlk Kullanım (3 Adım)
 
-**İsteğe bağlı (önerilen): BepInEx eklentisi (`v0.7.0`)**
+1. **[İndirme sayfasından](../../releases/latest)** `FM27 Trainer.exe` dosyasını indirip çalıştır (kurulum gerektirmez).
+2. *(Önerilen — BepInEx eklentisi `v0.7.0`)* Oyununda **BepInEx 6 (Unity IL2CPP)** kuruluysa `FM27Trainer.Bridge.dll` dosyasını şu klasöre kopyala ve FM27'yi yeniden başlat:
+   ```
+   <FM27 klasörü>\BepInEx\plugins\FM27Trainer.Bridge\
+   ```
+3. FM27'de kariyerini aç — uygulama otomatik bağlanır:
+   - Oyuncu bazlı darboğaz verilerinin gelmesi için oyunda **Taktiksel Verimlilik** ekranını bir kez aç.
+   - Ek Odak'ı tek tıkla oyuna uygulamak için FM27'de **Bireysel Antrenman** sekmesini bir kez aç.
 
-Oyununda BepInEx 6 (Unity IL2CPP) kuruluysa `FM27Trainer.Bridge.dll` dosyasını şu klasöre kopyala:
+> BepInEx kurulu değilse bile uygulama çalışmaya devam eder; taktik değerlerini ekran görüntüsünden (OCR) okur.
 
-```
-<FM27 klasörü>\BepInEx\plugins\FM27Trainer.Bridge\
-```
+### Sık Sorulan Sorular
 
-Sonra FM27'yi yeniden başlat. Eklentiyle:
-- Taktik değerleri doğrudan oyundan **kesin sayı olarak** okunur.
-- Bireysel sekmesindeki oyuncu darboğaz listesi dolar ve yoğunluk / Ek Odak değişiklikleri tek tıkla oyuna uygulanır.
+<details>
+<summary><strong>Kayıt dosyam (save) bozulur mu?</strong></summary>
 
-Eklenti yoksa program ekran görüntüsünden (OCR) okuyarak çalışmaya devam eder.
+Antrenman takvimi yazılmadan önce hafta yapısı, geçerli seans kodları ve eski baytlar tek tek doğrulanır; sorun olursa işlem geri sarılır. Değişiklikler sen FM27 içinde **Kaydet** diyene kadar kalıcı olmaz. Yine de her ihtimale karşı yedek alman önerilir.
 
-### Dil
+</details>
 
-Türkçe, İngilizce ve Hollandaca; sol alttan (`TR | EN | NL`) veya Ayarlar'dan değiştirilebilir.
+<details>
+<summary><strong>Oyuncuları neden otomatik olarak taktikteki role zorlamıyor?</strong></summary>
+
+Asıl mevkisi dışında rotasyonda kullanılan oyuncular (örneğin sağ beke çekilen bir stoper ya da kanat oynayan bir forvet) kendi özelliklerine hiç uymayan bir rol antrenmanına zorlanmasın diye bu özellik bilinçli olarak eklenmedi. Bunun yerine sadece oyuncunun doğal mevkisindeki zayıf özellikleri hedefleyen **Ek Odak** önerisi sunulur.
+
+</details>
+
+<details>
+<summary><strong>FM27'ye yeni güncelleme gelirse ne olur?</strong></summary>
+
+Güvenlik kontrolü tarih veya takvim yapısını doğrulayamazsa uygulama otomatik olarak salt-okunur moda geçer ve oyunun belleğine yazmaz.
+
+</details>
 
 ---
 
@@ -100,43 +123,53 @@ Türkçe, İngilizce ve Hollandaca; sol alttan (`TR | EN | NL`) veya Ayarlar'dan
 
 ### What does it do?
 
-Setting up training by hand every week in FM27 is tedious. **FM27 Training Assistant** handles it for you:
+Managing training schedules, player fatigue and individual development by hand every week in FM27 takes time. **FM27 Training Assistant** automates the routine parts cleanly and without cheats:
 
-- Checks **which tactical areas your team is weak in** and builds weekly schedules around them.
-- Tracks **Tactical Effectiveness history over time** (`▲/▼` deltas and a progress line chart).
-- Notices tired players and busy fixture weeks and **adds rest when needed**.
-- Lists **the players who drag tactical effectiveness down**.
-- Suggests **injury-safe individual training intensity** and **role-free Additional Focus** per player.
+- Inspects **your team's weakest tactical areas** and builds weekly schedules around them.
+- Tracks **Tactical Effectiveness progress over time** (`▲+X` / `▼-X` deltas and a trend chart).
+- Detects low squad condition and `2+` match weeks and **adds recovery/rest automatically**.
+- Lists **which players drag your tactical effectiveness down** and why.
+- Recommends **injury-safe individual intensity** and **role-free Additional Focus** per player.
 
 ### Is it a cheat?
 
-**No.** It only does things you could also do by hand in FM:
+**No.** Everything the app does mirrors actions you can perform manually inside FM:
 
-| ✅ It does | ❌ It never does |
+| ✅ What it does | ❌ What it never does |
 |---|---|
-| Fill in the training calendar | Boost player attributes |
-| Set individual training intensity & Additional Focus | Change morale, condition or sharpness |
-| Read squad & attribute data **read-only** | Touch finances, transfers, injuries or bans |
+| Writes sessions into FM27's training calendar | Never boosts player attributes |
+| Sets Individual Intensity & Additional Focus via native UI events | Never alters morale, condition or match sharpness |
+| Reads squad, fixtures, age and attributes **read-only** | Never touches finances, transfers, injuries or bans |
 
-### What can you do with it?
+### Screens & Features
 
-**📊 Overview — Tactical Effectiveness & Progress Trend**
-- Tracks changes (`▲+5`, `▼-2`) per club across readings with a 4-component trend chart.
+- **📊 Overview — Tactical Effectiveness & Trend:** Exact 4 components + 17 factors, `▲/▼` changes from previous readings, and a club-scoped progress line chart.
+- **📅 Training & Planning:** Style modes (*Auto, Gegenpress, Possession, Wing Attack, Low Block & Counter*), Camp modes (*Standard, Fitness, Development, Derby/Final*), automatic break detection, and 8-second calendar protection against FM assistant overrides.
+- **👤 Individual & Bottlenecks:**
+  - **Pre-match Risk Radar** (weekly matches, critical fatigue/injury count, guarded veterans, readiness).
+  - **"Who drags the tactic down?"** bottleneck report sorted from lowest tactical fit.
+  - **Smart Intensity + 3 Profiles (`Protective` / `Balanced` / `Development`)** recommending *Half / Normal / Double*.
+  - **Role-free Additional Focus** tailored strictly to each player's natural position and weakest attribute group (skipping heavy physical focuses for injured or `32+` players).
+- **🎯 Tactics:** Read-only best XI and role suitability helper.
 
-**📅 Training tab — team training**
-- Focused weekly schedules for your tactical weaknesses, with playing styles (*Gegenpress, Possession, Wing Attack, Low Block & Counter*) and camp modes.
-- Automatically rests fatigued squads or `2+` match weeks, detects international/winter breaks, and restores your plan if FM's assistant changes it.
+### Install & First Use (3 Steps)
 
-**👤 Individual tab — radar, bottlenecks, intensity profiles & Additional Focus**
-- **Pre-match Risk Radar:** Weekly fixture count, critical fatigue/injury count, guarded veterans, and squad readiness.
-- **"Who drags the tactic down?"**: Players sorted from lowest to highest tactical fit with actionable advice.
-- **Smart Intensity + 3 Profiles (`Protective` / `Balanced` / `Development`):** Recommends *Half / Normal / Double* and applies legitimately via FM's native UI event.
-- **Role-free Additional Focus:** Recommends the best focus based on each player's own natural position and weakest attributes—never forcing backups into unsuitable tactic roles.
+1. Download **`FM27 Trainer.exe`** from **[Releases](../../releases/latest)** and run it (no installer needed).
+2. *(Recommended — BepInEx Plugin `v0.7.0`)* If you have **BepInEx 6 (Unity IL2CPP)** installed, copy **`FM27Trainer.Bridge.dll`** into `<FM27 folder>\BepInEx\plugins\FM27Trainer.Bridge\` and restart FM27.
+3. Load your save in FM27 — the app connects automatically:
+   - Open **Tactical Effectiveness** in FM once to populate the per-player bottleneck list.
+   - Open **Individual Training** in FM once to enable one-click **Additional Focus** writes.
 
-### Install
+> Without the BepInEx plugin, the app still works using screen OCR fallback.
 
-1. Download `FM27 Trainer.exe` from the **[download page](../../releases/latest)** and run it.
-2. *(Recommended)* With BepInEx 6 (Unity IL2CPP) installed, copy `FM27Trainer.Bridge.dll` (`v0.7.0`) into `<FM27 folder>\BepInEx\plugins\FM27Trainer.Bridge\` and restart FM27.
+### FAQ
+
+<details>
+<summary><strong>Why doesn't it auto-force players into tactic slot roles?</strong></summary>
+
+Backups or versatile players covering secondary positions shouldn't be forced to train roles that clash with their attributes. Instead, **Additional Focus** targets each player's weakest attributes in their own natural position.
+
+</details>
 
 ---
 
@@ -144,26 +177,26 @@ Setting up training by hand every week in FM27 is tedious. **FM27 Training Assis
 <summary><strong>For developers / Geliştiriciler için</strong></summary>
 
 ```bash
-# Desktop app (Rust)
-cargo build --release -p fm27-trainer
+# Desktop app & agent tests (Rust)
 cargo test --workspace
+cargo build --release -p fm27-trainer
 
-# Optional BepInEx 6 IL2CPP plugin (.NET 8 SDK)
+# Optional BepInEx 6 IL2CPP bridge (.NET 8 SDK)
 dotnet build bridge/FM27Trainer.Bridge.csproj -c Release -p:FM27Dir="PATH_TO_FM27"
 ```
 
-| Folder | Contents |
+| Path | Contents |
 |---|---|
-| `app/` | Desktop app: planner, training, history, individual & tactics tabs, OCR |
-| `agent/` | Read-only FM27 memory reader + verified training-calendar writer |
-| `bridge/` | Optional BepInEx 6 IL2CPP plugin: exact tactical data + intensity/focus events |
+| `app/` | Desktop app: planner, training, history trend chart, individual & tactics tabs, OCR |
+| `agent/` | Read-only FM27 memory reader + structurally verified training-calendar writer |
+| `bridge/` | Optional BepInEx 6 IL2CPP plugin (`v0.7.0`): exact tactical data + intensity/focus events |
 
-Technical details: [docs/TECHNICAL.md](docs/TECHNICAL.md)
+Technical notes: [docs/TECHNICAL.md](docs/TECHNICAL.md)
 
 </details>
 
 ## Credits & License
 
-- Based on [SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer) by **Sem Hiel** (MIT).
-- Thanks to FMSuperScout, FMLibreEditor, fm-lens and fmsave for research. Font: Inter (SIL OFL). Icons: Phosphor (MIT). See [THIRD_PARTY.md](THIRD_PARTY.md).
+- Original project: [SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer) by **Sem Hiel** (MIT).
+- Research & layouts: FMSuperScout, FMLibreEditor, fm-lens, fmsave. Font: Inter (SIL OFL). Icons: Phosphor (MIT). See [THIRD_PARTY.md](THIRD_PARTY.md).
 - License: [MIT](LICENSE)
