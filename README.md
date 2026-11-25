@@ -12,6 +12,7 @@
 <p align="center">
   <img alt="Version" src="https://img.shields.io/badge/release-v1.2.0-7c6cff">
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows">
+  <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B%20Universal-111111?logo=apple">
   <img alt="FM27" src="https://img.shields.io/badge/Football%20Manager-27-c8102e">
   <img alt="BepInEx" src="https://img.shields.io/badge/BepInEx-6%20IL2CPP-5c2d91">
   <img alt="No cheats" src="https://img.shields.io/badge/hile-yok%20%2F%20no%20cheats-3dd68c">
@@ -24,8 +25,13 @@
   <a href="../../releases/latest">İndir / Download</a>
 </p>
 
+---
+
+<a name="türkçe"></a>
+## 🇹🇷 Türkçe
+
 <p align="center">
-  <img src="docs/images/overview.png" alt="FM27 Training Assistant — Taktiksel Verimlilik" width="92%">
+  <img src="docs/images/overview.png" alt="FM27 Training Assistant — Taktiksel Verimlilik (TR)" width="92%">
 </p>
 
 <p align="center">
@@ -33,11 +39,6 @@
   &nbsp;
   <img src="docs/images/individual.png" alt="Bireysel ve Darboğaz" width="45%">
 </p>
-
----
-
-<a name="türkçe"></a>
-## 🇹🇷 Türkçe
 
 ### Bu program ne işe yarar?
 
@@ -80,18 +81,27 @@ FM27'de her hafta antrenman takvimi kurmak, yorgun oyuncuları kollamak ve eksik
 **🎯 Taktikler**
 - Seçili taktiğe göre en iyi ilk 11 yerleşimini ve daha uygun rol önerilerini gösterir (salt-okunur).
 
-### Kurulum ve İlk Kullanım (3 Adım)
+### Kurulum ve İlk Kullanım
 
-1. **[İndirme sayfasından](../../releases/latest)** `FM27 Trainer.exe` dosyasını indirip çalıştır (kurulum gerektirmez).
-2. *(Önerilen — BepInEx eklentisi `v0.7.0`)* Oyununda **BepInEx 6 (Unity IL2CPP)** kuruluysa `FM27Trainer.Bridge.dll` dosyasını şu klasöre kopyala ve FM27'yi yeniden başlat:
-   ```
+#### Windows (10 / 11)
+1. **[İndirme sayfasından](../../releases/latest)** Windows arşivini indirip çıkarın ve **`FM27 Training Assistant.exe`** dosyasını çalıştırın (kurulum gerektirmez).
+2. *(Önerilen — İsteğe bağlı BepInEx eklentisi `v0.7.0`)* Oyununda **BepInEx 6 (Unity IL2CPP)** kuruluysa `FM27Trainer.Bridge.dll` dosyasını şu klasöre kopyalayıp FM27'yi yeniden başlatın:
+   ```text
    <FM27 klasörü>\BepInEx\plugins\FM27Trainer.Bridge\
    ```
-3. FM27'de kariyerini aç — uygulama otomatik bağlanır:
-   - Oyuncu bazlı darboğaz verilerinin gelmesi için oyunda **Taktiksel Verimlilik** ekranını bir kez aç.
-   - Ek Odak'ı tek tıkla oyuna uygulamak için FM27'de **Bireysel Antrenman** sekmesini bir kez aç.
+3. FM27'de kariyerini açın — uygulama otomatik bağlanır:
+   - Oyuncu bazlı darboğaz verilerinin gelmesi için oyunda **Taktiksel Verimlilik** ekranını bir kez açın.
+   - Ek Odak'ı tek tıkla oyuna uygulamak için FM27'de **Bireysel Antrenman** sekmesini bir kez açın.
 
 > BepInEx kurulu değilse bile uygulama çalışmaya devam eder; taktik değerlerini ekran görüntüsünden (OCR) okur.
+
+#### macOS (13+ Ventura ve üzeri — Apple Silicon & Intel Universal)
+1. **[İndirme sayfasından](../../releases/latest)** **`FM27-Training-Assistant-macOS.dmg`** dosyasını indirin ve **`FM27 Training Assistant.app`** uygulamasını **Applications (Uygulamalar)** klasörüne sürükleyin.
+2. İlk açılışta Apple Developer imzası olmadığı için Gatekeeper uyarısı çıkarsa uygulamayı Uygulamalar klasörüne attıktan sonra Terminal'de bir kez şu komutu çalıştırın (veya **Sistem Ayarları → Gizlilik ve Güvenlik → Yine de Aç** seçeneğini kullanın):
+   ```bash
+   xattr -cr "/Applications/FM27 Training Assistant.app"
+   ```
+3. macOS sürümü yerleşik **Apple Vision OCR** ve **`libfm27_agent.dylib`** modülü ile doğrudan çalışır; **BepInEx** isteğe bağlıdır. Ekran yakalama kullanacaksanız **Sistem Ayarları → Gizlilik ve Güvenlik → Ekran Kaydı** altından `FM27 Training Assistant` iznini açın.
 
 ### Sık Sorulan Sorular
 
@@ -99,6 +109,13 @@ FM27'de her hafta antrenman takvimi kurmak, yorgun oyuncuları kollamak ve eksik
 <summary><strong>Kayıt dosyam (save) bozulur mu?</strong></summary>
 
 Antrenman takvimi yazılmadan önce hafta yapısı, geçerli seans kodları ve eski baytlar tek tek doğrulanır; sorun olursa işlem geri sarılır. Değişiklikler sen FM27 içinde **Kaydet** diyene kadar kalıcı olmaz. Yine de her ihtimale karşı yedek alman önerilir.
+
+</details>
+
+<details>
+<summary><strong>macOS'ta "geliştirici doğrulanamadı" (Gatekeeper) uyarısı çıkarsa ne yapmalıyım?</strong></summary>
+
+Uygulama açık kaynaklı olduğu ve ücretli Apple Developer sertifikasıyla notarization yapılmadığı için tarayıcıdan indirilen `.dmg`/`.app` dosyalarına macOS karantina etiketi ekler. `/Applications` klasörüne kopyaladıktan sonra bir kez `xattr -cr "/Applications/FM27 Training Assistant.app"` komutunu çalıştırmanız veya *Sistem Ayarları → Gizlilik ve Güvenlik → Yine de Aç* demeniz yeterlidir.
 
 </details>
 
@@ -120,6 +137,16 @@ Güvenlik kontrolü tarih veya takvim yapısını doğrulayamazsa uygulama otoma
 
 <a name="english"></a>
 ## 🇬🇧 English
+
+<p align="center">
+  <img src="docs/images/overview-en.png" alt="FM27 Training Assistant — Tactical Effectiveness (EN)" width="92%">
+</p>
+
+<p align="center">
+  <img src="docs/images/planning-en.png" alt="Weekly Planning (EN)" width="45%">
+  &nbsp;
+  <img src="docs/images/individual-en.png" alt="Individual & Bottlenecks (EN)" width="45%">
+</p>
 
 ### What does it do?
 
@@ -152,17 +179,33 @@ Managing training schedules, player fatigue and individual development by hand e
   - **Role-free Additional Focus** tailored strictly to each player's natural position and weakest attribute group (skipping heavy physical focuses for injured or `32+` players).
 - **🎯 Tactics:** Read-only best XI and role suitability helper.
 
-### Install & First Use (3 Steps)
+### Install & First Use
 
-1. Download **`FM27 Trainer.exe`** from **[Releases](../../releases/latest)** and run it (no installer needed).
-2. *(Recommended — BepInEx Plugin `v0.7.0`)* If you have **BepInEx 6 (Unity IL2CPP)** installed, copy **`FM27Trainer.Bridge.dll`** into `<FM27 folder>\BepInEx\plugins\FM27Trainer.Bridge\` and restart FM27.
+#### Windows (10 / 11)
+1. Download the Windows archive from **[Releases](../../releases/latest)**, extract it, and run **`FM27 Training Assistant.exe`** (portable, no installer needed).
+2. *(Recommended — Optional BepInEx Plugin `v0.7.0`)* If you have **BepInEx 6 (Unity IL2CPP)** installed, copy **`FM27Trainer.Bridge.dll`** into `<FM27 folder>\BepInEx\plugins\FM27Trainer.Bridge\` and restart FM27.
 3. Load your save in FM27 — the app connects automatically:
    - Open **Tactical Effectiveness** in FM once to populate the per-player bottleneck list.
    - Open **Individual Training** in FM once to enable one-click **Additional Focus** writes.
 
 > Without the BepInEx plugin, the app still works using screen OCR fallback.
 
+#### macOS (13+ Ventura or newer — Apple Silicon & Intel Universal)
+1. Download **`FM27-Training-Assistant-macOS.dmg`** from **[Releases](../../releases/latest)** and drag **`FM27 Training Assistant.app`** into **Applications**.
+2. On first launch, if macOS Gatekeeper warns about an unidentified developer, run this once in Terminal after moving it to Applications (or allow it under **System Settings → Privacy & Security → Open Anyway**):
+   ```bash
+   xattr -cr "/Applications/FM27 Training Assistant.app"
+   ```
+3. The macOS build runs with native **Apple Vision OCR** and the bundled **`libfm27_agent.dylib`** module (BepInEx is optional). If using screen capture OCR, enable `FM27 Training Assistant` under **System Settings → Privacy & Security → Screen Recording**.
+
 ### FAQ
+
+<details>
+<summary><strong>What if macOS shows an "unidentified developer" (Gatekeeper) warning?</strong></summary>
+
+Because the app is open-source and ad-hoc signed without a paid Apple Developer ID certificate, macOS attaches a quarantine flag to `.dmg`/`.app` files downloaded via a browser. Moving the app to `/Applications` and running `xattr -cr "/Applications/FM27 Training Assistant.app"` once (or choosing *Open Anyway* in System Settings → Privacy & Security) resolves this permanently.
+
+</details>
 
 <details>
 <summary><strong>Why doesn't it auto-force players into tactic slot roles?</strong></summary>
@@ -180,6 +223,9 @@ Backups or versatile players covering secondary positions shouldn't be forced to
 # Desktop app & agent tests (Rust)
 cargo test --workspace
 cargo build --release -p fm27-trainer
+
+# macOS Universal .app & .dmg bundle (run on macOS)
+./release.sh
 
 # Optional BepInEx 6 IL2CPP bridge (.NET 8 SDK)
 dotnet build bridge/FM27Trainer.Bridge.csproj -c Release -p:FM27Dir="PATH_TO_FM27"

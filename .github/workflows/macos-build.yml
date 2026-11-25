@@ -10,6 +10,13 @@ on:
       - ".github/workflows/macos-build.yml"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-macos:
     runs-on: macos-latest
@@ -24,3 +31,14 @@ jobs:
         with:
           name: FM27-Training-Assistant-macOS
           path: dist/FM27-Training-Assistant-macOS.dmg
+      - name: Publish macOS DMG to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(grep -m1 '^version' app/Cargo.toml | cut -d'"' -f2)
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/FM27-Training-Assistant-macOS.dmg --clobber
+          else
+            gh release create "$TAG" dist/FM27-Training-Assistant-macOS.dmg --title "$TAG" --generate-notes
+          fi
