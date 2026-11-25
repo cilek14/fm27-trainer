@@ -165,7 +165,7 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "No clubs found." => "Kulüp bulunamadı.",
         "no eleven picked" => "ilk 11 seçilmemiş",
         "No Football Manager window found. Is FM27 running?" => "Football Manager penceresi bulunamadı. FM27 çalışıyor mu?",
-        "No Screen Recording permission. Switch on FM27 Trainer under System Settings → Privacy & Security → Screen Recording, then restart the app." => "Ekran Kaydı izni yok. Sistem Ayarlarından izin verip uygulamayı yeniden başlatın.",
+        "No Screen Recording permission. Switch on FM27 Training Assistant under System Settings → Privacy & Security → Screen Recording, then restart the app." => "Ekran Kaydı izni yok. Sistem Ayarları → Gizlilik ve Güvenlik → Ekran Kaydı altından FM27 Training Assistant'ı etkinleştirip uygulamayı yeniden başlatın.",
         "No tactical sessions" => "Taktik seans koyma (Gelişim modu)",
         "none" => "yok",
         "None: every player is in a role that suits him." => "Yok: her oyuncu kendisine uygun bir rolde.",

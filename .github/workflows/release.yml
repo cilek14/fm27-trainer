@@ -1,13 +1,4 @@
-# Bouwt FM27 Trainer voor macOS (universeel, ondertekend + genotariseerd) en Windows.
-# Start bij een tag als v0.2.1 (met release-notes in docs/releases/v0.2.1.md), of met de hand (Actions → release → Run workflow).
-#
-# Secrets voor macOS-ondertekening (Settings → Secrets and variables → Actions):
-#   MACOS_CERT_P12        base64 van je "Developer ID Application"-certificaat (.p12)
-#   MACOS_CERT_PASSWORD   wachtwoord van die .p12
-#   APPLE_ID              je Apple ID (e-mail)
-#   APPLE_TEAM_ID         je Team ID (10 tekens)
-#   APPLE_APP_PASSWORD    app-specifiek wachtwoord (appleid.apple.com → Inloggen en beveiliging)
-# Zonder deze secrets bouwt de workflow een ad-hoc ondertekende versie.
+# Builds FM27 Training Assistant for macOS (universal .dmg) and Windows (.zip).
 name: release
 
 on:
@@ -16,26 +7,24 @@ on:
   workflow_dispatch:
     inputs:
       platform:
-        description: "Welke versie bouwen"
+        description: "Platform to build"
         type: choice
-        options: [alle, windows, macos]
-        default: alle
+        options: [all, windows, macos]
+        default: all
 
 permissions:
   contents: write
 
 jobs:
-  # Bij een tag alleen als de repo-variabele MACOS_CI op "true" staat (en de secrets hierboven er zijn);
-  # anders komt de Mac-versie uit ./release.sh op je eigen Mac (ondertekend en genotariseerd).
   macos:
-    if: (github.event_name == 'push' && vars.MACOS_CI == 'true') || (github.event_name == 'workflow_dispatch' && inputs.platform != 'windows')
+    if: github.event_name != 'workflow_dispatch' || inputs.platform != 'windows'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - name: Certificaat in tijdelijke sleutelhanger
+      - name: Certificate in temporary keychain
         env:
           MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
@@ -49,23 +38,24 @@ jobs:
           security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KC"
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
-      - name: Notarisatie-profiel
+      - name: Notarization profile
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         if: env.APPLE_ID != ''
         run: xcrun notarytool store-credentials fm27-notary --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
-      - run: ./release.sh
+      - run: cargo test --workspace
+      - run: chmod +x release.sh && ./release.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: FM27-Trainer-macOS
-          path: dist/*.dmg
+          name: FM27-Training-Assistant-macOS
+          path: dist/FM27-Training-Assistant-macOS.dmg
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: dist/*.dmg
-          body_path: docs/releases/${{ github.ref_name }}.md
+          files: dist/FM27-Training-Assistant-macOS.dmg
+          generate_release_notes: true
 
   windows:
     if: github.event_name != 'workflow_dispatch' || inputs.platform != 'macos'
@@ -73,21 +63,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test -p fm27-agent
+      - run: cargo test --workspace
       - run: cargo build --release -p fm27-trainer
-      - name: Inpakken
+      - name: Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item target/release/fm27-trainer.exe "dist/FM27 Trainer.exe"
-          Compress-Archive -Path "dist/FM27 Trainer.exe" -DestinationPath "dist/FM27-Trainer-Windows.zip" -Force
+          Copy-Item target/release/fm27-trainer.exe "dist/FM27 Training Assistant.exe"
+          Compress-Archive -Path "dist/FM27 Training Assistant.exe" -DestinationPath "dist/FM27-Training-Assistant-Windows.zip" -Force
       - uses: actions/upload-artifact@v4
         with:
-          name: FM27-Trainer-Windows
-          path: dist/FM27-Trainer-Windows.zip
+          name: FM27-Training-Assistant-Windows
+          path: dist/FM27-Training-Assistant-Windows.zip
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: dist/FM27-Trainer-Windows.zip
-          # release-notes: docs/releases/<tag>.md (maak dat bestand voor je de tag pusht)
-          body_path: docs/releases/${{ github.ref_name }}.md
+          files: dist/FM27-Training-Assistant-Windows.zip
+          generate_release_notes: true

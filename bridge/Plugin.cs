@@ -20,10 +20,25 @@ namespace FM27Trainer.Bridge;
 public sealed class Plugin : BasePlugin
 {
     internal static ManualLogSource LogSource = null!;
-    internal static readonly string OutDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "FM27 Trainer"
-    );
+    internal static readonly string OutDir = ResolveOutDir();
+
+    private static string ResolveOutDir()
+    {
+        if (OperatingSystem.IsMacOS())
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "Library",
+                "Application Support",
+                "FM27 Trainer"
+            );
+        }
+
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "FM27 Trainer"
+        );
+    }
     internal static readonly string DumpPath = Path.Combine(OutDir, "bepinex-tactical-dump.json");
     internal static readonly string CmdPath = Path.Combine(OutDir, "bepinex-intensity-cmd.json");
     internal static readonly string CmdResultPath = Path.Combine(OutDir, "bepinex-intensity-result.json");

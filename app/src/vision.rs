@@ -173,8 +173,8 @@ mod mac_capture {
             // laat macOS de vraag tonen (de eerste keer) en zet de app in de lijst
             unsafe { CGRequestScreenCaptureAccess() };
             bail!("{}", crate::t!(
-                "Geen toestemming voor Schermopname. Zet FM27 Trainer aan bij Systeeminstellingen → Privacy en beveiliging → Schermopname en start de app opnieuw.",
-                "No Screen Recording permission. Switch on FM27 Trainer under System Settings → Privacy & Security → Screen Recording, then restart the app."
+                "Geen toestemming voor Schermopname. Zet FM27 Training Assistant aan bij Systeeminstellingen → Privacy en beveiliging → Schermopname en start de app opnieuw.",
+                "No Screen Recording permission. Switch on FM27 Training Assistant under System Settings → Privacy & Security → Screen Recording, then restart the app."
             ));
         }
         #[allow(deprecated)]
