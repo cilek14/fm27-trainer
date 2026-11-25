@@ -374,12 +374,20 @@ pub fn stat_tile_delta(
 
 /// Klein gekleurd label.
 pub fn pill(ui: &mut Ui, text: &str, color: Color32) -> Response {
-    Frame::new()
-        .fill(tint(color, 0.18))
-        .corner_radius(CornerRadius::same(20))
-        .inner_margin(Margin::symmetric(9, 3))
-        .show(ui, |ui| ui.add(egui::Label::new(RichText::new(text).font(FontId::new(12.0, medium())).color(color)).extend()))
-        .response
+    let galley = ui.fonts(|f| f.layout_no_wrap(text.to_owned(), FontId::new(12.0, medium()), color));
+    let size = vec2(galley.size().x + 18.0, (galley.size().y + 6.0).max(22.0));
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
+    if ui.is_rect_visible(rect) {
+        let p = ui.painter();
+        let r = (rect.height() * 0.5).round().clamp(4.0, 20.0) as u8;
+        p.rect_filled(rect, CornerRadius::same(r), tint(color, 0.18));
+        let text_pos = egui::pos2(
+            rect.center().x - galley.size().x * 0.5,
+            rect.center().y - galley.size().y * 0.5,
+        );
+        p.galley(text_pos, galley, color);
+    }
+    resp
 }
 
 pub fn primary_button(ui: &mut Ui, icon_s: &str, text: &str, enabled: bool) -> Response {

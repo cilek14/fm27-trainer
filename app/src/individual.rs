@@ -435,28 +435,35 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
                 }
             });
 
-        let understanding = find_prefix(item, "TacticalUnderstanding")
-            .or_else(|| find_prefix(item, "PlayerTacticalUnderstanding"))
-            .or_else(|| find_prefix(item, "Comprehension"))
+        let eff_node = find_prefix(item, "TacticalEffectiveness").unwrap_or(item);
+
+        let understanding = find_prefix(eff_node, "TacticalUnderstanding")
+            .or_else(|| find_prefix(eff_node, "PlayerTacticalUnderstanding"))
+            .or_else(|| find_prefix(eff_node, "Comprehension"))
+            .or_else(|| find_prefix(item, "TacticalUnderstanding"))
             .and_then(score_of);
 
-        let pa_node = find_prefix(item, "PlayerAbility");
-        let capability = find_prefix(item, "CapabilityKeyFactor")
-            .or_else(|| find_prefix(item, "Capability"))
-            .or_else(|| pa_node.and_then(|pa| find_prefix(pa, "CapabilityKeyFactor")))
+        let pa_node = find_prefix(eff_node, "PlayerAbility").or_else(|| find_prefix(item, "PlayerAbility"));
+        let capability = find_prefix(eff_node, "CapabilityKeyFactor")
+            .or_else(|| find_prefix(eff_node, "CapabilityScore"))
+            .or_else(|| find_prefix(eff_node, "Capability"))
+            .or_else(|| pa_node.and_then(|pa| find_prefix(pa, "CapabilityKeyFactor").or_else(|| find_prefix(pa, "CapabilityScore"))))
             .or_else(|| pa_node)
             .and_then(score_of);
 
-        let role_suitability = find_prefix(item, "RoleSuitabilityKeyFactor")
-            .or_else(|| find_prefix(item, "RoleSuitability"))
-            .or_else(|| pa_node.and_then(|pa| find_prefix(pa, "RoleSuitabilityKeyFactor")))
+        let role_suitability = find_prefix(eff_node, "RoleSuitabilityKeyFactor")
+            .or_else(|| find_prefix(eff_node, "RoleSuitabilityScore"))
+            .or_else(|| find_prefix(eff_node, "RoleSuitability"))
+            .or_else(|| pa_node.and_then(|pa| find_prefix(pa, "RoleSuitabilityKeyFactor").or_else(|| find_prefix(pa, "RoleSuitabilityScore"))))
             .and_then(score_of);
 
-        let buy_in = find_prefix(item, "PlayerBuyIn")
-            .or_else(|| find_prefix(item, "BuyIn"))
+        let buy_in = find_prefix(eff_node, "PlayerBuyIn")
+            .or_else(|| find_prefix(eff_node, "BuyIn"))
+            .or_else(|| find_prefix(item, "PlayerBuyIn"))
             .and_then(score_of);
 
-        let overall = find_prefix(item, "OverallEffectiveness")
+        let overall = find_prefix(eff_node, "OverallEffectiveness")
+            .or_else(|| find_prefix(item, "OverallEffectiveness"))
             .and_then(score_of)
             .or_else(|| {
                 let parts: Vec<f32> = [understanding, capability, role_suitability, buy_in].into_iter().flatten().collect();
@@ -1855,5 +1862,39 @@ mod tests {
         assert_eq!(parsed.intensities.get(&101), Some(&IntensityLevel::Double));
         assert_eq!(parsed.bottlenecks.len(), 2);
         assert_eq!(parsed.bottlenecks[0].name, "Yeni Transfer");
+    }
+
+    #[test]
+    fn parses_nested_player_tactical_effectiveness_records() {
+        let sample = json!({
+            "session_ready": true,
+            "data": {
+                "TeamTactic:1.TacticalEffectiveness": {
+                    "Players": [
+                        {
+                            "Player:1": { "ref": "Person", "runtime_id": 201 },
+                            "TacticalEffectiveness:123": {
+                                "OverallEffectiveness:1": { "MaxValue:1": "54" },
+                                "TacticalUnderstanding:2": { "OverallEffectiveness:1": { "MaxValue:1": "48" } },
+                                "PlayerAbility:3": {
+                                    "CapabilityScore:1": { "MaxValue:1": "62" },
+                                    "RoleSuitabilityScore:1": { "MaxValue:1": "70" }
+                                },
+                                "PlayerBuyIn:4": { "OverallEffectiveness:1": { "MaxValue:1": "66" } }
+                            }
+                        }
+                    ]
+                }
+            }
+        });
+
+        let mut names = HashMap::new();
+        names.insert(201, "Kadro Bekçisi".to_string());
+
+        let parsed = parse_bepinex_individual(&sample, &names);
+        assert_eq!(parsed.bottlenecks.len(), 1);
+        assert_eq!(parsed.bottlenecks[0].name, "Kadro Bekçisi");
+        assert!((parsed.bottlenecks[0].overall - 54.0).abs() < 0.01);
+        assert_eq!(parsed.bottlenecks[0].weakest_score, 48.0);
     }
 }

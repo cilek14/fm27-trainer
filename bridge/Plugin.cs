@@ -9,6 +9,7 @@ using BepInEx.Unity.IL2CPP;
 using FM.GamePlugin;
 using FM.UI;
 using HarmonyLib;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using SI.Bindable;
 using SI.Bindable.Reference.Core;
 using SI.Core;
@@ -16,7 +17,7 @@ using SI.Interop;
 
 namespace FM27Trainer.Bridge;
 
-[BepInPlugin("com.fm27trainer.bridge", "FM27 Training Assistant Bridge", "0.7.0")]
+[BepInPlugin("com.fm27trainer.bridge", "FM27 Training Assistant Bridge", "0.7.1")]
 public sealed class Plugin : BasePlugin
 {
     internal static ManualLogSource LogSource = null!;
@@ -51,7 +52,7 @@ public sealed class Plugin : BasePlugin
         Directory.CreateDirectory(OutDir);
         _harmony = new Harmony("com.fm27trainer.bridge");
         _harmony.PatchAll(typeof(InteropChannelPatches));
-        Log.LogInfo("FM27 Training Assistant Bridge 0.7.0 loaded. Watching TacticalEffectiveness + Players + Intensity/Focus Events.");
+        Log.LogInfo("FM27 Training Assistant Bridge 0.7.1 loaded. Watching TacticalEffectiveness + Players + Intensity/Focus Events.");
     }
 }
 
@@ -112,6 +113,7 @@ internal static class InteropChannelPatches
     private static volatile int _sessionId;
     private static volatile int _managerRefVal;
     private static long _lastCmdPollMs;
+    private static int _lastPlayerCount = -1;
     private static string? _lastEntryKey;
     private static object? _lastTacticalDump;
 
@@ -425,15 +427,13 @@ internal static class InteropChannelPatches
                 return added;
             }
 
-            var enumerable = obj.TryCast<Il2CppSystem.Collections.IEnumerable>();
-            if (enumerable != null)
+            var items = TryEnumerateItems(TypedValue.Create(obj));
+            if (items != null)
             {
-                var en = enumerable.GetEnumerator();
-                var count = 0;
-                while (en.MoveNext() && count < 80)
+                var limit = Math.Min(items.Count, 80);
+                for (var i = 0; i < limit; i++)
                 {
-                    count++;
-                    var cur = en.Current;
+                    var cur = items[i];
                     if (cur == null) continue;
                     var itemTv = cur.TryCast<TypedValue>();
                     if (itemTv != null)
@@ -483,7 +483,7 @@ internal static class InteropChannelPatches
     private static object? DumpTypedValue(TypedValue? tv, int depth)
     {
         if (tv == null || tv.IsNull) return null;
-        if (depth > 4) return "<max-depth>";
+        if (depth > 6) return "<max-depth>";
 
         try
         {
@@ -584,20 +584,131 @@ internal static class InteropChannelPatches
         return dict;
     }
 
+    private static List<Il2CppSystem.Object>? TryEnumerateItems(TypedValue? tv)
+    {
+        if (tv == null || tv.IsNull) return null;
+        var obj = tv.Get();
+        if (obj == null) return null;
+
+        try
+        {
+            var tvList = obj.TryCast<Il2CppSystem.Collections.Generic.List<TypedValue>>();
+            if (tvList != null)
+            {
+                var res = new List<Il2CppSystem.Object>(tvList.Count);
+                for (var i = 0; i < tvList.Count; i++)
+                {
+                    var item = tvList[i];
+                    if (item != null) res.Add(item);
+                }
+                return res;
+            }
+        }
+        catch { }
+
+        try
+        {
+            var tvListAs = tv.As<Il2CppSystem.Collections.Generic.List<TypedValue>>();
+            if (tvListAs != null)
+            {
+                var res = new List<Il2CppSystem.Object>(tvListAs.Count);
+                for (var i = 0; i < tvListAs.Count; i++)
+                {
+                    var item = tvListAs[i];
+                    if (item != null) res.Add(item);
+                }
+                return res;
+            }
+        }
+        catch { }
+
+        try
+        {
+            var recList = obj.TryCast<Il2CppSystem.Collections.Generic.List<Record>>();
+            if (recList != null)
+            {
+                var res = new List<Il2CppSystem.Object>(recList.Count);
+                for (var i = 0; i < recList.Count; i++)
+                {
+                    var item = recList[i];
+                    if (item != null) res.Add(item);
+                }
+                return res;
+            }
+        }
+        catch { }
+
+        try
+        {
+            var tvArr = obj.TryCast<Il2CppReferenceArray<TypedValue>>();
+            if (tvArr != null)
+            {
+                var res = new List<Il2CppSystem.Object>(tvArr.Length);
+                for (var i = 0; i < tvArr.Length; i++)
+                {
+                    var item = tvArr[i];
+                    if (item != null) res.Add(item);
+                }
+                return res;
+            }
+        }
+        catch { }
+
+        try
+        {
+            var recArr = obj.TryCast<Il2CppReferenceArray<Record>>();
+            if (recArr != null)
+            {
+                var res = new List<Il2CppSystem.Object>(recArr.Length);
+                for (var i = 0; i < recArr.Length; i++)
+                {
+                    var item = recArr[i];
+                    if (item != null) res.Add(item);
+                }
+                return res;
+            }
+        }
+        catch { }
+
+        try
+        {
+            var enumerable = obj.TryCast<Il2CppSystem.Collections.IEnumerable>();
+            if (enumerable != null)
+            {
+                var res = new List<Il2CppSystem.Object>();
+                var en = enumerable.GetEnumerator();
+                while (en.MoveNext())
+                {
+                    if (en.Current != null) res.Add(en.Current);
+                    if (res.Count >= 200) break;
+                }
+                return res;
+            }
+        }
+        catch { }
+
+        return null;
+    }
+
     private static List<Dictionary<string, object?>>? DumpPlayers(TypedValue? tv)
     {
         if (tv == null || tv.IsNull) return null;
         try
         {
             var obj = tv.Get();
-            var enumerable = obj?.TryCast<Il2CppSystem.Collections.IEnumerable>();
-            if (enumerable == null) return null;
+            var items = TryEnumerateItems(tv);
+            if (items == null)
+            {
+                var objType = obj?.GetIl2CppType()?.FullName ?? "null";
+                var dataType = tv.DataType?.FullName ?? "null";
+                Plugin.LogSource.LogWarning($"Players collection could not be enumerated (objType={objType}, dataType={dataType}).");
+                return null;
+            }
 
             var list = new List<Dictionary<string, object?>>();
-            var en = enumerable.GetEnumerator();
-            while (en.MoveNext())
+            for (var i = 0; i < items.Count; i++)
             {
-                var cur = en.Current;
+                var cur = items[i];
                 if (cur == null) continue;
 
                 var itemTv = cur.TryCast<TypedValue>();
@@ -608,11 +719,26 @@ internal static class InteropChannelPatches
                 list.Add(DumpRecord(pRec, 2));
                 if (list.Count >= 60) break;
             }
+
+            if (list.Count > 0)
+            {
+                if (_lastPlayerCount != list.Count)
+                {
+                    _lastPlayerCount = list.Count;
+                    Plugin.LogSource.LogInfo($"Players captured: {list.Count}");
+                }
+            }
+            else
+            {
+                var objType = obj?.GetIl2CppType()?.FullName ?? "null";
+                var dataType = tv.DataType?.FullName ?? "null";
+                Plugin.LogSource.LogWarning($"Players captured 0 records (items={items.Count}, objType={objType}, dataType={dataType}).");
+            }
             return list;
         }
         catch (Exception ex)
         {
-            Plugin.LogSource.LogDebug($"DumpPlayers err: {ex.Message}");
+            Plugin.LogSource.LogWarning($"DumpPlayers err: {ex.Message}");
             return null;
         }
     }
