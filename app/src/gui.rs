@@ -306,6 +306,9 @@ impl App {
             Ok("nl") => settings.lang = Lang::Nl,
             Ok("en") => settings.lang = Lang::En,
             Ok("tr") => settings.lang = Lang::Tr,
+            Ok("fr") => settings.lang = Lang::Fr,
+            Ok("it") => settings.lang = Lang::It,
+            Ok("es") => settings.lang = Lang::Es,
             _ => {}
         }
         i18n::set(settings.lang);
@@ -569,12 +572,40 @@ impl App {
                     });
                     ui.add_space(6.0);
                     let mut lang = self.settings.lang;
-                    if theme::segmented_full(ui, &mut lang, &[(Lang::Tr, "TR", "Türkçe"), (Lang::En, "EN", "English"), (Lang::Nl, "NL", "Nederlands")]) {
+                    let changed_bottom = theme::segmented_full(
+                        ui,
+                        &mut lang,
+                        &[(Lang::Fr, "FR", "Français"), (Lang::It, "IT", "Italiano"), (Lang::Es, "ES", "Español")],
+                    );
+                    ui.add_space(3.0);
+                    let changed_top = theme::segmented_full(
+                        ui,
+                        &mut lang,
+                        &[(Lang::Tr, "TR", "Türkçe"), (Lang::En, "EN", "English"), (Lang::Nl, "NL", "Nederlands")],
+                    );
+                    if changed_top || changed_bottom {
                         self.settings.lang = lang;
                         i18n::set(lang);
                         self.save_settings();
                     }
-                    ui.add_space(10.0);
+                    ui.add_space(8.0);
+                    let tip = t!(
+                        "Steun de ontwikkeling (buymeacoffee.com/cilek14)",
+                        "Support development (buymeacoffee.com/cilek14)",
+                        "Geliştirmeyi destekle (buymeacoffee.com/cilek14)"
+                    );
+                    if theme::support_button(
+                        ui,
+                        icon::COFFEE,
+                        t!("Buy Me a Coffee", "Buy Me a Coffee", "Buy Me a Coffee"),
+                        true,
+                    )
+                    .on_hover_text(tip)
+                    .clicked()
+                    {
+                        open_path(std::path::Path::new(DONATE_URL));
+                    }
+                    ui.add_space(8.0);
                     Frame::new().fill(theme::SURFACE).stroke(Stroke::new(1.0_f32, theme::BORDER)).corner_radius(CornerRadius::same(12)).inner_margin(Margin::same(12)).show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.horizontal(|ui| {
@@ -1930,13 +1961,26 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.label(theme::ic(icon::TRANSLATE).color(theme::ACCENT));
                     ui.label(t!("Taal", "Language"));
-                    let mut lang = self.settings.lang;
-                    if theme::segmented(ui, &mut lang, &[(Lang::Tr, "Türkçe"), (Lang::En, "English"), (Lang::Nl, "Nederlands")]) {
-                        self.settings.lang = lang;
-                        i18n::set(lang);
-                        dirty = true;
-                    }
                 });
+                ui.add_space(4.0);
+                let mut lang = self.settings.lang;
+                let changed_top = theme::segmented_full(
+                    ui,
+                    &mut lang,
+                    &[(Lang::Tr, "Türkçe", "Türkçe"), (Lang::En, "English", "English"), (Lang::Nl, "Nederlands", "Nederlands")],
+                );
+                ui.add_space(4.0);
+                let changed_bottom = theme::segmented_full(
+                    ui,
+                    &mut lang,
+                    &[(Lang::Fr, "Français", "Français"), (Lang::It, "Italiano", "Italiano"), (Lang::Es, "Español", "Español")],
+                );
+                if changed_top || changed_bottom {
+                    self.settings.lang = lang;
+                    i18n::set(lang);
+                    dirty = true;
+                }
+                ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.label(theme::ic(icon::COINS).color(theme::ACCENT));
                     ui.label(t!("Koers € per £", "Rate € per £"));
@@ -1954,7 +1998,7 @@ impl App {
                 );
             });
             theme::card(&mut cols[1], |ui| {
-                ui.label(theme::h2("Planner"));
+                ui.label(theme::h2(t!("Planner", "Planner", "Planlayıcı")));
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.label(t!(
@@ -1964,6 +2008,16 @@ impl App {
                     ));
                     dirty |= ui.add(egui::Slider::new(&mut self.settings.planner.bonding_below, 0.0..=100.0).fixed_decimals(0)).changed();
                 });
+                dirty |= ui
+                    .checkbox(
+                        &mut self.settings.planner.sunday_team_bonding,
+                        t!(
+                            "Verplaats één Team Bonding naar zondag (rustdag)",
+                            "Move one Team Bonding to Sunday rest day",
+                            "Bir Takım Kaynaşması seansını Pazar dinlenme gününe taşı"
+                        ),
+                    )
+                    .changed();
                 ui.horizontal(|ui| {
                     ui.label(t!("Standaardsituaties elke (weken, 0 = uit)", "Set pieces every (weeks, 0 = off)"));
                     dirty |= ui.add(egui::DragValue::new(&mut self.settings.planner.set_pieces_every).range(0..=8)).changed();
@@ -2023,7 +2077,7 @@ impl App {
                     ui.label(t!(
                         "Automatisch 'Meer rust' onder conditie (%)",
                         "Auto 'More rest' below condition (%)",
-                        "Düşük kondisyonda otomatik 'Daha fazla dinlenme' (%)"
+                        "Kondisyon şu seviyenin altındaysa (%)"
                     ));
                     dirty |= ui.add(egui::Slider::new(&mut self.settings.planner.auto_light_below, 0.0..=95.0).fixed_decimals(0)).changed();
                 });
@@ -2060,7 +2114,7 @@ impl App {
                     ui.label(t!(
                         "Automatisch ontwikkelmodus boven tactisch begrip (%)",
                         "Auto development mode above tactical understanding (%)",
-                        "Tüm taktik alanlar şu seviyenin üstündeyse otomatik Gelişim modu (%)"
+                        "Otomatik Gelişim modu eşiği (%)"
                     ));
                     dirty |= ui.add(egui::Slider::new(&mut self.settings.planner.auto_dev_above, 0.0..=100.0).fixed_decimals(0)).changed();
                 });
@@ -2155,10 +2209,20 @@ impl App {
                 "FM27 Training Assistant is free and stays free. If you want to give something back for the work, you can donate. Every feature works without it."
             )))
             .wrap());
-            ui.add_space(6.0);
-            if theme::button(ui, icon::HEART, t!("Doneer via Ko-fi", "Donate on Ko-fi"), true).clicked() {
-                open_path(std::path::Path::new(DONATE_URL));
-            }
+            ui.add_space(8.0);
+            ui.horizontal_wrapped(|ui| {
+                if theme::support_button(
+                    ui,
+                    icon::COFFEE,
+                    t!("Steun via Buy Me a Coffee", "Support on Buy Me a Coffee", "Buy Me a Coffee'de destek ol"),
+                    false,
+                )
+                .clicked()
+                {
+                    open_path(std::path::Path::new(DONATE_URL));
+                }
+                ui.label(theme::faint("buymeacoffee.com/cilek14"));
+            });
         });
         ui.add_space(14.0);
         theme::card(ui, |ui| {
@@ -2259,8 +2323,8 @@ impl eframe::App for App {
 
 // ------------------------------------------------------------------------ helpers
 
-/// Donatiepagina (knop op Instellingen).
-const DONATE_URL: &str = "https://ko-fi.com/semhiel";
+/// Destek sayfası (Yan menü ve Ayarlar).
+const DONATE_URL: &str = "https://buymeacoffee.com/cilek14";
 
 fn open_path(p: &std::path::Path) {
     #[cfg(target_os = "macos")]

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/release-v1.2.0-7c6cff">
+  <img alt="Version" src="https://img.shields.io/badge/release-v1.3.0-7c6cff">
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B%20Universal-111111?logo=apple">
   <img alt="FM27" src="https://img.shields.io/badge/Football%20Manager-27-c8102e">
@@ -22,7 +22,12 @@
 <p align="center">
   <a href="#türkçe">🇹🇷 Türkçe</a> ·
   <a href="#english">🇬🇧 English</a> ·
-  <a href="../../releases/latest">İndir / Download</a>
+  <a href="../../releases/latest">İndir / Download</a> ·
+  <a href="https://buymeacoffee.com/cilek14">☕    Coffee</a>
+</p>
+
+<p align="center">
+  <sub>UI Languages / Uygulama Dilleri: 🇹🇷 TR · 🇬🇧 EN · 🇳🇱 NL · 🇫🇷 FR · 🇮🇹 IT · 🇪🇸 ES</sub>
 </p>
 
 ---

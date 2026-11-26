@@ -172,7 +172,7 @@ pub fn run(eff: &Effectiveness, settings: &PlannerSettings, write: bool, skip: &
             }
             for s in 0..3 {
                 if let Some(code) = model::session_code(&plan.days[d].slots[s]) {
-                    if code != 500 && code != 402 {
+                    if !matches!(code, 500 | 402 | 600) {
                         planned[d][s] = code;
                     }
                 }
@@ -229,15 +229,41 @@ pub fn short(code: u16) -> &'static str {
         201 => "ABW",
         202 => "DBW",
         203 => "PBW",
-        300 => "Rest",
-        301 => "Rec",
-        302 => "LCon",
+        220 => "AtkB",
+        221 => "AtkP",
+        222 => "AtkD",
+        223 => "AtkW",
+        224 => "DefB",
+        225 => "DefE",
+        226 => "DefD",
+        227 => "DefW",
+        228 => "ThA",
+        229 => "ThD",
+        230 => "TeCC",
+        231 => "TeCv",
+        232 => "TeBR",
+        233 => "TeGD",
+        234 => "TeAD",
+        235 => "TrR",
+        236 => "TrP",
+        237 => "TrPg",
+        238 => "GKB",
+        239 => "GKS",
+        240 => "GKH",
+        241 => "GK1",
+        242 => "GKD",
+        243 => "SPDv",
+        244 => "SPPn",
+        300 | 320 => "Rest",
+        301 | 321 => "Rec",
+        302 | 322 => "LCon",
         303 => "Con",
         304 => "HCon",
         400 => "Bond",
         401 => "Comm",
         402 => "Reis",
         500 => "MATCH",
+        600 => "N/A",
         _ => "·",
     }
 }

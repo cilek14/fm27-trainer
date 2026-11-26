@@ -319,6 +319,9 @@ pub struct PlannerSettings {
     /// Özel kamp modu (Kondisyon / Derbi sadece ilk haftaya uygulanır).
     #[serde(default)]
     pub camp_mode: CampMode,
+    /// Maçsız haftalarda (veya Pazar dinlenme gününde) 1 Takım Kaynaşması seansını Pazar gününe taşır.
+    #[serde(default)]
+    pub sunday_team_bonding: bool,
 }
 
 fn default_block() -> u32 {
@@ -352,6 +355,7 @@ impl Default for PlannerSettings {
             auto_light_congested: true,
             tactic_mode: TacticMode::Auto,
             camp_mode: CampMode::Auto,
+            sunday_team_bonding: false,
         }
     }
 }
@@ -646,8 +650,10 @@ pub fn plan_week(
         roles[3] = DayRole::Recovery;
     }
     let post_match_days = roles.iter().filter(|r| **r == DayRole::PostMatch).count() as u32;
+    let sunday_bonding =
+        settings.sunday_team_bonding && roles[6] == DayRole::Recovery && eff.buy_in() < settings.bonding_below;
     let mut st = WeekState {
-        bonding_reserved: post_match_days.min(2),
+        bonding_reserved: (post_match_days + u32::from(sunday_bonding)).min(2),
         deficit: Factor::TACTICAL_AREAS
             .iter()
             .map(|f| (*f, deficit(eff.get(*f)) * settings.tactic_mode.weight(*f)))
@@ -685,7 +691,13 @@ pub fn plan_week(
             DayRole::PostMatch => [Slot::Fixed("Recovery"), Slot::Fixed("Rest"), Slot::Extra],
             DayRole::PostAndPreMatch => [Slot::Fixed("Recovery"), Slot::MatchPrep, Slot::Fixed("Rest")],
             DayRole::PreMatch => [Slot::MatchPrep, Slot::MatchPrep, Slot::MatchPrep],
-            DayRole::Recovery => [Slot::Fixed("Recovery"), Slot::Fixed("Rest"), Slot::Fixed("Rest")],
+            DayRole::Recovery => {
+                if i == 6 && sunday_bonding {
+                    [Slot::Fixed("Recovery"), Slot::Fixed("Rest"), Slot::Extra]
+                } else {
+                    [Slot::Fixed("Recovery"), Slot::Fixed("Rest"), Slot::Fixed("Rest")]
+                }
+            }
             DayRole::Holiday => [Slot::Fixed("Rest"), Slot::Fixed("Rest"), Slot::Fixed("Rest")],
             DayRole::Training => match week.kind {
                 WeekKind::PreSeasonEarly => [Slot::Fixed(if i % 2 == 0 { "Heavy Conditioning" } else { "Conditioning" }), Slot::Tactical, Slot::Tactical],
@@ -721,6 +733,13 @@ pub fn plan_week(
                             st.take("Team Bonding")
                         } else if eff.buy_in() < 45.0 && st.used("Community Outreach") == 0 {
                             st.take("Community Outreach")
+                        } else {
+                            st.take("Rest")
+                        }
+                    } else if i == 6 && sunday_bonding {
+                        st.bonding_reserved = st.bonding_reserved.saturating_sub(1);
+                        if eff.buy_in() < settings.bonding_below && st.used("Team Bonding") < 2 {
+                            st.take("Team Bonding")
                         } else {
                             st.take("Rest")
                         }
@@ -912,5 +931,34 @@ mod tests {
         for d in 0..6 {
             assert_eq!(hard.days[d].slots, normal.days[d].slots, "alleen de dag na de wedstrijd verandert");
         }
+    }
+
+    #[test]
+    fn sunday_team_bonding_moves_one_session_to_sunday_rest_day() {
+        let week = CalendarWeek {
+            start: NaiveDate::from_ymd_opt(2027, 9, 6).unwrap(),
+            kind: WeekKind::InternationalBreak,
+            matches: [false; 7],
+            note: String::new(),
+        };
+        let mut eff = Effectiveness::default();
+        eff.set(Factor::TeammatesAndStaffRelationships, 40.0);
+
+        let without = plan_week(&week, false, false, &eff, &PlannerSettings::default(), 1);
+        assert_eq!(without.days[6].slots, ["Recovery", "Rest", "Rest"]);
+        assert_eq!(without.days[0].slots[2], "Team Bonding");
+        assert_eq!(without.days[1].slots[2], "Team Bonding");
+
+        let with_sunday = plan_week(
+            &week,
+            false,
+            false,
+            &eff,
+            &PlannerSettings { sunday_team_bonding: true, tactic_mode: TacticMode::Possession, ..Default::default() },
+            1,
+        );
+        assert_eq!(with_sunday.days[6].slots, ["Recovery", "Rest", "Team Bonding"]);
+        assert_eq!(with_sunday.days[0].slots[2], "Team Bonding");
+        assert_ne!(with_sunday.days[1].slots[2], "Team Bonding");
     }
 }

@@ -423,6 +423,28 @@ pub fn small_button(ui: &mut Ui, text: &str, enabled: bool) -> Response {
     ui.add_enabled(enabled, b)
 }
 
+/// Sıcak kehribar tonlu destek / Buy Me a Coffee butonu (`full_width = true` yan menü için).
+pub fn support_button(ui: &mut Ui, icon_s: &str, text: &str, full_width: bool) -> Response {
+    let fg = Color32::from_rgb(252, 214, 134);
+    let job = icon_label(icon_s, text, FontId::new(13.0, semibold()), fg);
+    let galley = ui.fonts(|f| f.layout_job(job));
+    let w = if full_width {
+        ui.available_width().max(galley.size().x + 24.0)
+    } else {
+        galley.size().x + 28.0
+    };
+    let h = if full_width { 32.0 } else { 36.0 };
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, h), Sense::click());
+    let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), QUICK);
+    let fill = tint(WARNING, 0.13 + 0.11 * hover);
+    let stroke = tint(WARNING, 0.38 + 0.25 * hover);
+    let p = ui.painter();
+    p.rect_filled(rect, CornerRadius::same(9), fill);
+    p.rect_stroke(rect, CornerRadius::same(9), Stroke::new(1.0_f32, stroke), egui::StrokeKind::Inside);
+    p.galley(rect.center() - galley.size() / 2.0, galley, fg);
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 /// Item in de zijbalk.
 pub fn nav_item(ui: &mut Ui, icon_s: &str, label: &str, selected: bool) -> Response {
     let size = vec2(ui.available_width(), 38.0);

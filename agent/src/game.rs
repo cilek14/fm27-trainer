@@ -1232,7 +1232,7 @@ pub fn game_date() -> Result<FmDate, String> {
     d.ok_or_else(|| "spel-datum niet leesbaar / game date not readable".into())
 }
 
-/// Een sessiecode zoals FM27 ze kent (0–7, 100–108, 200–228, 300–307, 400–402, 500).
+/// Een sessiecode zoals FM27 ze kent (0–7, 100–108, 200–203, 220–244, 300–304, 320–322, 400–402, 500, 600).
 fn known_code(c: u16) -> bool {
     c <= 600
 }

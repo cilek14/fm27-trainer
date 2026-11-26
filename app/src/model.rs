@@ -42,6 +42,18 @@ impl Component {
             (Tr, Component::PlayerAbility) => "Oyuncu Yeteneği",
             (Tr, Component::PlayerBuyIn) => "Oyuncu Benimsemesi",
             (Tr, Component::NextMatchInfo) => "Sonraki Maç Bilgisi",
+            (Fr, Component::TacticalUnderstanding) => "Compréhension tactique",
+            (Fr, Component::PlayerAbility) => "Niveau des joueurs",
+            (Fr, Component::PlayerBuyIn) => "Adhésion des joueurs",
+            (Fr, Component::NextMatchInfo) => "Infos prochain match",
+            (It, Component::TacticalUnderstanding) => "Comprensione tattica",
+            (It, Component::PlayerAbility) => "Abilità giocatori",
+            (It, Component::PlayerBuyIn) => "Coinvolgimento squadra",
+            (It, Component::NextMatchInfo) => "Info prossima partita",
+            (Es, Component::TacticalUnderstanding) => "Comprensión táctica",
+            (Es, Component::PlayerAbility) => "Calidad de jugadores",
+            (Es, Component::PlayerBuyIn) => "Compromiso del equipo",
+            (Es, Component::NextMatchInfo) => "Info próximo partido",
             (En, _) => self.label(),
         }
     }
@@ -140,29 +152,87 @@ impl Factor {
         }
     }
 
-    /// Arayüzde seçili dile göre gösterilen faktör adı (Türkçe FM27 karşılıkları).
+    /// Arayüzde seçili dile göre gösterilen faktör adı.
     pub fn display_label_for(self, lang: crate::i18n::Lang) -> &'static str {
-        if lang != crate::i18n::Lang::Tr {
-            return self.label();
-        }
-        match self {
-            Factor::InPossessionShape => "Topa Sahipken Diziliş",
-            Factor::PassingStyle => "Pas Stili",
-            Factor::BuildUp => "Oyun Kurma",
-            Factor::ChanceCreation => "Pozisyon Üretme",
-            Factor::OutOfPossessionShape => "Topsuz Alanda Diziliş",
-            Factor::LineOfEngagement => "Karşılama Çizgisi",
-            Factor::PressingIntensity => "Pres Şiddeti",
-            Factor::PressingTrap => "Pres Tuzağı",
-            Factor::PlayerTacticalAbility => "Oyuncu Taktik Yeteneği",
-            Factor::TacticalComplexity => "Taktiksel Karmaşıklık",
-            Factor::PlayerCapability => "Oyuncu Yeterliliği",
-            Factor::PlayerRoleSuitability => "Oyuncu Rol Uygunluğu",
-            Factor::ManagerialSupport => "Menajer Desteği",
-            Factor::TeammatesAndStaffRelationships => "Takım & Personel İlişkileri",
-            Factor::ManagerTendencies => "Menajer Eğilimleri",
-            Factor::QualityOfNextOppositionReport => "Rakip Raporu Kalitesi",
-            Factor::OppositionPlayerKnowledge => "Rakip Oyuncu Bilgisi",
+        use crate::i18n::Lang::*;
+        match lang {
+            Tr => match self {
+                Factor::InPossessionShape => "Topa Sahipken Diziliş",
+                Factor::PassingStyle => "Pas Stili",
+                Factor::BuildUp => "Oyun Kurma",
+                Factor::ChanceCreation => "Pozisyon Üretme",
+                Factor::OutOfPossessionShape => "Topsuz Alanda Diziliş",
+                Factor::LineOfEngagement => "Karşılama Çizgisi",
+                Factor::PressingIntensity => "Pres Şiddeti",
+                Factor::PressingTrap => "Pres Tuzağı",
+                Factor::PlayerTacticalAbility => "Oyuncu Taktik Yeteneği",
+                Factor::TacticalComplexity => "Taktiksel Karmaşıklık",
+                Factor::PlayerCapability => "Oyuncu Yeterliliği",
+                Factor::PlayerRoleSuitability => "Oyuncu Rol Uygunluğu",
+                Factor::ManagerialSupport => "Menajer Desteği",
+                Factor::TeammatesAndStaffRelationships => "Takım & Personel İlişkileri",
+                Factor::ManagerTendencies => "Menajer Eğilimleri",
+                Factor::QualityOfNextOppositionReport => "Rakip Raporu Kalitesi",
+                Factor::OppositionPlayerKnowledge => "Rakip Oyuncu Bilgisi",
+            },
+            Fr => match self {
+                Factor::InPossessionShape => "Placement en possession",
+                Factor::PassingStyle => "Style de passes",
+                Factor::BuildUp => "Construction",
+                Factor::ChanceCreation => "Création d'occasions",
+                Factor::OutOfPossessionShape => "Placement sans ballon",
+                Factor::LineOfEngagement => "Ligne d'engagement",
+                Factor::PressingIntensity => "Intensité du pressing",
+                Factor::PressingTrap => "Piège de pressing",
+                Factor::PlayerTacticalAbility => "Capacité tactique",
+                Factor::TacticalComplexity => "Complexité tactique",
+                Factor::PlayerCapability => "Niveau des joueurs",
+                Factor::PlayerRoleSuitability => "Adéquation aux rôles",
+                Factor::ManagerialSupport => "Soutien à l'entraîneur",
+                Factor::TeammatesAndStaffRelationships => "Cohésion groupe & staff",
+                Factor::ManagerTendencies => "Tendances de l'entraîneur",
+                Factor::QualityOfNextOppositionReport => "Qualité du rapport adverse",
+                Factor::OppositionPlayerKnowledge => "Connaissance joueurs adverses",
+            },
+            It => match self {
+                Factor::InPossessionShape => "Disposizione in possesso",
+                Factor::PassingStyle => "Stile di passaggio",
+                Factor::BuildUp => "Costruzione",
+                Factor::ChanceCreation => "Creazione occasioni",
+                Factor::OutOfPossessionShape => "Disposizione senza palla",
+                Factor::LineOfEngagement => "Linea di ingaggio",
+                Factor::PressingIntensity => "Intensità pressing",
+                Factor::PressingTrap => "Trappola di pressing",
+                Factor::PlayerTacticalAbility => "Abilità tattica giocatori",
+                Factor::TacticalComplexity => "Complessità tattica",
+                Factor::PlayerCapability => "Capacità dei giocatori",
+                Factor::PlayerRoleSuitability => "Idoneità ai ruoli",
+                Factor::ManagerialSupport => "Sostegno all'allenatore",
+                Factor::TeammatesAndStaffRelationships => "Rapporti squadra e staff",
+                Factor::ManagerTendencies => "Tendenze dell'allenatore",
+                Factor::QualityOfNextOppositionReport => "Qualità report avversario",
+                Factor::OppositionPlayerKnowledge => "Conoscenza giocatori avversari",
+            },
+            Es => match self {
+                Factor::InPossessionShape => "Disposición con balón",
+                Factor::PassingStyle => "Estilo de pases",
+                Factor::BuildUp => "Salida de balón",
+                Factor::ChanceCreation => "Creación de ocasiones",
+                Factor::OutOfPossessionShape => "Disposición sin balón",
+                Factor::LineOfEngagement => "Línea de presión",
+                Factor::PressingIntensity => "Intensidad de presión",
+                Factor::PressingTrap => "Trampa de presión",
+                Factor::PlayerTacticalAbility => "Capacidad táctica",
+                Factor::TacticalComplexity => "Complejidad táctica",
+                Factor::PlayerCapability => "Capacidad del jugador",
+                Factor::PlayerRoleSuitability => "Idoneidad en el rol",
+                Factor::ManagerialSupport => "Respaldo al mánager",
+                Factor::TeammatesAndStaffRelationships => "Relación plantilla y cuerpo técnico",
+                Factor::ManagerTendencies => "Tendencias del mánager",
+                Factor::QualityOfNextOppositionReport => "Calidad del informe rival",
+                Factor::OppositionPlayerKnowledge => "Conocimiento jugadores rivales",
+            },
+            En | Nl => self.label(),
         }
     }
 
@@ -271,16 +341,41 @@ impl Category {
     }
 
     pub fn display_label_for(self, lang: crate::i18n::Lang) -> &'static str {
-        if lang != crate::i18n::Lang::Tr {
-            return self.label();
-        }
-        match self {
-            Category::TacticalUnderstanding => "Taktiksel Anlayış",
-            Category::MatchPreparation => "Maç Hazırlığı",
-            Category::FootballingDevelopment => "Futbol Gelişimi",
-            Category::PhysicalRecovery => "Fiziksel ve Toparlanma",
-            Category::ExtraCurricular => "Takım Dışı / Sosyal",
-            Category::Fixed => "Maç / Seyahat",
+        use crate::i18n::Lang::*;
+        match lang {
+            Tr => match self {
+                Category::TacticalUnderstanding => "Taktiksel Anlayış",
+                Category::MatchPreparation => "Maç Hazırlığı",
+                Category::FootballingDevelopment => "Futbol Gelişimi",
+                Category::PhysicalRecovery => "Fiziksel ve Toparlanma",
+                Category::ExtraCurricular => "Takım Dışı / Sosyal",
+                Category::Fixed => "Maç / Seyahat",
+            },
+            Fr => match self {
+                Category::TacticalUnderstanding => "Compréhension tactique",
+                Category::MatchPreparation => "Préparation de match",
+                Category::FootballingDevelopment => "Développement football",
+                Category::PhysicalRecovery => "Physique et récupération",
+                Category::ExtraCurricular => "Extra-sportif",
+                Category::Fixed => "Match / Déplacement",
+            },
+            It => match self {
+                Category::TacticalUnderstanding => "Comprensione tattica",
+                Category::MatchPreparation => "Preparazione partita",
+                Category::FootballingDevelopment => "Sviluppo calcistico",
+                Category::PhysicalRecovery => "Fisica e recupero",
+                Category::ExtraCurricular => "Attività extra",
+                Category::Fixed => "Partita / Viaggio",
+            },
+            Es => match self {
+                Category::TacticalUnderstanding => "Comprensión táctica",
+                Category::MatchPreparation => "Preparación de partido",
+                Category::FootballingDevelopment => "Desarrollo futbolístico",
+                Category::PhysicalRecovery => "Físico y recuperación",
+                Category::ExtraCurricular => "Extra-deportivo",
+                Category::Fixed => "Partido / Viaje",
+            },
+            En | Nl => self.label(),
         }
     }
 
@@ -395,21 +490,24 @@ pub fn session(name: &str) -> Option<&'static Session> {
     SESSIONS.iter().find(|s| s.name == name)
 }
 
-/// Interne sessiecode van FM27 (zoals in de save en het geheugen): Tactical 0–7, Match
-/// Preparation 100–108, Footballing Development 200–228, Physical 300–308, Extra 400–402,
-/// Match 500. Afgeleid van de volgorde in de game-data en gecontroleerd tegen de kalender in
-/// een echte save (bv. dag [200, 3, 7] = Individual Development / In Possession Shape / Out Of
-/// Possession Shape). De algemene keuzes ("Match Preparation", "Tactical Understanding IP")
-/// hebben geen eigen code.
+/// Interne sessiecode van FM27 (`game_plugin.dll` doğrulaması):
+/// - Tactical Understanding: 0–7 (genel IP/OOP/TU: 8–10)
+/// - Match Preparation: 100–108 (genel: 109)
+/// - Footballing Development: 200–203 (Individual + Ball Work), 220–244 (diğer 25 seans; 204–219 boş!)
+/// - Physical & Recovery: 300–304, Inter-match (IM): 320–322 (305–319 boş!)
+/// - Extra-Curricular: 400–402, Match: 500, Not Available: 600
 pub fn session_code(name: &str) -> Option<u16> {
     let idx = SESSIONS.iter().position(|s| s.name == name)?;
     match idx {
         0..=7 => Some(idx as u16),
         8..=16 => Some(100 + (idx - 8) as u16),
-        17..=45 => Some(200 + (idx - 17) as u16),
-        46..=53 => Some(300 + (idx - 46) as u16),
+        17..=20 => Some(200 + (idx - 17) as u16),
+        21..=45 => Some(220 + (idx - 21) as u16),
+        46..=50 => Some(300 + (idx - 46) as u16),
+        51..=53 => Some(320 + (idx - 51) as u16),
         54..=56 => Some(400 + (idx - 54) as u16),
         57 => Some(500),
+        58 => Some(600),
         _ => None,
     }
 }
@@ -421,73 +519,269 @@ pub fn session_by_code(code: u16) -> Option<&'static str> {
 /// 62 FM27 antrenman seansının kullanıcı arayüzünde gösterilecek dil karşılığı.
 /// Canonical İngilizce ad (`SESSIONS[i].name`) planlayıcı ve bellek kodları için aynen korunur.
 pub fn session_display_name_for<'a>(canonical: &'a str, lang: crate::i18n::Lang) -> &'a str {
-    if lang != crate::i18n::Lang::Tr {
-        return canonical;
-    }
-    match canonical {
-        "Passing Style" => "Pas Stili",
-        "Build Up" => "Oyun Kurma",
-        "Chance Creation" => "Pozisyon Üretme",
-        "In Possession Shape" => "Topa Sahipken Diziliş",
-        "Line of Engagement" => "Karşılama Çizgisi",
-        "Pressing Intensity" => "Pres Şiddeti",
-        "Pressing Trap" => "Pres Tuzağı",
-        "Out Of Possession Shape" => "Topsuz Alanda Diziliş",
-        "Press Avoidance" => "Presten Çıkış",
-        "Ball Progression" => "Topu İleri Taşıma",
-        "Final Third" => "Üçüncü Bölge",
-        "Defensive Block" => "Savunma Bloğu",
-        "Defensive Positioning" => "Savunma Pozisyonu",
-        "Defensive Engagement" => "Savunma Baskısı",
-        "Corners" => "Kornerler",
-        "Free Kicks" => "Serbest Vuruşlar",
-        "Penalties" => "Penaltılar",
-        "Individual Development" => "Bireysel Gelişim",
-        "Attacking Ball Work" => "Hücum Topla Çalışma",
-        "Defensive Ball Work" => "Savunma Topla Çalışma",
-        "Possession Ball Work" => "Topa Sahip Olma",
-        "Attacking - Balanced" => "Hücum - Dengeli",
-        "Attacking - Patient" => "Hücum - Sabırlı",
-        "Attacking - Direct" => "Hücum - Direkt",
-        "Attacking - Wings" => "Hücum - Kanatlar",
-        "Defending - Balanced" => "Savunma - Dengeli",
-        "Defending - Engaged" => "Savunma - Baskılı",
-        "Defending - Disengaged" => "Savunma - Geri Çekilen",
-        "Defending - Wide" => "Savunma - Geniş",
-        "Theory - Attacking Shadow Play" => "Teori - Hücum Gölge Oyunu",
-        "Theory - Defensive Shadow Play" => "Teori - Savunma Gölge Oyunu",
-        "Technical - Chance Creation" => "Teknik - Pozisyon Üretme",
-        "Technical - Chance Conversion" => "Teknik - Gol Vuruşu",
-        "Technical - Ball Retention" => "Teknik - Top Tutma",
-        "Technical - Ground Defence" => "Teknik - Yerden Savunma",
-        "Technical - Aerial Defence" => "Teknik - Hava Savunması",
-        "Transition - Restrict" => "Geçiş - Kısıtla",
-        "Transition - Press" => "Geçiş - Pres",
-        "Transition - Progress" => "Geçiş - İlerle",
-        "GK - Balanced" => "Kaleci - Dengeli",
-        "GK - Shot Stopping" => "Kaleci - Şut Kurtarma",
-        "GK - Handling" => "Kaleci - Elle Kontrol",
-        "GK - One On Ones" => "Kaleci - Birebir",
-        "GK - Distribution" => "Kaleci - Oyuna Sokma",
-        "Set Pieces - Delivery" => "Duran Top - Orta",
-        "Set Pieces - Penalties" => "Duran Top - Penaltılar",
-        "Rest" => "Dinlenme",
-        "Recovery" => "Rejenerasyon",
-        "Light Conditioning" => "Hafif Kondisyon",
-        "Conditioning" => "Kondisyon",
-        "Heavy Conditioning" => "Ağır Kondisyon",
-        "Rest (IM)" => "Dinlenme (Maç Arası)",
-        "Recovery (IM)" => "Rejenerasyon (Maç Arası)",
-        "Light Conditioning (IM)" => "Hafif Kondisyon (Maç Arası)",
-        "Team Bonding" => "Takım Kaynaşması",
-        "Community Outreach" => "Sosyal Yardımlaşma",
-        "Travel" => "Seyahat",
-        "Match" => "Maç",
-        "Not Available" => "Müsait Değil",
-        "Match Preparation" => "Maç Hazırlığı",
-        "Tactical Understanding IP" => "Taktik Anlayış (Topla)",
-        "Tactical Understanding OOP" => "Taktik Anlayış (Topsuz)",
-        _ => canonical,
+    use crate::i18n::Lang::*;
+    match lang {
+        Tr => match canonical {
+            "Passing Style" => "Pas Stili",
+            "Build Up" => "Oyun Kurma",
+            "Chance Creation" => "Pozisyon Üretme",
+            "In Possession Shape" => "Topa Sahipken Diziliş",
+            "Line of Engagement" => "Karşılama Çizgisi",
+            "Pressing Intensity" => "Pres Şiddeti",
+            "Pressing Trap" => "Pres Tuzağı",
+            "Out Of Possession Shape" => "Topsuz Alanda Diziliş",
+            "Press Avoidance" => "Presten Çıkış",
+            "Ball Progression" => "Topu İleri Taşıma",
+            "Final Third" => "Üçüncü Bölge",
+            "Defensive Block" => "Savunma Bloğu",
+            "Defensive Positioning" => "Savunma Pozisyonu",
+            "Defensive Engagement" => "Savunma Baskısı",
+            "Corners" => "Kornerler",
+            "Free Kicks" => "Serbest Vuruşlar",
+            "Penalties" => "Penaltılar",
+            "Individual Development" => "Bireysel Gelişim",
+            "Attacking Ball Work" => "Hücum Topla Çalışma",
+            "Defensive Ball Work" => "Savunma Topla Çalışma",
+            "Possession Ball Work" => "Topa Sahip Olma",
+            "Attacking - Balanced" => "Hücum - Dengeli",
+            "Attacking - Patient" => "Hücum - Sabırlı",
+            "Attacking - Direct" => "Hücum - Direkt",
+            "Attacking - Wings" => "Hücum - Kanatlar",
+            "Defending - Balanced" => "Savunma - Dengeli",
+            "Defending - Engaged" => "Savunma - Baskılı",
+            "Defending - Disengaged" => "Savunma - Geri Çekilen",
+            "Defending - Wide" => "Savunma - Geniş",
+            "Theory - Attacking Shadow Play" => "Teori - Hücum Gölge Oyunu",
+            "Theory - Defensive Shadow Play" => "Teori - Savunma Gölge Oyunu",
+            "Technical - Chance Creation" => "Teknik - Pozisyon Üretme",
+            "Technical - Chance Conversion" => "Teknik - Gol Vuruşu",
+            "Technical - Ball Retention" => "Teknik - Top Tutma",
+            "Technical - Ground Defence" => "Teknik - Yerden Savunma",
+            "Technical - Aerial Defence" => "Teknik - Hava Savunması",
+            "Transition - Restrict" => "Geçiş - Kısıtla",
+            "Transition - Press" => "Geçiş - Pres",
+            "Transition - Progress" => "Geçiş - İlerle",
+            "GK - Balanced" => "Kaleci - Dengeli",
+            "GK - Shot Stopping" => "Kaleci - Şut Kurtarma",
+            "GK - Handling" => "Kaleci - Elle Kontrol",
+            "GK - One On Ones" => "Kaleci - Birebir",
+            "GK - Distribution" => "Kaleci - Oyuna Sokma",
+            "Set Pieces - Delivery" => "Duran Top - Orta",
+            "Set Pieces - Penalties" => "Duran Top - Penaltılar",
+            "Rest" => "Dinlenme",
+            "Recovery" => "Rejenerasyon",
+            "Light Conditioning" => "Hafif Kondisyon",
+            "Conditioning" => "Kondisyon",
+            "Heavy Conditioning" => "Ağır Kondisyon",
+            "Rest (IM)" => "Dinlenme (Maç Arası)",
+            "Recovery (IM)" => "Rejenerasyon (Maç Arası)",
+            "Light Conditioning (IM)" => "Hafif Kondisyon (Maç Arası)",
+            "Team Bonding" => "Takım Kaynaşması",
+            "Community Outreach" => "Sosyal Yardımlaşma",
+            "Travel" => "Seyahat",
+            "Match" => "Maç",
+            "Not Available" => "Müsait Değil",
+            "Match Preparation" => "Maç Hazırlığı",
+            "Tactical Understanding IP" => "Taktik Anlayış (Topla)",
+            "Tactical Understanding OOP" => "Taktik Anlayış (Topsuz)",
+            _ => canonical,
+        },
+        Fr => match canonical {
+            "Passing Style" => "Style de passes",
+            "Build Up" => "Construction",
+            "Chance Creation" => "Création d'occasions",
+            "In Possession Shape" => "Placement en possession",
+            "Line of Engagement" => "Ligne d'engagement",
+            "Pressing Intensity" => "Intensité du pressing",
+            "Pressing Trap" => "Piège de pressing",
+            "Out Of Possession Shape" => "Placement sans ballon",
+            "Press Avoidance" => "Sortie de pressing",
+            "Ball Progression" => "Progression du ballon",
+            "Final Third" => "Dernier tiers",
+            "Defensive Block" => "Bloc défensif",
+            "Defensive Positioning" => "Placement défensif",
+            "Defensive Engagement" => "Engagement défensif",
+            "Corners" => "Corners",
+            "Free Kicks" => "Coups francs",
+            "Penalties" => "Penaltys",
+            "Individual Development" => "Développement individuel",
+            "Attacking Ball Work" => "Travail offensif avec ballon",
+            "Defensive Ball Work" => "Travail défensif avec ballon",
+            "Possession Ball Work" => "Conservation du ballon",
+            "Attacking - Balanced" => "Attaque - Équilibrée",
+            "Attacking - Patient" => "Attaque - Patiente",
+            "Attacking - Direct" => "Attaque - Directe",
+            "Attacking - Wings" => "Attaque - Ailes",
+            "Defending - Balanced" => "Défense - Équilibrée",
+            "Defending - Engaged" => "Défense - Haute",
+            "Defending - Disengaged" => "Défense - Basse",
+            "Defending - Wide" => "Défense - Large",
+            "Theory - Attacking Shadow Play" => "Théorie - Jeu d'ombre offensif",
+            "Theory - Defensive Shadow Play" => "Théorie - Jeu d'ombre défensif",
+            "Technical - Chance Creation" => "Technique - Création d'occasions",
+            "Technical - Chance Conversion" => "Technique - Finition",
+            "Technical - Ball Retention" => "Technique - Conservation",
+            "Technical - Ground Defence" => "Technique - Défense au sol",
+            "Technical - Aerial Defence" => "Technique - Défense aérienne",
+            "Transition - Restrict" => "Transition - Contenir",
+            "Transition - Press" => "Transition - Pressing",
+            "Transition - Progress" => "Transition - Projection",
+            "GK - Balanced" => "Gardien - Équilibré",
+            "GK - Shot Stopping" => "Gardien - Arrêts",
+            "GK - Handling" => "Gardien - Prise de balle",
+            "GK - One On Ones" => "Gardien - Un contre un",
+            "GK - Distribution" => "Gardien - Relance",
+            "Set Pieces - Delivery" => "Coups de pied arrêtés - Centres",
+            "Set Pieces - Penalties" => "Coups de pied arrêtés - Penaltys",
+            "Rest" => "Repos",
+            "Recovery" => "Récupération",
+            "Light Conditioning" => "Physique léger",
+            "Conditioning" => "Physique",
+            "Heavy Conditioning" => "Physique intense",
+            "Rest (IM)" => "Repos (Entre-matchs)",
+            "Recovery (IM)" => "Récupération (Entre-matchs)",
+            "Light Conditioning (IM)" => "Physique léger (Entre-matchs)",
+            "Team Bonding" => "Cohésion d'équipe",
+            "Community Outreach" => "Actions communautaires",
+            "Travel" => "Déplacement",
+            "Match" => "Match",
+            "Not Available" => "Indisponible",
+            "Match Preparation" => "Préparation de match",
+            "Tactical Understanding IP" => "Compréhension tactique (Avec ballon)",
+            "Tactical Understanding OOP" => "Compréhension tactique (Sans ballon)",
+            _ => canonical,
+        },
+        It => match canonical {
+            "Passing Style" => "Stile di passaggio",
+            "Build Up" => "Costruzione",
+            "Chance Creation" => "Creazione occasioni",
+            "In Possession Shape" => "Disposizione in possesso",
+            "Line of Engagement" => "Linea di ingaggio",
+            "Pressing Intensity" => "Intensità pressing",
+            "Pressing Trap" => "Trappola di pressing",
+            "Out Of Possession Shape" => "Disposizione senza palla",
+            "Press Avoidance" => "Uscita dal pressing",
+            "Ball Progression" => "Progressione palla",
+            "Final Third" => "Ultimo terzo",
+            "Defensive Block" => "Blocco difensivo",
+            "Defensive Positioning" => "Posizionamento difensivo",
+            "Defensive Engagement" => "Pressione difensiva",
+            "Corners" => "Calci d'angolo",
+            "Free Kicks" => "Calci di punizione",
+            "Penalties" => "Rigori",
+            "Individual Development" => "Sviluppo individuale",
+            "Attacking Ball Work" => "Lavoro offensivo con palla",
+            "Defensive Ball Work" => "Lavoro difensivo con palla",
+            "Possession Ball Work" => "Possesso palla",
+            "Attacking - Balanced" => "Attacco - Bilanciato",
+            "Attacking - Patient" => "Attacco - Paziente",
+            "Attacking - Direct" => "Attacco - Diretto",
+            "Attacking - Wings" => "Attacco - Fasce",
+            "Defending - Balanced" => "Difesa - Bilanciata",
+            "Defending - Engaged" => "Difesa - Alta",
+            "Defending - Disengaged" => "Difesa - Bassa",
+            "Defending - Wide" => "Difesa - Ampia",
+            "Theory - Attacking Shadow Play" => "Teoria - Gioco ombra offensivo",
+            "Theory - Defensive Shadow Play" => "Teoria - Gioco ombra difensivo",
+            "Technical - Chance Creation" => "Tecnica - Creazione occasioni",
+            "Technical - Chance Conversion" => "Tecnica - Finalizzazione",
+            "Technical - Ball Retention" => "Tecnica - Mantenimento palla",
+            "Technical - Ground Defence" => "Tecnica - Difesa a terra",
+            "Technical - Aerial Defence" => "Tecnica - Difesa aerea",
+            "Transition - Restrict" => "Transizione - Contenimento",
+            "Transition - Press" => "Transizione - Pressing",
+            "Transition - Progress" => "Transizione - Ripartenza",
+            "GK - Balanced" => "Portiere - Bilanciato",
+            "GK - Shot Stopping" => "Portiere - Parate",
+            "GK - Handling" => "Portiere - Presa",
+            "GK - One On Ones" => "Portiere - Uno contro uno",
+            "GK - Distribution" => "Portiere - Rilanci",
+            "Set Pieces - Delivery" => "Palle inattive - Cross",
+            "Set Pieces - Penalties" => "Palle inattive - Rigori",
+            "Rest" => "Riposo",
+            "Recovery" => "Recupero",
+            "Light Conditioning" => "Condizionamento leggero",
+            "Conditioning" => "Condizionamento",
+            "Heavy Conditioning" => "Condizionamento intenso",
+            "Rest (IM)" => "Riposo (Tra partite)",
+            "Recovery (IM)" => "Recupero (Tra partite)",
+            "Light Conditioning (IM)" => "Condizionamento leggero (Tra partite)",
+            "Team Bonding" => "Coesione di squadra",
+            "Community Outreach" => "Iniziative sociali",
+            "Travel" => "Viaggio",
+            "Match" => "Partita",
+            "Not Available" => "Non disponibile",
+            "Match Preparation" => "Preparazione partita",
+            "Tactical Understanding IP" => "Comprensione tattica (Con palla)",
+            "Tactical Understanding OOP" => "Comprensione tattica (Senza palla)",
+            _ => canonical,
+        },
+        Es => match canonical {
+            "Passing Style" => "Estilo de pases",
+            "Build Up" => "Salida de balón",
+            "Chance Creation" => "Creación de ocasiones",
+            "In Possession Shape" => "Disposición con balón",
+            "Line of Engagement" => "Línea de presión",
+            "Pressing Intensity" => "Intensidad de presión",
+            "Pressing Trap" => "Trampa de presión",
+            "Out Of Possession Shape" => "Disposición sin balón",
+            "Press Avoidance" => "Salida de presión",
+            "Ball Progression" => "Progresión con balón",
+            "Final Third" => "Último tercio",
+            "Defensive Block" => "Bloque defensivo",
+            "Defensive Positioning" => "Colocación defensiva",
+            "Defensive Engagement" => "Anticipación defensiva",
+            "Corners" => "Saques de esquina",
+            "Free Kicks" => "Faltas",
+            "Penalties" => "Penaltis",
+            "Individual Development" => "Desarrollo individual",
+            "Attacking Ball Work" => "Trabajo ofensivo con balón",
+            "Defensive Ball Work" => "Trabajo defensivo con balón",
+            "Possession Ball Work" => "Posesión de balón",
+            "Attacking - Balanced" => "Ataque - Equilibrado",
+            "Attacking - Patient" => "Ataque - Paciente",
+            "Attacking - Direct" => "Ataque - Directo",
+            "Attacking - Wings" => "Ataque - Bandas",
+            "Defending - Balanced" => "Defensa - Equilibrada",
+            "Defending - Engaged" => "Defensa - Adelantada",
+            "Defending - Disengaged" => "Defensa - Replegada",
+            "Defending - Wide" => "Defensa - Amplia",
+            "Theory - Attacking Shadow Play" => "Teoría - Juego posicional ofensivo",
+            "Theory - Defensive Shadow Play" => "Teoría - Juego posicional defensivo",
+            "Technical - Chance Creation" => "Técnica - Creación de ocasiones",
+            "Technical - Chance Conversion" => "Técnica - Definición",
+            "Technical - Ball Retention" => "Técnica - Conservación del balón",
+            "Technical - Ground Defence" => "Técnica - Defensa raso",
+            "Technical - Aerial Defence" => "Técnica - Juego aéreo defensivo",
+            "Transition - Restrict" => "Transición - Contener",
+            "Transition - Press" => "Transición - Presionar",
+            "Transition - Progress" => "Transición - Progresar",
+            "GK - Balanced" => "Portero - Equilibrado",
+            "GK - Shot Stopping" => "Portero - Paradas",
+            "GK - Handling" => "Portero - Blocaje",
+            "GK - One On Ones" => "Portero - Uno contra uno",
+            "GK - Distribution" => "Portero - Distribución",
+            "Set Pieces - Delivery" => "Balón parado - Centros",
+            "Set Pieces - Penalties" => "Balón parado - Penaltis",
+            "Rest" => "Descanso",
+            "Recovery" => "Recuperación",
+            "Light Conditioning" => "Físico ligero",
+            "Conditioning" => "Físico",
+            "Heavy Conditioning" => "Físico intenso",
+            "Rest (IM)" => "Descanso (Entre partidos)",
+            "Recovery (IM)" => "Recuperación (Entre partidos)",
+            "Light Conditioning (IM)" => "Físico ligero (Entre partidos)",
+            "Team Bonding" => "Cohesión de equipo",
+            "Community Outreach" => "Acción comunitaria",
+            "Travel" => "Viaje",
+            "Match" => "Partido",
+            "Not Available" => "No disponible",
+            "Match Preparation" => "Preparación de partido",
+            "Tactical Understanding IP" => "Comprensión táctica (Con balón)",
+            "Tactical Understanding OOP" => "Comprensión táctica (Sin balón)",
+            _ => canonical,
+        },
+        En | Nl => canonical,
     }
 }
 
@@ -614,30 +908,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tr_display_labels_cover_all_components_and_factors() {
+    fn localized_labels_cover_all_languages() {
         use crate::i18n::Lang;
 
-        for c in Component::ALL {
-            let tr = c.display_label_for(Lang::Tr);
-            assert!(!tr.is_empty());
-            assert_ne!(tr, c.label(), "component {} should have Turkish label", c.label());
-        }
-        for f in Factor::ALL {
-            let tr = f.display_label_for(Lang::Tr);
-            assert!(!tr.is_empty());
-            assert_ne!(tr, f.label(), "factor {} should have Turkish label", f.label());
-        }
-        for cat in [
-            Category::TacticalUnderstanding,
-            Category::MatchPreparation,
-            Category::FootballingDevelopment,
-            Category::PhysicalRecovery,
-            Category::ExtraCurricular,
-            Category::Fixed,
-        ] {
-            let tr = cat.display_label_for(Lang::Tr);
-            assert!(!tr.is_empty());
-            assert_ne!(tr, cat.label(), "category {} should have Turkish label", cat.label());
+        for lang in [Lang::Tr, Lang::Fr, Lang::It, Lang::Es] {
+            for c in Component::ALL {
+                let lbl = c.display_label_for(lang);
+                assert!(!lbl.is_empty());
+                assert_ne!(lbl, c.label(), "component {} missing {:?}", c.label(), lang);
+            }
+            for f in Factor::ALL {
+                let lbl = f.display_label_for(lang);
+                assert!(!lbl.is_empty());
+                assert_ne!(lbl, f.label(), "factor {} missing {:?}", f.label(), lang);
+            }
+            for cat in [
+                Category::TacticalUnderstanding,
+                Category::MatchPreparation,
+                Category::FootballingDevelopment,
+                Category::PhysicalRecovery,
+                Category::ExtraCurricular,
+                Category::Fixed,
+            ] {
+                let lbl = cat.display_label_for(lang);
+                assert!(!lbl.is_empty());
+                assert_ne!(lbl, cat.label(), "category {} missing {:?}", cat.label(), lang);
+            }
         }
         // Canonical session keys must remain unchanged for FM27 session lookups.
         for f in Factor::TACTICAL_AREAS {
@@ -646,14 +942,50 @@ mod tests {
     }
 
     #[test]
-    fn tr_session_names_cover_all_sessions() {
+    fn localized_session_names_cover_all_sessions() {
         use crate::i18n::Lang;
 
         for s in SESSIONS {
-            let tr = session_display_name_for(s.name, Lang::Tr);
-            assert!(!tr.is_empty(), "empty Turkish name for {}", s.name);
-            assert_ne!(tr, s.name, "session {} should have a Turkish translation", s.name);
             assert_eq!(session_display_name_for(s.name, Lang::En), s.name);
+            for lang in [Lang::Tr, Lang::Fr, Lang::It, Lang::Es] {
+                let loc = session_display_name_for(s.name, lang);
+                assert!(!loc.is_empty(), "empty {:?} name for {}", lang, s.name);
+                // "Corners" ve "Match" Fransızca futbolda aynı yazılır.
+                if !(lang == Lang::Fr && matches!(s.name, "Corners" | "Match")) {
+                    assert_ne!(loc, s.name, "session {} missing {:?} translation", s.name, lang);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn session_codes_match_fm27_binary() {
+        assert_eq!(session_code("Passing Style"), Some(0));
+        assert_eq!(session_code("Out Of Possession Shape"), Some(7));
+        assert_eq!(session_code("Press Avoidance"), Some(100));
+        assert_eq!(session_code("Penalties"), Some(108));
+        assert_eq!(session_code("Individual Development"), Some(200));
+        assert_eq!(session_code("Attacking Ball Work"), Some(201));
+        assert_eq!(session_code("Defensive Ball Work"), Some(202));
+        assert_eq!(session_code("Possession Ball Work"), Some(203));
+        assert_eq!(session_code("Attacking - Balanced"), Some(220));
+        assert_eq!(session_code("Attacking - Patient"), Some(221));
+        assert_eq!(session_code("Technical - Ball Retention"), Some(232));
+        assert_eq!(session_code("Transition - Press"), Some(236));
+        assert_eq!(session_code("Set Pieces - Penalties"), Some(244));
+        assert_eq!(session_code("Rest"), Some(300));
+        assert_eq!(session_code("Heavy Conditioning"), Some(304));
+        assert_eq!(session_code("Rest (IM)"), Some(320));
+        assert_eq!(session_code("Light Conditioning (IM)"), Some(322));
+        assert_eq!(session_code("Team Bonding"), Some(400));
+        assert_eq!(session_code("Travel"), Some(402));
+        assert_eq!(session_code("Match"), Some(500));
+        assert_eq!(session_code("Not Available"), Some(600));
+        for gap in 204..=219 {
+            assert_eq!(session_by_code(gap), None, "unexpected code in 204..=219 gap: {gap}");
+        }
+        for gap in 305..=319 {
+            assert_eq!(session_by_code(gap), None, "unexpected code in 305..=319 gap: {gap}");
         }
     }
 }
