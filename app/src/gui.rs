@@ -37,7 +37,7 @@ pub fn run() -> Result<()> {
             .with_inner_size(size)
             .with_min_inner_size([1040.0, 660.0])
             .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon/icon_256.png")).unwrap_or_default()),
-        vsync: !cfg!(windows),
+        vsync: true,
         persist_window: false,
         ..Default::default()
     };
@@ -2941,6 +2941,11 @@ impl eframe::App for App {
         }
         self.last_memory_rev = self.live.memory_rev;
         let _ = (self.settings.auto_memory_sync, self.memory_sync_pending);
+        let minimized = ctx.input(|i| i.viewport().minimized == Some(true));
+        if minimized && std::env::var_os("FM27_SNAPSHOT").is_none() {
+            ctx.request_repaint_after(std::time::Duration::from_secs(5));
+            return;
+        }
         self.apply_ui_scale(ctx);
         self.topbar(ctx);
         egui::CentralPanel::default()

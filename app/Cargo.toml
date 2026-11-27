@@ -1,6 +1,6 @@
 [package]
 name = "fm27-trainer"
-version = "1.4.1"
+version = "1.4.2"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/cilek14/fm27-trainer"
@@ -15,12 +15,14 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0.104"
 chrono = { version = "0.4.45", features = ["serde"] }
-eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow"] }
 egui-phosphor = "0.9"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sys-locale = "0.3"
+
+[target.'cfg(not(windows))'.dependencies]
+eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.5"
@@ -40,6 +42,7 @@ objc2-vision = { version = "0.3.2", default-features = false, features = [
 [target.'cfg(windows)'.dependencies]
 # de spellogica van de module; op Windows leest de app fm.exe van buitenaf
 fm27-agent = { path = "../agent" }
+eframe = { version = "0.31", default-features = false, features = ["default_fonts", "wgpu"] }
 windows = { version = "0.62", features = ["Foundation", "Foundation_Collections", "Globalization", "Graphics_Imaging", "Media_Ocr", "Storage_Streams", "Win32_System_WinRT"] }
 
 [build-dependencies]
