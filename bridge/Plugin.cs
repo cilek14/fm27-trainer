@@ -17,7 +17,7 @@ using SI.Interop;
 
 namespace FM27Trainer.Bridge;
 
-[BepInPlugin("com.fm27trainer.bridge", "FM27 Training Assistant Bridge", "0.7.1")]
+[BepInPlugin("com.fm27trainer.bridge", "FM27 Training Assistant Bridge", "0.8.0")]
 public sealed class Plugin : BasePlugin
 {
     internal static ManualLogSource LogSource = null!;
@@ -52,7 +52,7 @@ public sealed class Plugin : BasePlugin
         Directory.CreateDirectory(OutDir);
         _harmony = new Harmony("com.fm27trainer.bridge");
         _harmony.PatchAll(typeof(InteropChannelPatches));
-        Log.LogInfo("FM27 Training Assistant Bridge 0.7.1 loaded. Watching TacticalEffectiveness + Players + Intensity/Focus Events.");
+        Log.LogInfo("FM27 Training Assistant Bridge 0.8.0 loaded. Watching TacticalEffectiveness + Players + Intensity/Focus/Role Events.");
     }
 }
 
@@ -61,15 +61,20 @@ internal enum ChannelKind
     TacticalEffectiveness,
     PlayerIntensity,
     FocusOptions,
+    PosRoleOptions,
+    OopRoleOptions,
 }
 
 internal sealed record ChannelInfo(ChannelKind Kind, string RefName, string PropertyName, uint RuntimeId = 0);
+internal sealed record PosRoleOption(long role_id, int pos_id, string name);
 
 internal sealed class IntensityCommandPayload
 {
     public uint manager_runtime_id { get; set; }
     public List<IntensityCommandItem>? items { get; set; }
     public List<FocusCommandItem>? focus_items { get; set; }
+    public List<PosRoleCommandItem>? pos_role_items { get; set; }
+    public List<OopRoleCommandItem>? oop_role_items { get; set; }
 }
 
 internal sealed class IntensityCommandItem
@@ -85,6 +90,21 @@ internal sealed class FocusCommandItem
     public string? name { get; set; }
 }
 
+internal sealed class PosRoleCommandItem
+{
+    public uint runtime_id { get; set; }
+    public long role_id { get; set; }
+    public int pos_id { get; set; }
+    public string? name { get; set; }
+}
+
+internal sealed class OopRoleCommandItem
+{
+    public uint runtime_id { get; set; }
+    public long role_id { get; set; }
+    public string? name { get; set; }
+}
+
 internal static class InteropChannelPatches
 {
     private const uint PairRefType = 825307168u;
@@ -94,20 +114,28 @@ internal static class InteropChannelPatches
     private const uint PairContextFlag = 1416196963u;
     private const int PersonTag = 0x01000000;
 
-    private const uint EventPlayerIntensityChanged = 1735948081u; // InteropEventIDs.EventFmxPlayerTrainingIntensityLevelChanged
-    private const uint EventPlayerFocusChanged = 1280659764u;     // InteropEventIDs.EventFmxPlayerTrainingFocusChanged
+    private const uint EventPlayerIntensityChanged = 1735948081u;    // EventFmxPlayerTrainingIntensityLevelChanged
+    private const uint EventPlayerFocusChanged = 1280659764u;        // EventFmxPlayerTrainingFocusChanged
+    private const uint EventPlayerTrainingPositionChanged = 2052018511u; // EventFmxPlayerTrainingPositionChanged
+    private const uint EventPlayerOOPTrainingRoleChanged = 1176516205u;  // EventFmxPlayerOOPTrainingRoleChanged
+
     private const uint KeyFocusFlagA = 1299866233u;
     private const uint KeyFocusFlagB = 1500668246u;
     private const uint KeyFocusInner = 1916366157u;
+    private const uint KeyPosRoleInner = 1484020313u; // XtZY
+    private const uint KeyOopRoleInner = 1177831020u; // F4Fl
+    private const uint KeyPositionId = 1349481321u;   // Posi
 
-    private const uint KeyOptionId = 1886680684u;
+    private const uint KeyOptionId = 1886680684u;     // ptvl
     private const uint KeyOptionName = 1903577654u;
-    private const uint KeyConfirmFlagA = 1215644527u;
+    private const uint KeyConfirmFlagA = 1215644527u; // HuCo
     private const uint KeyConfirmFlagB = 840966176u;
 
     private static readonly ConcurrentDictionary<int, ChannelInfo> Tracked = new();
     private static readonly ConcurrentDictionary<uint, int> CurrentIntensities = new();
     private static readonly ConcurrentDictionary<int, string> FocusOptions = new();
+    private static readonly ConcurrentDictionary<string, PosRoleOption> PosRoleOptions = new();
+    private static readonly ConcurrentDictionary<long, string> OopRoleOptions = new();
     private static readonly object WriteLock = new();
 
     private static volatile int _sessionId;
@@ -147,6 +175,20 @@ internal static class InteropChannelPatches
                 || propName.IndexOf("IndividualTrainingType", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 Tracked[key.GetHashCode()] = new ChannelInfo(ChannelKind.FocusOptions, DescribeSource(source), propName, playerRuntimeId);
+                return;
+            }
+
+            if (propName.IndexOf("OOPTrainingRole", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                Tracked[key.GetHashCode()] = new ChannelInfo(ChannelKind.OopRoleOptions, DescribeSource(source), propName, playerRuntimeId);
+                return;
+            }
+
+            if (propName.IndexOf("TrainingPosition", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("PossibleIndividualTrainingTypes", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("IndividualTrainingPositionList", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                Tracked[key.GetHashCode()] = new ChannelInfo(ChannelKind.PosRoleOptions, DescribeSource(source), propName, playerRuntimeId);
             }
         }
         catch (Exception ex)
@@ -193,7 +235,9 @@ internal static class InteropChannelPatches
 
             var hasIntensity = cmd.items != null && cmd.items.Count > 0;
             var hasFocus = cmd.focus_items != null && cmd.focus_items.Count > 0;
-            if (!hasIntensity && !hasFocus)
+            var hasPosRole = cmd.pos_role_items != null && cmd.pos_role_items.Count > 0;
+            var hasOopRole = cmd.oop_role_items != null && cmd.oop_role_items.Count > 0;
+            if (!hasIntensity && !hasFocus && !hasPosRole && !hasOopRole)
                 return;
 
             ApplyCommands(__instance, cmd);
@@ -286,6 +330,40 @@ internal static class InteropChannelPatches
             }
         }
 
+        if (cmd.pos_role_items != null)
+        {
+            foreach (var item in cmd.pos_role_items)
+            {
+                if (item.runtime_id == 0) continue;
+                try
+                {
+                    ApplyPosRoleItem(subsystem, mgrVal, item);
+                    applied++;
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"pos_role id={item.runtime_id}: {ex.Message}");
+                }
+            }
+        }
+
+        if (cmd.oop_role_items != null)
+        {
+            foreach (var item in cmd.oop_role_items)
+            {
+                if (item.runtime_id == 0) continue;
+                try
+                {
+                    ApplyOopRoleItem(subsystem, mgrVal, item);
+                    applied++;
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"oop_role id={item.runtime_id}: {ex.Message}");
+                }
+            }
+        }
+
         Plugin.LogSource.LogInfo($"Applied legitimate training command for {applied} item(s) (errors={errors.Count}).");
         WriteCommandResult(applied, errors);
         if (_lastEntryKey != null && _lastTacticalDump != null)
@@ -312,6 +390,53 @@ internal static class InteropChannelPatches
 
         outer[KeyFocusInner] = TypedValue.Create(innerRef);
         subsystem.SendEvent(EventPlayerFocusChanged, targetRef, TypedValue.Create(outerRef));
+    }
+
+    private static void ApplyPosRoleItem(GameInteropSubsystem subsystem, int mgrVal, PosRoleCommandItem item)
+    {
+        var targetRef = BuildPlayerTargetRef(mgrVal, item.runtime_id);
+
+        var outerRef = new DynamicReference();
+        var outer = outerRef.Cast<Il2CppSystem.Collections.Generic.Dictionary<uint, TypedValue>>();
+        outer[KeyConfirmFlagA] = TypedValue.Create(true);
+
+        var midRef = new DynamicReference();
+        var mid = midRef.Cast<Il2CppSystem.Collections.Generic.Dictionary<uint, TypedValue>>();
+
+        var innerRef = new DynamicReference();
+        var inner = innerRef.Cast<Il2CppSystem.Collections.Generic.Dictionary<uint, TypedValue>>();
+        var dnRole = new DynamicNumber();
+        dnRole.Set(item.role_id);
+        var dnPos = new DynamicNumber();
+        dnPos.Set(item.pos_id);
+        inner[KeyOptionId] = TypedValue.CreateValueType(dnRole);
+        inner[KeyPositionId] = TypedValue.CreateValueType(dnPos);
+        if (!string.IsNullOrWhiteSpace(item.name))
+            inner[KeyOptionName] = TypedValue.Create(item.name);
+
+        mid[KeyOptionId] = TypedValue.Create(innerRef);
+        outer[KeyPosRoleInner] = TypedValue.Create(midRef);
+        subsystem.SendEvent(EventPlayerTrainingPositionChanged, targetRef, TypedValue.Create(outerRef));
+    }
+
+    private static void ApplyOopRoleItem(GameInteropSubsystem subsystem, int mgrVal, OopRoleCommandItem item)
+    {
+        var targetRef = BuildPlayerTargetRef(mgrVal, item.runtime_id);
+
+        var outerRef = new DynamicReference();
+        var outer = outerRef.Cast<Il2CppSystem.Collections.Generic.Dictionary<uint, TypedValue>>();
+        outer[KeyConfirmFlagA] = TypedValue.Create(true);
+
+        var innerRef = new DynamicReference();
+        var inner = innerRef.Cast<Il2CppSystem.Collections.Generic.Dictionary<uint, TypedValue>>();
+        var dn = new DynamicNumber();
+        dn.Set(item.role_id);
+        inner[KeyOptionId] = TypedValue.CreateValueType(dn);
+        if (!string.IsNullOrWhiteSpace(item.name))
+            inner[KeyOptionName] = TypedValue.Create(item.name);
+
+        outer[KeyOopRoleInner] = TypedValue.Create(innerRef);
+        subsystem.SendEvent(EventPlayerOOPTrainingRoleChanged, targetRef, TypedValue.Create(outerRef));
     }
 
     private static void WriteCommandResult(int applied, List<string> errors)
@@ -372,7 +497,21 @@ internal static class InteropChannelPatches
 
             if (info.Kind == ChannelKind.FocusOptions)
             {
-                if (HarvestFocusOptions(value, 0) && _lastEntryKey != null && _lastTacticalDump != null)
+                if (HarvestOptionsRecursive(value, 0, HarvestFocusOptionsFromRecord) && _lastEntryKey != null && _lastTacticalDump != null)
+                    WriteLatest(_lastEntryKey, _lastTacticalDump);
+                return;
+            }
+
+            if (info.Kind == ChannelKind.PosRoleOptions)
+            {
+                if (HarvestOptionsRecursive(value, 0, HarvestPosRoleOptionsFromRecord) && _lastEntryKey != null && _lastTacticalDump != null)
+                    WriteLatest(_lastEntryKey, _lastTacticalDump);
+                return;
+            }
+
+            if (info.Kind == ChannelKind.OopRoleOptions)
+            {
+                if (HarvestOptionsRecursive(value, 0, HarvestOopRoleOptionsFromRecord) && _lastEntryKey != null && _lastTacticalDump != null)
                     WriteLatest(_lastEntryKey, _lastTacticalDump);
                 return;
             }
@@ -393,7 +532,6 @@ internal static class InteropChannelPatches
 
     private static bool HarvestFocusOptionsFromRecord(Record rec, int depth)
     {
-        if (depth > 3) return false;
         var added = false;
         var optId = -1;
         string? optName = null;
@@ -405,7 +543,7 @@ internal static class InteropChannelPatches
                 optId = id;
             else if (kv.Key == KeyOptionName)
                 optName = kv.Value?.AsString()?.Trim();
-            else if (HarvestFocusOptions(kv.Value, depth + 1))
+            else if (HarvestOptionsRecursive(kv.Value, depth + 1, HarvestFocusOptionsFromRecord))
                 added = true;
         }
         if (optId >= 0 && optId <= 100 && !string.IsNullOrWhiteSpace(optName))
@@ -419,9 +557,92 @@ internal static class InteropChannelPatches
         return added;
     }
 
-    private static bool HarvestFocusOptions(TypedValue? tv, int depth)
+    private static bool HarvestPosRoleOptionsFromRecord(Record rec, int depth)
     {
-        if (tv == null || tv.IsNull || depth > 3) return false;
+        var added = false;
+        long roleId = -1;
+        var posId = -1;
+        string? optName = null;
+        var en = rec.GetEnumerator();
+        while (en.MoveNext())
+        {
+            var kv = en.Current;
+            if (kv.Key == KeyOptionId)
+            {
+                if (TryExtractLong(kv.Value, out var id))
+                    roleId = id;
+                var innerRec = kv.Value?.Get()?.TryCast<Record>();
+                if (innerRec != null)
+                {
+                    var innerEn = innerRec.GetEnumerator();
+                    while (innerEn.MoveNext())
+                    {
+                        var ikv = innerEn.Current;
+                        if (ikv.Key == KeyOptionId && TryExtractLong(ikv.Value, out var rid))
+                            roleId = rid;
+                        else if (ikv.Key == KeyPositionId && TryExtractInt(ikv.Value, out var pid))
+                            posId = pid;
+                        else if (ikv.Key == KeyOptionName && string.IsNullOrWhiteSpace(optName))
+                            optName = ikv.Value?.AsString()?.Trim();
+                    }
+                }
+            }
+            else if (kv.Key == KeyPositionId && TryExtractInt(kv.Value, out var pid))
+            {
+                posId = pid;
+            }
+            else if (kv.Key == KeyOptionName)
+            {
+                optName = kv.Value?.AsString()?.Trim();
+            }
+            else if (HarvestOptionsRecursive(kv.Value, depth + 1, HarvestPosRoleOptionsFromRecord))
+            {
+                added = true;
+            }
+        }
+        if (roleId >= 0 && posId >= 0 && !string.IsNullOrWhiteSpace(optName))
+        {
+            var k = $"{posId}:{roleId}";
+            var val = new PosRoleOption(roleId, posId, optName!);
+            if (!PosRoleOptions.TryGetValue(k, out var prev) || prev != val)
+            {
+                PosRoleOptions[k] = val;
+                added = true;
+            }
+        }
+        return added;
+    }
+
+    private static bool HarvestOopRoleOptionsFromRecord(Record rec, int depth)
+    {
+        var added = false;
+        long roleId = -1;
+        string? optName = null;
+        var en = rec.GetEnumerator();
+        while (en.MoveNext())
+        {
+            var kv = en.Current;
+            if (kv.Key == KeyOptionId && TryExtractLong(kv.Value, out var id))
+                roleId = id;
+            else if (kv.Key == KeyOptionName)
+                optName = kv.Value?.AsString()?.Trim();
+            else if (HarvestOptionsRecursive(kv.Value, depth + 1, HarvestOopRoleOptionsFromRecord))
+                added = true;
+        }
+        if (roleId >= 0 && !string.IsNullOrWhiteSpace(optName))
+        {
+            if (!OopRoleOptions.TryGetValue(roleId, out var prev) || prev != optName)
+            {
+                OopRoleOptions[roleId] = optName!;
+                added = true;
+            }
+        }
+        return added;
+    }
+
+    private static bool HarvestOptionsRecursive(TypedValue? tv, int depth, Func<Record, int, bool> visitRecord)
+    {
+        if (tv == null || tv.IsNull || depth > 4) return false;
         var added = false;
         try
         {
@@ -430,12 +651,12 @@ internal static class InteropChannelPatches
 
             var rec = obj.TryCast<Record>();
             if (rec != null)
-                return HarvestFocusOptionsFromRecord(rec, depth);
+                return visitRecord(rec, depth);
 
             var items = TryEnumerateItems(tv);
             if (items != null)
             {
-                var limit = Math.Min(items.Count, 80);
+                var limit = Math.Min(items.Count, 120);
                 for (var i = 0; i < limit; i++)
                 {
                     var cur = items[i];
@@ -443,11 +664,11 @@ internal static class InteropChannelPatches
                     var itemTv = cur.TryCast<TypedValue>();
                     if (itemTv != null)
                     {
-                        if (HarvestFocusOptions(itemTv, depth + 1)) added = true;
+                        if (HarvestOptionsRecursive(itemTv, depth + 1, visitRecord)) added = true;
                         continue;
                     }
                     var itemRec = cur.TryCast<Record>();
-                    if (itemRec != null && HarvestFocusOptionsFromRecord(itemRec, depth + 1))
+                    if (itemRec != null && visitRecord(itemRec, depth + 1))
                         added = true;
                 }
             }
@@ -456,14 +677,14 @@ internal static class InteropChannelPatches
         return added;
     }
 
-    private static bool TryExtractInt(TypedValue? tv, out int val)
+    private static bool TryExtractLong(TypedValue? tv, out long val)
     {
         val = -1;
         if (tv == null || tv.IsNull) return false;
         try
         {
             var s = tv.AsString() ?? tv.Get()?.ToString();
-            if (s != null && int.TryParse(s.Trim(), out val))
+            if (s != null && long.TryParse(s.Trim(), out val))
                 return true;
         }
         catch { }
@@ -476,12 +697,23 @@ internal static class InteropChannelPatches
                 while (en.MoveNext())
                 {
                     var cur = en.Current;
-                    if (cur.Key == KeyOptionId && TryExtractInt(cur.Value, out val))
+                    if (cur.Key == KeyOptionId && TryExtractLong(cur.Value, out val))
                         return true;
                 }
             }
         }
         catch { }
+        return false;
+    }
+
+    private static bool TryExtractInt(TypedValue? tv, out int val)
+    {
+        if (TryExtractLong(tv, out var l) && l >= int.MinValue && l <= int.MaxValue)
+        {
+            val = (int)l;
+            return true;
+        }
+        val = -1;
         return false;
     }
 
@@ -779,12 +1011,19 @@ internal static class InteropChannelPatches
                 foreach (var kv in FocusOptions)
                     focusOpts[kv.Key.ToString()] = kv.Value;
 
+                var posRoleOpts = new List<PosRoleOption>(PosRoleOptions.Values);
+                var oopRoleOpts = new Dictionary<string, string>();
+                foreach (var kv in OopRoleOptions)
+                    oopRoleOpts[kv.Key.ToString()] = kv.Value;
+
                 var payload = new Dictionary<string, object?>
                 {
                     ["updated_utc"] = System.DateTime.UtcNow.ToString("O"),
                     ["session_ready"] = _sessionId != 0,
                     ["current_intensities"] = intensities,
                     ["focus_options"] = focusOpts,
+                    ["pos_role_options"] = posRoleOpts,
+                    ["oop_role_options"] = oopRoleOpts,
                     ["data"] = new Dictionary<string, object?>
                     {
                         [entryKey] = dumped

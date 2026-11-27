@@ -429,6 +429,49 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "weeks" => "semanas",
         "✓ Set" => "✓ Fijado",
         "✓ Written" => "✓ Escrito",
+        "Acceleration" => "Aceleración",
+        "Aerial Reach" => "Alcance aéreo",
+        "Agility" => "Agilidad",
+        "Attribute" => "Atributo",
+        "Automatic installation is not supported on this platform." => "La instalación automática no es compatible con este sistema.",
+        "Balance" => "Equilibrio",
+        "Buy Me a Coffee · Support" => "Buy Me a Coffee · Apoyar",
+        "Command of Area" => "Mando en el área",
+        "Composure" => "Serenidad",
+        "Concentration" => "Concentración",
+        "Corrupted update package." => "Paquete de actualización dañado.",
+        "Could not extract ZIP archive." => "No se pudo extraer el archivo ZIP.",
+        "Decisions" => "Decisiones",
+        "Downloaded EXE file is invalid." => "El archivo EXE descargado no es válido.",
+        "Downloaded ZIP archive is invalid." => "El archivo ZIP descargado no es válido.",
+        "Draft release skipped." => "Versión borrador omitida.",
+        "Dribbling" => "Regate",
+        "Failed to download update file." => "Error al descargar la actualización.",
+        "Finishing" => "Remate",
+        "First Touch" => "Control",
+        "Handling" => "Blocaje",
+        "Heading" => "Cabeceo",
+        "Jumping Reach" => "Alcance de salto",
+        "Kicking" => "Saques",
+        "License: GPL-3.0. Session names, limits and presets come from FM27's own game data. Single-player only. Font: Inter (SIL OFL). Icons: Phosphor (MIT)." => "Licencia: GPL-3.0. Nombres, límites y plantillas proceden de FM27. Solo un jugador. Fuente: Inter (SIL OFL). Iconos: Phosphor (MIT).",
+        "Long Shots" => "Tiros lejanos",
+        "Marking" => "Marcaje",
+        "No .exe found inside the update archive." => "No se encontró ningún .exe en el archivo.",
+        "No suitable release package found for this platform." => "No se encontró un paquete compatible para este sistema.",
+        "Off the Ball" => "Desmarques",
+        "One on Ones" => "Uno contra uno",
+        "Pace" => "Velocidad",
+        "Positioning" => "Colocación",
+        "Reflexes" => "Reflejos",
+        "Release tag not found." => "Etiqueta de versión no encontrada.",
+        "Stamina" => "Resistencia",
+        "Support" => "Apoyar",
+        "Support on Buy Me a Coffee (buymeacoffee.com/cilek14)" => "Apoyar en Buy Me a Coffee (buymeacoffee.com/cilek14)",
+        "Tackling" => "Entradas",
+        "Technique" => "Técnica",
+        "Throwing" => "Saques con la mano",
+        "Vision" => "Visión",
+        "Work Rate" => "Sacrificio",
         _ => en,
     }
 }
@@ -436,6 +479,60 @@ pub fn translate_static(en: &'static str) -> &'static str {
 pub fn translate_dynamic(en: String) -> String {
     if en == "your eleven is already the best" {
         return "tu once ya es el mejor".into();
+    }
+    if let Some(rest) = en.strip_prefix("JSON error: ") {
+        return format!("Error de JSON: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("Invalid version format: ") {
+        return format!("Formato de versión inválido: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("Failed to start curl: ") {
+        return format!("No se pudo iniciar curl: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("Update check failed (code ").and_then(|r| r.strip_suffix(')')) {
+        return format!("Error al comprobar actualizaciones (código {rest})");
+    }
+    if let Some(rest) = en.strip_prefix("Could not create updates folder: ") {
+        return format!("No se pudo crear la carpeta de actualizaciones: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("Could not start download: ") {
+        return format!("No se pudo iniciar la descarga: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("Could not read downloaded file: ") {
+        return format!("No se pudo leer el archivo descargado: {rest}");
+    }
+    if let Some(n) = en.strip_prefix("Downloaded file smaller than expected (").and_then(|r| r.strip_suffix(" bytes).")) {
+        return format!("Archivo descargado menor de lo esperado ({n} bytes).");
+    }
+    if let Some(rest) = en.strip_prefix("Could not verify downloaded file: ") {
+        return format!("No se pudo verificar el archivo: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("Could not read file header: ") {
+        return format!("No se pudo leer la cabecera del archivo: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("Could not move downloaded file: ") {
+        return format!("No se pudo mover el archivo descargado: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("Could not locate current executable: ") {
+        return format!("No se encontró el ejecutable actual: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("No write permission in this folder; update downloaded and opened: ") {
+        return format!("Sin permisos de escritura en esta carpeta; actualización descargada: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("Could not create temp folder: ") {
+        return format!("No se pudo crear la carpeta temporal: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("Could not start PowerShell: ") {
+        return format!("No se pudo iniciar PowerShell: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("Could not write updater script: ") {
+        return format!("No se pudo escribir el script de actualización: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("Could not launch updater: ") {
+        return format!("No se pudo iniciar el actualizador: {rest}");
+    }
+    if let Some(rest) = en.strip_prefix("Update downloaded and opened: ") {
+        return format!("Actualización descargada y abierta: {rest}");
     }
     if let Some(t) = en.strip_prefix("Applied · ") {
         return format!("Aplicado · {t}");

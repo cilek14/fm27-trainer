@@ -1,5 +1,6 @@
 //! Otomatik sürüm denetimi ve platforma özgü kendi kendini güncelleme (GitHub Releases).
 
+use crate::t;
 use eframe::egui;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -240,20 +241,42 @@ pub fn pick_asset_for_platform(assets: &[ReleaseAsset], is_windows: bool, is_mac
 }
 
 pub fn parse_release_json(raw: &str, is_windows: bool, is_macos: bool) -> Result<ReleaseInfo, String> {
-    let v: Value = serde_json::from_str(raw).map_err(|e| format!("JSON hatası: {e}"))?;
+    let v: Value = serde_json::from_str(raw).map_err(|e| {
+        t!(
+            format!("JSON-fout: {e}"),
+            format!("JSON error: {e}"),
+            format!("JSON hatası: {e}")
+        )
+    })?;
     if v.get("draft").and_then(|d| d.as_bool()) == Some(true) {
-        return Err("Taslak sürüm atlandı.".into());
+        return Err(t!(
+            "Conceptversie overgeslagen.",
+            "Draft release skipped.",
+            "Taslak sürüm atlandı."
+        )
+        .into());
     }
     let tag = v
         .get("tag_name")
         .and_then(|s| s.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| "Sürüm etiketi bulunamadı.".to_string())?
+        .ok_or_else(|| {
+            t!(
+                "Geen versietag gevonden.",
+                "Release tag not found.",
+                "Sürüm etiketi bulunamadı."
+            )
+            .to_string()
+        })?
         .to_string();
     let version = tag.trim_start_matches(['v', 'V']).to_string();
     if parse_semver(&version).is_none() {
-        return Err(format!("Geçersiz sürüm biçimi: {tag}"));
+        return Err(t!(
+            format!("Ongeldig versienummer: {tag}"),
+            format!("Invalid version format: {tag}"),
+            format!("Geçersiz sürüm biçimi: {tag}")
+        ));
     }
     let notes = v
         .get("body")
@@ -317,12 +340,22 @@ fn fetch_latest_release() -> Result<Option<ReleaseInfo>, String> {
         ])
         .stdin(Stdio::null())
         .output()
-        .map_err(|e| format!("curl başlatılamadı: {e}"))?;
+        .map_err(|e| {
+            t!(
+                format!("Kon curl niet starten: {e}"),
+                format!("Failed to start curl: {e}"),
+                format!("curl başlatılamadı: {e}")
+            )
+        })?;
 
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
         return Err(if err.is_empty() {
-            format!("Güncelleme denetimi başarısız (kod {:?})", out.status.code())
+            t!(
+                format!("Updatecheck mislukt (code {:?})", out.status.code()),
+                format!("Update check failed (code {:?})", out.status.code()),
+                format!("Güncelleme denetimi başarısız (kod {:?})", out.status.code())
+            )
         } else {
             err
         });
@@ -338,13 +371,23 @@ fn fetch_latest_release() -> Result<Option<ReleaseInfo>, String> {
 }
 
 fn download_and_install(info: &ReleaseInfo) -> Result<InstallOutcome, String> {
-    let asset = info
-        .asset
-        .as_ref()
-        .ok_or_else(|| "Bu platform için uygun sürüm dosyası bulunamadı.".to_string())?;
+    let asset = info.asset.as_ref().ok_or_else(|| {
+        t!(
+            "Geen geschikt pakket gevonden voor dit platform.",
+            "No suitable release package found for this platform.",
+            "Bu platform için uygun sürüm dosyası bulunamadı."
+        )
+        .to_string()
+    })?;
 
     let updates_dir = crate::data_dir().join("updates");
-    std::fs::create_dir_all(&updates_dir).map_err(|e| format!("Güncelleme klasörü oluşturulamadı: {e}"))?;
+    std::fs::create_dir_all(&updates_dir).map_err(|e| {
+        t!(
+            format!("Kon updatemap niet maken: {e}"),
+            format!("Could not create updates folder: {e}"),
+            format!("Güncelleme klasörü oluşturulamadı: {e}")
+        )
+    })?;
 
     let safe_name: String = asset
         .name
@@ -368,47 +411,101 @@ fn download_and_install(info: &ReleaseInfo) -> Result<InstallOutcome, String> {
         .arg(&asset.url)
         .stdin(Stdio::null())
         .output()
-        .map_err(|e| format!("İndirme başlatılamadı: {e}"))?;
+        .map_err(|e| {
+            t!(
+                format!("Kon download niet starten: {e}"),
+                format!("Could not start download: {e}"),
+                format!("İndirme başlatılamadı: {e}")
+            )
+        })?;
 
     if !out.status.success() {
         let _ = std::fs::remove_file(&tmp_path);
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
         return Err(if err.is_empty() {
-            "Güncelleme dosyası indirilemedi.".to_string()
+            t!(
+                "Updatebestand downloaden mislukt.",
+                "Failed to download update file.",
+                "Güncelleme dosyası indirilemedi."
+            )
+            .to_string()
         } else {
             err
         });
     }
 
-    let meta = std::fs::metadata(&tmp_path).map_err(|e| format!("İndirilen dosya okunamadı: {e}"))?;
+    let meta = std::fs::metadata(&tmp_path).map_err(|e| {
+        t!(
+            format!("Kon gedownload bestand niet lezen: {e}"),
+            format!("Could not read downloaded file: {e}"),
+            format!("İndirilen dosya okunamadı: {e}")
+        )
+    })?;
     if meta.len() < 200_000 {
         let _ = std::fs::remove_file(&tmp_path);
-        return Err(format!("İndirilen dosya beklenenden küçük ({} bayt).", meta.len()));
+        return Err(t!(
+            format!("Gedownload bestand te klein ({} bytes).", meta.len()),
+            format!("Downloaded file smaller than expected ({} bytes).", meta.len()),
+            format!("İndirilen dosya beklenenden küçük ({} bayt).", meta.len())
+        ));
     }
 
     let mut hdr = [0u8; 4];
     {
         use std::io::Read;
-        let mut f = std::fs::File::open(&tmp_path).map_err(|e| format!("Dosya doğrulanamadı: {e}"))?;
-        let n = f.read(&mut hdr).map_err(|e| format!("Başlık okunamadı: {e}"))?;
+        let mut f = std::fs::File::open(&tmp_path).map_err(|e| {
+            t!(
+                format!("Kon bestand niet controleren: {e}"),
+                format!("Could not verify downloaded file: {e}"),
+                format!("Dosya doğrulanamadı: {e}")
+            )
+        })?;
+        let n = f.read(&mut hdr).map_err(|e| {
+            t!(
+                format!("Kon header niet lezen: {e}"),
+                format!("Could not read file header: {e}"),
+                format!("Başlık okunamadı: {e}")
+            )
+        })?;
         if n < 2 {
             let _ = std::fs::remove_file(&tmp_path);
-            return Err("Bozuk güncelleme paketi.".into());
+            return Err(t!(
+                "Beschadigd updatepakket.",
+                "Corrupted update package.",
+                "Bozuk güncelleme paketi."
+            )
+            .into());
         }
     }
 
     let lower = safe_name.to_ascii_lowercase();
     if lower.ends_with(".zip") && hdr != [b'P', b'K', 0x03, 0x04] {
         let _ = std::fs::remove_file(&tmp_path);
-        return Err("İndirilen ZIP arşivi geçersiz.".into());
+        return Err(t!(
+            "Ongeldig ZIP-archief gedownload.",
+            "Downloaded ZIP archive is invalid.",
+            "İndirilen ZIP arşivi geçersiz."
+        )
+        .into());
     }
     if lower.ends_with(".exe") && &hdr[..2] != b"MZ" {
         let _ = std::fs::remove_file(&tmp_path);
-        return Err("İndirilen EXE dosyası geçersiz.".into());
+        return Err(t!(
+            "Ongeldig EXE-bestand gedownload.",
+            "Downloaded EXE file is invalid.",
+            "İndirilen EXE dosyası geçersiz."
+        )
+        .into());
     }
 
     let _ = std::fs::remove_file(&dl_path);
-    std::fs::rename(&tmp_path, &dl_path).map_err(|e| format!("Dosya taşınamadı: {e}"))?;
+    std::fs::rename(&tmp_path, &dl_path).map_err(|e| {
+        t!(
+            format!("Kon bestand niet verplaatsen: {e}"),
+            format!("Could not move downloaded file: {e}"),
+            format!("Dosya taşınamadı: {e}")
+        )
+    })?;
 
     #[cfg(windows)]
     {
@@ -423,7 +520,12 @@ fn download_and_install(info: &ReleaseInfo) -> Result<InstallOutcome, String> {
     #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = (dl_path, updates_dir);
-        Err("Bu platformda otomatik yükleme desteklenmiyor.".into())
+        Err(t!(
+            "Automatisch installeren wordt op dit systeem niet ondersteund.",
+            "Automatic installation is not supported on this platform.",
+            "Bu platformda otomatik yükleme desteklenmiyor."
+        )
+        .into())
     }
 }
 
@@ -465,7 +567,13 @@ fn install_windows(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome,
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    let current_exe = std::env::current_exe().map_err(|e| format!("Uygulama yolu alınamadı: {e}"))?;
+    let current_exe = std::env::current_exe().map_err(|e| {
+        t!(
+            format!("App-pad niet gevonden: {e}"),
+            format!("Could not locate current executable: {e}"),
+            format!("Uygulama yolu alınamadı: {e}")
+        )
+    })?;
     if let Some(parent) = current_exe.parent() {
         let probe = parent.join(".fm27_update_probe");
         if std::fs::write(&probe, b"").is_ok() {
@@ -475,9 +583,10 @@ fn install_windows(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome,
                 .arg(format!("/select,{}", dl_path.display()))
                 .spawn();
             return Ok(InstallOutcome::Manual {
-                message: format!(
-                    "Bu klasöre yazma izni yok; güncelleme paketi indirildi ve açıldı: {}",
-                    dl_path.display()
+                message: t!(
+                    format!("Geen schrijfrechten in deze map; updatepakket gedownload: {}", dl_path.display()),
+                    format!("No write permission in this folder; update downloaded and opened: {}", dl_path.display()),
+                    format!("Bu klasöre yazma izni yok; güncelleme paketi indirildi ve açıldı: {}", dl_path.display())
                 ),
             });
         }
@@ -491,7 +600,13 @@ fn install_windows(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome,
 
     let (src_exe, src_dll) = if lower.ends_with(".zip") {
         let _ = std::fs::remove_dir_all(&staging);
-        std::fs::create_dir_all(&staging).map_err(|e| format!("Geçici klasör oluşturulamadı: {e}"))?;
+        std::fs::create_dir_all(&staging).map_err(|e| {
+            t!(
+                format!("Tijdelijke map niet aangemaakt: {e}"),
+                format!("Could not create temp folder: {e}"),
+                format!("Geçici klasör oluşturulamadı: {e}")
+            )
+        })?;
         let expand_cmd = format!(
             "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
             ps_escape(dl_path),
@@ -502,12 +617,30 @@ fn install_windows(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome,
             .creation_flags(CREATE_NO_WINDOW)
             .stdin(Stdio::null())
             .output()
-            .map_err(|e| format!("PowerShell başlatılamadı: {e}"))?;
+            .map_err(|e| {
+                t!(
+                    format!("Kon PowerShell niet starten: {e}"),
+                    format!("Could not start PowerShell: {e}"),
+                    format!("PowerShell başlatılamadı: {e}")
+                )
+            })?;
         if !exp.status.success() {
-            return Err("ZIP arşivi açılamadı.".into());
+            return Err(t!(
+                "ZIP-archief kon niet worden uitgepakt.",
+                "Could not extract ZIP archive.",
+                "ZIP arşivi açılamadı."
+            )
+            .into());
         }
         let (exe_opt, dll_opt) = find_extracted_files(&staging);
-        let exe = exe_opt.ok_or_else(|| "Güncelleme arşivinde .exe bulunamadı.".to_string())?;
+        let exe = exe_opt.ok_or_else(|| {
+            t!(
+                "Geen .exe gevonden in het update-archief.",
+                "No .exe found inside the update archive.",
+                "Güncelleme arşivinde .exe bulunamadı."
+            )
+            .to_string()
+        })?;
         (exe, dll_opt)
     } else {
         (dl_path.to_path_buf(), None)
@@ -563,7 +696,13 @@ fn install_windows(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome,
         stg = staging_str,
         dl = ps_escape(dl_path),
     );
-    std::fs::write(&ps1, script).map_err(|e| format!("Güncelleme betiği yazılamadı: {e}"))?;
+    std::fs::write(&ps1, script).map_err(|e| {
+        t!(
+            format!("Updatescript niet opgeslagen: {e}"),
+            format!("Could not write updater script: {e}"),
+            format!("Güncelleme betiği yazılamadı: {e}")
+        )
+    })?;
 
     Command::new("powershell.exe")
         .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File"])
@@ -573,7 +712,13 @@ fn install_windows(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome,
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("Güncelleyici başlatılamadı: {e}"))?;
+        .map_err(|e| {
+            t!(
+                format!("Kon updater niet starten: {e}"),
+                format!("Could not launch updater: {e}"),
+                format!("Güncelleyici başlatılamadı: {e}")
+            )
+        })?;
 
     Ok(InstallOutcome::Restarting)
 }
@@ -658,7 +803,11 @@ fn install_macos(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome, S
 
     let _ = Command::new("open").arg(dl_path).spawn();
     Ok(InstallOutcome::Manual {
-        message: format!("Güncelleme indirildi ve açıldı: {}", dl_path.display()),
+        message: t!(
+            format!("Update gedownload en geopend: {}", dl_path.display()),
+            format!("Update downloaded and opened: {}", dl_path.display()),
+            format!("Güncelleme indirildi ve açıldı: {}", dl_path.display())
+        ),
     })
 }
 

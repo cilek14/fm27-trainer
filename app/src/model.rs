@@ -42,6 +42,10 @@ impl Component {
             (Tr, Component::PlayerAbility) => "Oyuncu Yeteneği",
             (Tr, Component::PlayerBuyIn) => "Oyuncu Benimsemesi",
             (Tr, Component::NextMatchInfo) => "Sonraki Maç Bilgisi",
+            (De, Component::TacticalUnderstanding) => "Taktisches Verständnis",
+            (De, Component::PlayerAbility) => "Spielerfähigkeit",
+            (De, Component::PlayerBuyIn) => "Spielerakzeptanz",
+            (De, Component::NextMatchInfo) => "Nächstes-Spiel-Info",
             (Fr, Component::TacticalUnderstanding) => "Compréhension tactique",
             (Fr, Component::PlayerAbility) => "Niveau des joueurs",
             (Fr, Component::PlayerBuyIn) => "Adhésion des joueurs",
@@ -232,6 +236,25 @@ impl Factor {
                 Factor::QualityOfNextOppositionReport => "Calidad del informe rival",
                 Factor::OppositionPlayerKnowledge => "Conocimiento jugadores rivales",
             },
+            De => match self {
+                Factor::InPossessionShape => "Formation bei Ballbesitz",
+                Factor::PassingStyle => "Passstil",
+                Factor::BuildUp => "Aufbauspiel",
+                Factor::ChanceCreation => "Chancenkreation",
+                Factor::OutOfPossessionShape => "Formation gegen den Ball",
+                Factor::LineOfEngagement => "Pressinglinie",
+                Factor::PressingIntensity => "Pressing-Intensität",
+                Factor::PressingTrap => "Pressingfalle",
+                Factor::PlayerTacticalAbility => "Taktische Intelligenz",
+                Factor::TacticalComplexity => "Taktische Komplexität",
+                Factor::PlayerCapability => "Spielerqualität",
+                Factor::PlayerRoleSuitability => "Rolleneignung",
+                Factor::ManagerialSupport => "Rückhalt beim Team",
+                Factor::TeammatesAndStaffRelationships => "Team- & Stab-Chemie",
+                Factor::ManagerTendencies => "Trainer-Spielstil",
+                Factor::QualityOfNextOppositionReport => "Gegnerbericht-Qualität",
+                Factor::OppositionPlayerKnowledge => "Kenntnis gegn. Spieler",
+            },
             En | Nl => self.label(),
         }
     }
@@ -374,6 +397,14 @@ impl Category {
                 Category::PhysicalRecovery => "Físico y recuperación",
                 Category::ExtraCurricular => "Extra-deportivo",
                 Category::Fixed => "Partido / Viaje",
+            },
+            De => match self {
+                Category::TacticalUnderstanding => "Taktisches Verständnis",
+                Category::MatchPreparation => "Spielvorbereitung",
+                Category::FootballingDevelopment => "Fußballerische Entwicklung",
+                Category::PhysicalRecovery => "Physis & Erholung",
+                Category::ExtraCurricular => "Teamaktivitäten",
+                Category::Fixed => "Spiel / Reise",
             },
             En | Nl => self.label(),
         }
@@ -781,6 +812,71 @@ pub fn session_display_name_for<'a>(canonical: &'a str, lang: crate::i18n::Lang)
             "Tactical Understanding OOP" => "Comprensión táctica (Sin balón)",
             _ => canonical,
         },
+        De => match canonical {
+            "Passing Style" => "Passstil",
+            "Build Up" => "Aufbauspiel",
+            "Chance Creation" => "Chancenkreation",
+            "In Possession Shape" => "Formation bei Ballbesitz",
+            "Line of Engagement" => "Pressinglinie",
+            "Pressing Intensity" => "Pressing-Intensität",
+            "Pressing Trap" => "Pressingfalle",
+            "Out Of Possession Shape" => "Formation gegen den Ball",
+            "Press Avoidance" => "Pressingresistenz",
+            "Ball Progression" => "Ballvortrag",
+            "Final Third" => "Letztes Drittel",
+            "Defensive Block" => "Defensivblock",
+            "Defensive Positioning" => "Stellungsspiel Defensive",
+            "Defensive Engagement" => "Zweikampfführung",
+            "Corners" => "Ecken",
+            "Free Kicks" => "Freistöße",
+            "Penalties" => "Elfmeter",
+            "Individual Development" => "Individuelle Entwicklung",
+            "Attacking Ball Work" => "Offensivarbeit am Ball",
+            "Defensive Ball Work" => "Defensivarbeit am Ball",
+            "Possession Ball Work" => "Ballbesitzspiel",
+            "Attacking - Balanced" => "Angriff - Ausgewogen",
+            "Attacking - Patient" => "Angriff - Geduldig",
+            "Attacking - Direct" => "Angriff - Direkt",
+            "Attacking - Wings" => "Angriff - Flügelspiel",
+            "Defending - Balanced" => "Defensive - Ausgewogen",
+            "Defending - Engaged" => "Defensive - Aktiv",
+            "Defending - Disengaged" => "Defensive - Abwartend",
+            "Defending - Wide" => "Defensive - Breit",
+            "Theory - Attacking Shadow Play" => "Theorie - Offensiv-Laufwege",
+            "Theory - Defensive Shadow Play" => "Theorie - Defensiv-Verschieben",
+            "Technical - Chance Creation" => "Technik - Chancenkreation",
+            "Technical - Chance Conversion" => "Technik - Torabschluss",
+            "Technical - Ball Retention" => "Technik - Ballhaltung",
+            "Technical - Ground Defence" => "Technik - Bodenverteidigung",
+            "Technical - Aerial Defence" => "Technik - Kopfballabwehr",
+            "Transition - Restrict" => "Umschalten - Verzögern",
+            "Transition - Press" => "Umschalten - Gegenpressing",
+            "Transition - Progress" => "Umschalten - Konter",
+            "GK - Balanced" => "TW - Ausgewogen",
+            "GK - Shot Stopping" => "TW - Paraden",
+            "GK - Handling" => "TW - Fangsicherheit",
+            "GK - One On Ones" => "TW - Eins-gegen-Eins",
+            "GK - Distribution" => "TW - Spieleröffnung",
+            "Set Pieces - Delivery" => "Standards - Hereingaben",
+            "Set Pieces - Penalties" => "Standards - Elfmeter",
+            "Rest" => "Pause",
+            "Recovery" => "Regeneration",
+            "Light Conditioning" => "Leichtes Konditionstraining",
+            "Conditioning" => "Konditionstraining",
+            "Heavy Conditioning" => "Hartes Konditionstraining",
+            "Rest (IM)" => "Pause (Zwischen Spielen)",
+            "Recovery (IM)" => "Regeneration (Zwischen Spielen)",
+            "Light Conditioning (IM)" => "Leichtes Konditionstraining (Zw. Spielen)",
+            "Team Bonding" => "Teambuilding",
+            "Community Outreach" => "Soziales Engagement",
+            "Travel" => "Reise",
+            "Match" => "Spiel",
+            "Not Available" => "Nicht verfügbar",
+            "Match Preparation" => "Spielvorbereitung",
+            "Tactical Understanding IP" => "Taktisches Verständnis (Ballbesitz)",
+            "Tactical Understanding OOP" => "Taktisches Verständnis (Gegen Ball)",
+            _ => canonical,
+        },
         En | Nl => canonical,
     }
 }
@@ -917,7 +1013,7 @@ mod tests {
     fn localized_labels_cover_all_languages() {
         use crate::i18n::Lang;
 
-        for lang in [Lang::Tr, Lang::Fr, Lang::It, Lang::Es] {
+        for lang in [Lang::Tr, Lang::De, Lang::Fr, Lang::It, Lang::Es] {
             for c in Component::ALL {
                 let lbl = c.display_label_for(lang);
                 assert!(!lbl.is_empty());
@@ -953,7 +1049,7 @@ mod tests {
 
         for s in SESSIONS {
             assert_eq!(session_display_name_for(s.name, Lang::En), s.name);
-            for lang in [Lang::Tr, Lang::Fr, Lang::It, Lang::Es] {
+            for lang in [Lang::Tr, Lang::De, Lang::Fr, Lang::It, Lang::Es] {
                 let loc = session_display_name_for(s.name, lang);
                 assert!(!loc.is_empty(), "empty {:?} name for {}", lang, s.name);
                 // "Corners" ve "Match" Fransızca futbolda aynı yazılır.

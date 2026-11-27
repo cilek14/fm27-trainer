@@ -68,7 +68,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleLocalizations</key><array><string>en</string><string>tr</string><string>nl</string><string>fr</string><string>it</string><string>es</string></array>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>tr</string><string>de</string><string>nl</string><string>fr</string><string>it</string><string>es</string></array>
   <key>LSApplicationCategoryType</key><string>public.app-category.sports</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>

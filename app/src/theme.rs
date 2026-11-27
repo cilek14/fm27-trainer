@@ -354,9 +354,11 @@ pub fn ring(ui: &mut Ui, value: f32, size: f32, color: Color32) {
         let n = ((sweep / std::f32::consts::TAU) * 96.0).ceil().max(2.0) as usize;
         let at = |a: f32| c + vec2(a.sin(), -a.cos()) * r;
         let pts: Vec<egui::Pos2> = (0..=n).map(|i| at(sweep * i as f32 / n as f32)).collect();
-        p.circle_filled(pts[0], w / 2.0, color);
-        p.circle_filled(*pts.last().unwrap(), w / 2.0, color);
-        p.add(egui::Shape::line(pts, Stroke::new(w, color)));
+        if let (Some(&first), Some(&last)) = (pts.first(), pts.last()) {
+            p.circle_filled(first, w / 2.0, color);
+            p.circle_filled(last, w / 2.0, color);
+            p.add(egui::Shape::line(pts, Stroke::new(w, color)));
+        }
     }
 }
 
@@ -454,36 +456,53 @@ pub fn small_button(ui: &mut Ui, text: &str, enabled: bool) -> Response {
     ui.add_enabled(enabled, b)
 }
 
-/// Sıcak kehribar tonlu destek / Buy Me a Coffee butonu (`full_width = true` yan menü için).
+/// Dikkat çekici altın-kahve pill tarzında Buy Me a Coffee destek butonu.
 pub fn support_button(ui: &mut Ui, icon_s: &str, text: &str, full_width: bool) -> Response {
-    let fg = Color32::from_rgb(252, 214, 134);
+    let fg = Color32::from_rgb(24, 18, 10);
     let galley = if text.is_empty() {
         let mut job = egui::text::LayoutJob::default();
         job.append(
             icon_s,
             0.0,
-            egui::text::TextFormat { font_id: FontId::new(15.5, icons()), color: fg, valign: egui::Align::Center, ..Default::default() },
+            egui::text::TextFormat {
+                font_id: FontId::new(15.5, icons()),
+                color: fg,
+                valign: egui::Align::Center,
+                ..Default::default()
+            },
         );
         ui.fonts(|f| f.layout_job(job))
     } else {
-        let job = icon_label(icon_s, text, FontId::new(13.0, semibold()), fg);
+        let mut job = egui::text::LayoutJob::default();
+        let fmt = |font_id: FontId| egui::text::TextFormat {
+            font_id,
+            color: fg,
+            valign: egui::Align::Center,
+            ..Default::default()
+        };
+        job.append(icon_s, 0.0, fmt(FontId::new(15.0, icons())));
+        job.append("  ", 0.0, fmt(FontId::new(12.5, semibold())));
+        job.append(text, 0.0, fmt(FontId::new(12.5, semibold())));
         ui.fonts(|f| f.layout_job(job))
     };
     let w = if full_width {
-        ui.available_width().max(galley.size().x + 24.0)
+        ui.available_width().max(galley.size().x + 28.0)
     } else if text.is_empty() {
-        36.0
+        34.0
     } else {
-        galley.size().x + 28.0
+        galley.size().x + 26.0
     };
-    let h = if full_width { 32.0 } else { 34.0 };
+    let h = if full_width { 34.0 } else { 32.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(w, h), Sense::click());
     let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), QUICK);
-    let fill = tint(WARNING, 0.13 + 0.11 * hover);
-    let stroke = tint(WARNING, 0.38 + 0.25 * hover);
+    let base = Color32::from_rgb(246, 200, 70);
+    let bright = Color32::from_rgb(255, 221, 102);
+    let fill = mix(base, bright, hover);
+    let stroke = mix(Color32::from_rgb(255, 232, 148), Color32::WHITE, hover * 0.35);
+    let r = CornerRadius::same(16);
     let p = ui.painter();
-    p.rect_filled(rect, CornerRadius::same(9), fill);
-    p.rect_stroke(rect, CornerRadius::same(9), Stroke::new(1.0_f32, stroke), egui::StrokeKind::Inside);
+    p.rect_filled(rect, r, fill);
+    p.rect_stroke(rect, r, Stroke::new(1.0_f32, stroke), egui::StrokeKind::Inside);
     p.galley(rect.center() - galley.size() / 2.0, galley, fg);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -710,7 +729,7 @@ pub fn centered_column(ui: &mut Ui, max_w: f32, add: impl FnOnce(&mut Ui)) {
     let w = avail.min(max_w);
     let pad = ((avail - w) * 0.5).max(0.0);
     let saved_gap = ui.spacing().item_spacing.x;
-    ui.horizontal(|ui| {
+    ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         if pad > 0.5 {
             ui.add_space(pad);
@@ -778,34 +797,51 @@ pub fn setting_row_tip(
     let left_w = (w - right_w - gap).max(120.0);
     let saved_gap = ui.spacing().item_spacing.x;
 
-    ui.add_space(6.0);
+    ui.add_space(4.0);
     ui.allocate_ui_with_layout(
         vec2(w, 0.0),
-        egui::Layout::left_to_right(egui::Align::Center),
+        egui::Layout::left_to_right(egui::Align::Min),
         |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             ui.set_max_width(w);
-            ui.allocate_ui_with_layout(
-                vec2(left_w, 0.0),
-                egui::Layout::top_down(egui::Align::Min),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = saved_gap;
-                    ui.set_min_width(left_w);
-                    ui.set_max_width(left_w);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(RichText::new(label).font(FontId::new(13.0, medium())).color(TEXT));
+            let left_resp = if help.is_none() {
+                ui.allocate_ui_with_layout(
+                    vec2(left_w, 30.0),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.spacing_mut().item_spacing.x = saved_gap;
+                        ui.set_min_width(left_w);
+                        ui.set_max_width(left_w);
+                        ui.add(egui::Label::new(RichText::new(label).font(FontId::new(13.0, medium())).color(TEXT)).wrap());
                         if let Some(t) = tip {
                             ui.label(ic(icon::INFO).color(TEXT_FAINT).size(13.5)).on_hover_text(t);
                         }
-                    });
-                    if let Some(h) = help {
-                        ui.add(egui::Label::new(RichText::new(h).size(12.0).color(TEXT_DIM)).wrap());
-                    }
-                },
-            );
+                    },
+                )
+            } else {
+                ui.allocate_ui_with_layout(
+                    vec2(left_w, 0.0),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        ui.spacing_mut().item_spacing.x = saved_gap;
+                        ui.set_min_width(left_w);
+                        ui.set_max_width(left_w);
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(RichText::new(label).font(FontId::new(13.0, medium())).color(TEXT));
+                            if let Some(t) = tip {
+                                ui.label(ic(icon::INFO).color(TEXT_FAINT).size(13.5)).on_hover_text(t);
+                            }
+                        });
+                        if let Some(h) = help {
+                            ui.add(egui::Label::new(RichText::new(h).size(12.0).color(TEXT_DIM)).wrap());
+                        }
+                    },
+                )
+            };
+            let row_h = left_resp.response.rect.height().max(30.0);
             ui.add_space(gap);
             ui.allocate_ui_with_layout(
-                vec2(right_w, 0.0),
+                vec2(right_w, row_h),
                 egui::Layout::right_to_left(egui::Align::Center),
                 |ui| {
                     ui.spacing_mut().item_spacing.x = saved_gap;
@@ -816,7 +852,7 @@ pub fn setting_row_tip(
             );
         },
     );
-    ui.add_space(6.0);
+    ui.add_space(4.0);
     if divider {
         let (sep_rect, _) = ui.allocate_exact_size(vec2(w, 1.0), Sense::hover());
         ui.painter().hline(sep_rect.x_range(), sep_rect.center().y, Stroke::new(1.0_f32, mix(SURFACE, BORDER, 0.75)));

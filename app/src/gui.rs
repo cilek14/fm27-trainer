@@ -107,6 +107,7 @@ impl UiScale {
 #[derive(Clone, Serialize, Deserialize)]
 struct Settings {
     lang: Lang,
+    #[allow(dead_code)] // Eski settings.json dosyalarıyla geriye dönük uyumluluk için tutulur.
     rate: f32,
     capture_delay: bool,
     #[serde(default = "yes")]
@@ -388,6 +389,7 @@ impl App {
             Ok("nl") => settings.lang = Lang::Nl,
             Ok("en") => settings.lang = Lang::En,
             Ok("tr") => settings.lang = Lang::Tr,
+            Ok("de") => settings.lang = Lang::De,
             Ok("fr") => settings.lang = Lang::Fr,
             Ok("it") => settings.lang = Lang::It,
             Ok("es") => settings.lang = Lang::Es,
@@ -689,42 +691,42 @@ impl App {
 
     fn topbar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("topbar")
-            .exact_height(62.0)
-            .show_separator_line(false)
+            .show_separator_line(true)
             .frame(Frame::new().fill(theme::SIDEBAR).inner_margin(Margin { left: 28, right: 28, top: 10, bottom: 10 }))
             .show(ctx, |ui| {
-                let edge = ui.max_rect().expand2(vec2(28.0, 10.0));
-                ui.painter().hline(edge.x_range(), edge.bottom() - 0.5, Stroke::new(1.0_f32, theme::BORDER));
-
+                ui.spacing_mut().item_spacing.y = 0.0;
                 theme::centered_column(ui, theme::CONTENT_MAX, |ui| {
-                    ui.allocate_ui(vec2(ui.available_width(), 42.0), |ui| {
+                    ui.allocate_ui(vec2(ui.available_width(), 40.0), |ui| {
                         ui.horizontal_centered(|ui| {
                             let compact = ui.available_width() < 1160.0;
                             theme::brand_logo(ui, if compact { 30.0 } else { 34.0 });
                             ui.add_space(4.0);
-                            ui.vertical(|ui| {
-                                ui.spacing_mut().item_spacing = vec2(4.0, 1.0);
-                                ui.add_space(if compact { 6.0 } else { 3.0 });
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        RichText::new(if compact { "FM27" } else { "FM27 Training" })
-                                            .font(egui::FontId::new(if compact { 13.0 } else { 13.5 }, theme::bold()))
-                                            .color(theme::TEXT),
-                                    );
-                                    ui.label(
-                                        RichText::new("Assistant")
-                                            .font(egui::FontId::new(if compact { 12.5 } else { 13.0 }, theme::semibold()))
-                                            .color(theme::ACCENT_HI),
-                                    );
-                                });
-                                if !compact {
-                                    ui.label(
-                                        RichText::new(format!("v{} · Pitch Telemetry", env!("CARGO_PKG_VERSION")))
-                                            .size(10.5)
-                                            .color(theme::TEXT_FAINT),
-                                    );
-                                }
-                            });
+                            ui.allocate_ui_with_layout(
+                                vec2(if compact { 125.0 } else { 185.0 }, if compact { 20.0 } else { 34.0 }),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    ui.spacing_mut().item_spacing = vec2(4.0, 1.0);
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            RichText::new(if compact { "FM27" } else { "FM27 Training" })
+                                                .font(egui::FontId::new(if compact { 13.0 } else { 13.5 }, theme::bold()))
+                                                .color(theme::TEXT),
+                                        );
+                                        ui.label(
+                                            RichText::new("Assistant")
+                                                .font(egui::FontId::new(if compact { 12.5 } else { 13.0 }, theme::semibold()))
+                                                .color(theme::ACCENT_HI),
+                                        );
+                                    });
+                                    if !compact {
+                                        ui.label(
+                                            RichText::new(format!("v{} · Pitch Telemetry", env!("CARGO_PKG_VERSION")))
+                                                .size(10.5)
+                                                .color(theme::TEXT_FAINT),
+                                        );
+                                    }
+                                },
+                            );
 
                             ui.add_space(if compact { 6.0 } else { 12.0 });
                             let items = [
@@ -746,11 +748,12 @@ impl App {
 
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 let tip = t!(
-                                    "Steun de ontwikkeling (buymeacoffee.com/cilek14)",
-                                    "Support development (buymeacoffee.com/cilek14)",
-                                    "Geliştirmeyi destekle (buymeacoffee.com/cilek14)"
+                                    "Steun via Buy Me a Coffee (buymeacoffee.com/cilek14)",
+                                    "Support on Buy Me a Coffee (buymeacoffee.com/cilek14)",
+                                    "Buy Me a Coffee ile destek ol (buymeacoffee.com/cilek14)"
                                 );
-                                if theme::support_button(ui, icon::COFFEE, "", false)
+                                let sup_lbl = if compact { "" } else { t!("Steun", "Support", "Destek ol") };
+                                if theme::support_button(ui, icon::COFFEE, sup_lbl, false)
                                     .on_hover_text(tip)
                                     .clicked()
                                 {
@@ -1054,7 +1057,7 @@ impl App {
             // Kadro isimleri sonradan yüklendiyse eksik oyuncu isimlerini tamamla
             if !self.individual.bottlenecks.is_empty() && !self.live.squad.is_empty() {
                 for b in &mut self.individual.bottlenecks {
-                    if b.name.starts_with("Oyuncu #") || b.name == "—" {
+                    if b.name.starts_with("Oyuncu #") || b.name.starts_with("Player #") || b.name == "—" {
                         if let Some(n) = self.live.squad.iter().find(|p| p.get("runtime_id").and_then(|v| v.as_u64()) == Some(b.runtime_id as u64)).and_then(|p| p.get("name")).and_then(|v| v.as_str()) {
                             b.name = n.to_string();
                         }
@@ -2289,6 +2292,7 @@ impl App {
             let lang_name = |l: Lang| match l {
                 Lang::Tr => "Türkçe",
                 Lang::En => "English",
+                Lang::De => "Deutsch",
                 Lang::Nl => "Nederlands",
                 Lang::Fr => "Français",
                 Lang::It => "Italiano",
@@ -2300,7 +2304,7 @@ impl App {
                     .width(170.0)
                     .selected_text(lang_name(lang))
                     .show_ui(ui, |ui| {
-                        for l in [Lang::Tr, Lang::En, Lang::Nl, Lang::Fr, Lang::It, Lang::Es] {
+                        for l in [Lang::Tr, Lang::En, Lang::De, Lang::Nl, Lang::Fr, Lang::It, Lang::Es] {
                             ui.selectable_value(&mut lang, l, lang_name(l));
                         }
                     });
@@ -2320,7 +2324,7 @@ impl App {
                     "Geniş ekranlarda otomatik büyür · Ctrl + / − / 0"
                 )),
                 None,
-                true,
+                cfg!(target_os = "macos"),
                 |ui| {
                     let mut sc = app.settings.ui_scale;
                     egui::ComboBox::from_id_salt("settings_ui_scale")
@@ -2339,20 +2343,18 @@ impl App {
                 },
             );
 
-            theme::setting_row(ui, t!("Koers € per £", "Rate € per £"), None, |ui| {
-                *dirty |= ui.add(egui::DragValue::new(&mut app.settings.rate).range(0.5..=2.0).speed(0.01).fixed_decimals(2)).changed();
-            });
-
-            theme::setting_row_tip(
-                ui,
-                t!("FM eerst naar voren halen bij uitlezen", "Bring FM to front before reading", "Okumadan önce FM'yi öne getir"),
-                None,
-                None,
-                false,
-                |ui| {
-                    *dirty |= theme::toggle(ui, &mut app.settings.capture_delay).changed();
-                },
-            );
+            if cfg!(target_os = "macos") {
+                theme::setting_row_tip(
+                    ui,
+                    t!("FM eerst naar voren halen bij uitlezen", "Bring FM to front before reading", "Okumadan önce FM'yi öne getir"),
+                    None,
+                    None,
+                    false,
+                    |ui| {
+                        *dirty |= theme::toggle(ui, &mut app.settings.capture_delay).changed();
+                    },
+                );
+            }
 
             // ---- Planlayıcı
             section_heading(ui, SettingsSection::Planner, t!("Planner", "Planner", "Planlayıcı"), &mut app.settings_scroll_to, false);
@@ -2758,20 +2760,25 @@ impl App {
             // ---- Klasörler
             section_heading(ui, SettingsSection::Folders, t!("Mappen", "Folders", "Klasörler"), &mut app.settings_scroll_to, false);
             let export_path_str = export::output_dir().display().to_string();
-            theme::setting_row(ui, t!("Exportmap", "Export folder", "Dışa aktarma klasörü"), None, |ui| {
+            theme::setting_row_tip(ui, t!("Exportmap", "Export folder", "Dışa aktarma klasörü"), None, None, false, |ui| {
                 if theme::button(ui, icon::EXPORT, t!("Open map", "Open folder", "Klasörü aç"), true).clicked() {
                     let _ = std::fs::create_dir_all(export::output_dir());
                     open_path(&export::output_dir());
                 }
             });
             ui.add(egui::Label::new(RichText::new(&export_path_str).monospace().size(11.5).color(theme::TEXT_DIM)).selectable(true).wrap());
-            ui.add_space(4.0);
+            ui.add_space(6.0);
+            let (f_sep, _) = ui.allocate_exact_size(vec2(ui.available_width().max(20.0), 1.0), egui::Sense::hover());
+            ui.painter().hline(f_sep.x_range(), f_sep.center().y, Stroke::new(1.0_f32, theme::mix(theme::SURFACE, theme::BORDER, 0.75)));
+            ui.add_space(2.0);
 
             let data_path_str = crate::data_dir().display().to_string();
-            theme::setting_row(
+            theme::setting_row_tip(
                 ui,
                 t!("Instellingen- en app-map", "Settings & app folder", "Ayarlar ve uygulama klasörü"),
                 Some(t!("Bevat settings.json en laatste diagnosebestanden", "Contains settings.json and recent diagnostic files", "settings.json ve son tanılama dosyalarını içerir")),
+                None,
+                false,
                 |ui| {
                     if theme::button(ui, icon::EXPORT, t!("Open map", "Open folder", "Klasörü aç"), true).clicked() {
                         let _ = std::fs::create_dir_all(crate::data_dir());
@@ -2806,8 +2813,9 @@ impl App {
             );
             ui.add(
                 egui::Label::new(theme::faint(t!(
-                    "Sessienamen, limieten en presets komen uit FM27's eigen game-data. De module leest en schrijft alleen na controle, met undo. Alleen voor single-player. Lettertype: Inter (SIL OFL). Iconen: Phosphor (MIT).",
-                    "Session names, limits and presets come from FM27's own game data. The module only reads and writes after checks, with undo. Single-player only. Font: Inter (SIL OFL). Icons: Phosphor (MIT)."
+                    "Licentie: GPL-3.0. Sessienamen, limieten en presets komen uit FM27's eigen game-data. Alleen voor single-player. Lettertype: Inter (SIL OFL). Iconen: Phosphor (MIT).",
+                    "License: GPL-3.0. Session names, limits and presets come from FM27's own game data. Single-player only. Font: Inter (SIL OFL). Icons: Phosphor (MIT).",
+                    "Lisans: GPL-3.0. Seans adları, limitler ve şablonlar FM27 oyun verisinden gelir. Yalnızca tek oyunculu içindir. Yazı tipi: Inter (SIL OFL). Simgeler: Phosphor (MIT)."
                 )))
                 .wrap(),
             );
@@ -2816,7 +2824,7 @@ impl App {
                 if theme::support_button(
                     ui,
                     icon::COFFEE,
-                    t!("Steun via Buy Me a Coffee", "Support on Buy Me a Coffee", "Buy Me a Coffee'de destek ol"),
+                    t!("Koop een koffie · Buy Me a Coffee", "Buy Me a Coffee · Support", "Kahve ısmarla · Buy Me a Coffee"),
                     false,
                 )
                 .clicked()

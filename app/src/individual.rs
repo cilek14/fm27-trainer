@@ -177,19 +177,19 @@ impl AdditionalFocus {
     /// FM27'nin canlı `focus_options` sözlüğünden eşleşen `(option_id, name)` çiftini bulur.
     pub fn match_option_id(self, options: &HashMap<i32, String>) -> Option<(i32, String)> {
         let keywords: &[&str] = match self {
-            Self::Quickness => &["quickness", "çabukluk", "snelheid", "sprint"],
-            Self::Endurance => &["endurance", "dayanıklılık", "uithouding"],
-            Self::Strength => &["strength", "güç", "kuvvet", "kracht"],
-            Self::AgilityAndBalance => &["agility", "çeviklik", "denge", "wendbaarheid"],
-            Self::Aerial => &["aerial", "hava top", "kafa", "lucht"],
-            Self::BallControl => &["ball control", "top kontrol", "balcontrole"],
-            Self::Passing => &["passing", "pas", "passen"],
-            Self::Shooting => &["shooting", "şut", "bitiricilik", "afwerken"],
-            Self::FinalThird => &["final third", "üçüncü bölge", "hücum alan", "laatste fase"],
-            Self::DefensivePositioning => &["defensive position", "savunma pozisyon", "verdedig"],
-            Self::GkShotStopping => &["shot stopping", "şut kurtar"],
-            Self::GkHandling => &["handling", "elle kontrol", "klemvast"],
-            Self::GkDistribution => &["distribution", "oyuna sok", "dagitim", "dağıtım"],
+            Self::Quickness => &["quickness", "çabukluk", "snelheid", "sprint", "schnelligkeit", "antritt"],
+            Self::Endurance => &["endurance", "dayanıklılık", "uithouding", "ausdauer"],
+            Self::Strength => &["strength", "güç", "kuvvet", "kracht", "stärke", "kraft"],
+            Self::AgilityAndBalance => &["agility", "çeviklik", "denge", "wendbaarheid", "beweglichkeit", "balance"],
+            Self::Aerial => &["aerial", "hava top", "kafa", "lucht", "kopfball"],
+            Self::BallControl => &["ball control", "top kontrol", "balcontrole", "ballkontrolle"],
+            Self::Passing => &["passing", "pas", "passen", "passspiel"],
+            Self::Shooting => &["shooting", "şut", "bitiricilik", "afwerken", "abschluss", "torschuss"],
+            Self::FinalThird => &["final third", "üçüncü bölge", "hücum alan", "laatste fase", "letztes drittel"],
+            Self::DefensivePositioning => &["defensive position", "savunma pozisyon", "verdedig", "stellungsspiel"],
+            Self::GkShotStopping => &["shot stopping", "şut kurtar", "paraden", "reaktion"],
+            Self::GkHandling => &["handling", "elle kontrol", "klemvast", "fangsicherheit"],
+            Self::GkDistribution => &["distribution", "oyuna sok", "dagitim", "dağıtım", "spieleröffnung", "abwürfe"],
         };
         let mut best: Option<(i32, String)> = None;
         for (&id, raw_name) in options {
@@ -207,39 +207,39 @@ impl AdditionalFocus {
     }
 }
 
-fn attr_tr(key: &str) -> &'static str {
+fn attr_label(key: &str) -> &'static str {
     match key {
-        "acceleration" => "Hızlanma",
-        "pace" => "Hız",
-        "stamina" => "Dayanıklılık",
-        "work_rate" => "Çalışkanlık",
-        "strength" => "Güç",
-        "balance" => "Denge",
-        "agility" => "Çeviklik",
-        "jumping_reach" => "Zıplama",
-        "heading" => "Kafa Vuruşu",
-        "first_touch" => "İlk Kontrol",
-        "technique" => "Teknik",
-        "dribbling" => "Dribling",
-        "passing" => "Pas",
-        "vision" => "Vizyon",
-        "decisions" => "Karar Alma",
-        "finishing" => "Bitiricilik",
-        "composure" => "Soğukkanlılık",
-        "long_shots" => "Uzaktan Şut",
-        "off_the_ball" => "Topsuz Alan",
-        "positioning" => "Pozisyon Alma",
-        "marking" => "Markaj",
-        "tackling" => "Top Kapma",
-        "concentration" => "Konsantrasyon",
-        "reflexes" => "Refleks",
-        "one_on_ones" => "Birebir",
-        "handling" => "Elle Kontrol",
-        "aerial_reach" => "Hava Hakimiyeti",
-        "command_of_area" => "Ceza Sahası",
-        "kicking" => "Degaj",
-        "throwing" => "Elle Başlatma",
-        _ => "Özellik",
+        "acceleration" => t!("Versnelling", "Acceleration", "Hızlanma"),
+        "pace" => t!("Snelheid", "Pace", "Hız"),
+        "stamina" => t!("Uithoudingsvermogen", "Stamina", "Dayanıklılık"),
+        "work_rate" => t!("Inzet", "Work Rate", "Çalışkanlık"),
+        "strength" => t!("Kracht", "Strength", "Güç"),
+        "balance" => t!("Balans", "Balance", "Denge"),
+        "agility" => t!("Wendbaarheid", "Agility", "Çeviklik"),
+        "jumping_reach" => t!("Sprongkracht", "Jumping Reach", "Zıplama"),
+        "heading" => t!("Koppen", "Heading", "Kafa Vuruşu"),
+        "first_touch" => t!("Eerste aanname", "First Touch", "İlk Kontrol"),
+        "technique" => t!("Techniek", "Technique", "Teknik"),
+        "dribbling" => t!("Dribbelen", "Dribbling", "Dribling"),
+        "passing" => t!("Passen", "Passing", "Pas"),
+        "vision" => t!("Inzicht", "Vision", "Vizyon"),
+        "decisions" => t!("Beslissingen", "Decisions", "Karar Alma"),
+        "finishing" => t!("Afwerken", "Finishing", "Bitiricilik"),
+        "composure" => t!("Kalmte", "Composure", "Soğukkanlılık"),
+        "long_shots" => t!("Afstandsschoten", "Long Shots", "Uzaktan Şut"),
+        "off_the_ball" => t!("Positie kiezen (aanv.)", "Off the Ball", "Topsuz Alan"),
+        "positioning" => t!("Positie kiezen (verd.)", "Positioning", "Pozisyon Alma"),
+        "marking" => t!("Mandekking", "Marking", "Markaj"),
+        "tackling" => t!("Tackelen", "Tackling", "Top Kapma"),
+        "concentration" => t!("Concentratie", "Concentration", "Konsantrasyon"),
+        "reflexes" => t!("Reflexen", "Reflexes", "Refleks"),
+        "one_on_ones" => t!("Eén-op-één", "One on Ones", "Birebir"),
+        "handling" => t!("Klemvastheid", "Handling", "Elle Kontrol"),
+        "aerial_reach" => t!("Luchtbereik", "Aerial Reach", "Hava Hakimiyeti"),
+        "command_of_area" => t!("Uitkomen", "Command of Area", "Ceza Sahası"),
+        "kicking" => t!("Uittrappen", "Kicking", "Degaj"),
+        "throwing" => t!("Uitwerpen", "Throwing", "Elle Başlatma"),
+        _ => t!("Attribuut", "Attribute", "Özellik"),
     }
 }
 
@@ -1022,7 +1022,7 @@ pub fn recommend_additional_focus(
         let weak_attrs = pairs
             .iter()
             .take(2)
-            .map(|(k, v)| format!("{} {v}", attr_tr(k)))
+            .map(|(k, v)| format!("{} {v}", attr_label(k)))
             .collect::<Vec<_>>()
             .join(", ");
         scored.push((focus, avg, weak_attrs));
@@ -1044,7 +1044,7 @@ pub fn recommend_additional_focus(
             let weak_attrs = pairs
                 .iter()
                 .take(2)
-                .map(|(k, v)| format!("{} {v}", attr_tr(k)))
+                .map(|(k, v)| format!("{} {v}", attr_label(k)))
                 .collect::<Vec<_>>()
                 .join(", ");
             scored.push((focus, avg, weak_attrs));

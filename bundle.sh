@@ -32,7 +32,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleLocalizations</key><array><string>en</string><string>tr</string><string>nl</string><string>fr</string><string>it</string><string>es</string></array>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>tr</string><string>de</string><string>nl</string><string>fr</string><string>it</string><string>es</string></array>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSScreenCaptureUsageDescription</key><string>FM27 Training Assistant reads the Tactical Effectiveness screen of Football Manager.</string>

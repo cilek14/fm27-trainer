@@ -6,6 +6,7 @@ mod gui;
 mod history;
 mod home;
 mod i18n;
+mod i18n_de;
 mod i18n_es;
 mod i18n_fr;
 mod i18n_it;

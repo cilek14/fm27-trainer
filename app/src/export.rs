@@ -163,7 +163,7 @@ pub fn html_report(title: &str, eff: &Effectiveness, plans: &[WeekPlan]) -> Stri
     let _ = write!(
         h,
         "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><style>{}</style></head><body><main>",
-        crate::t!("nl", "en"),
+        crate::i18n::code(crate::i18n::get()),
         esc(title),
         CSS
     );

@@ -10,24 +10,24 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/release-v1.3.0-7c6cff">
+  <img alt="Version" src="https://img.shields.io/badge/release-v1.4.0-10b981">
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B%20Universal-111111?logo=apple">
   <img alt="FM27" src="https://img.shields.io/badge/Football%20Manager-27-c8102e">
   <img alt="BepInEx" src="https://img.shields.io/badge/BepInEx-6%20IL2CPP-5c2d91">
   <img alt="No cheats" src="https://img.shields.io/badge/hile-yok%20%2F%20no%20cheats-3dd68c">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-646b7d">
+  <img alt="License" src="https://img.shields.io/badge/license-GPLv3-blue">
 </p>
 
 <p align="center">
   <a href="#türkçe">🇹🇷 Türkçe</a> ·
   <a href="#english">🇬🇧 English</a> ·
   <a href="../../releases/latest">İndir / Download</a> ·
-  <a href="https://buymeacoffee.com/cilek14">☕    Coffee</a>
+  <a href="https://buymeacoffee.com/cilek14">☕ Buy Me a Coffee</a>
 </p>
 
 <p align="center">
-  <sub>UI Languages / Uygulama Dilleri: 🇹🇷 TR · 🇬🇧 EN · 🇳🇱 NL · 🇫🇷 FR · 🇮🇹 IT · 🇪🇸 ES</sub>
+  <sub>UI Languages / Uygulama Dilleri (auto-detected from OS, EN fallback): 🇹🇷 TR · 🇬🇧 EN · 🇩🇪 DE · 🇳🇱 NL · 🇫🇷 FR · 🇮🇹 IT · 🇪🇸 ES</sub>
 </p>
 
 ---
@@ -240,7 +240,7 @@ dotnet build bridge/FM27Trainer.Bridge.csproj -c Release -p:FM27Dir="PATH_TO_FM2
 |---|---|
 | `app/` | Desktop app: planner, training, history trend chart, individual & tactics tabs, OCR |
 | `agent/` | Read-only FM27 memory reader + structurally verified training-calendar writer |
-| `bridge/` | Optional BepInEx 6 IL2CPP plugin (`v0.7.1`): exact tactical data + intensity/focus events |
+| `bridge/` | Optional BepInEx 6 IL2CPP plugin (`v0.8.0`): exact tactical data + intensity/focus/role events |
 
 Technical notes: [docs/TECHNICAL.md](docs/TECHNICAL.md)
 
@@ -248,6 +248,6 @@ Technical notes: [docs/TECHNICAL.md](docs/TECHNICAL.md)
 
 ## Credits & License
 
-- Original project: [SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer) by **Sem Hiel** (MIT).
+- License: [GNU General Public License v3.0 (GPL-3.0)](LICENSE)
+- Original upstream project: [SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer) by **Sem Hiel** (MIT).
 - Research & layouts: FMSuperScout, FMLibreEditor, fm-lens, fmsave. Font: Inter (SIL OFL). Icons: Phosphor (MIT). See [THIRD_PARTY.md](THIRD_PARTY.md).
-- License: [MIT](LICENSE)

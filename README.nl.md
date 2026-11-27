@@ -112,4 +112,4 @@ is een handelsmerk van Sports Interactive / SEGA. Gebruik op eigen risico en bew
 
 ## Licentie
 
-[MIT](LICENSE) © 2026 Sem Hiel
+[GPL-3.0](LICENSE) · Gebaseerd op [SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer) ([MIT](THIRD_PARTY.md) © 2026 Sem Hiel)
