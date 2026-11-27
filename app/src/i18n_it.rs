@@ -454,6 +454,19 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Risk" => "Rischio",
         "Select at least one player with an applicable suggestion" => "Seleziona almeno un giocatore con un suggerimento applicabile",
         "Tactical score" => "Punteggio tattico",
+        "Activity log (last 20)" => "Registro attività (ultimi 20)",
+        "Auto-keep on plan" => "Mantieni piano in auto",
+        "Balanced week" => "Settimana equilibrata",
+        "Calendar" => "Calendario",
+        "Development week" => "Settimana di sviluppo",
+        "In-possession week" => "Settimana con palla",
+        "Out-of-possession week" => "Settimana senza palla",
+        "Outlined = set by assistant · shield = auto-reverted from FM assistant · struck = what FM planned" => "Bordo evidenziato = impostato dall'app · scudo = ripristinato auto · barrato = piano FM",
+        "Plan settings" => "Impostazioni piano",
+        "Rest week" => "Settimana di riposo",
+        "Reverted after FM assistant changed this day" => "Ripristinato dopo modifica del vice FM",
+        "Week settings" => "Impostazioni settimana",
+        "Weekly and season training schedule, synced with FM's calendar." => "Programma settimanale e stagionale sincronizzato con il calendario di FM.",
         "unconvincing" => "poco convincente",
         "very low" => "molto basso",
         "waiting for the Breakdown in FM" => "in attesa dei dati da FM",
@@ -707,6 +720,12 @@ pub fn translate_dynamic(en: String) -> String {
     // Live & Vision
     if let Some(n) = en.strip_prefix("Tactical understanding put back to 100% for ").and_then(|r| r.strip_suffix(" players (FM had let it drop).")) {
         return format!("Comprensione tattica riportata al 100% per {n} giocatori.");
+    }
+    if let Some((hhmm, day)) = en.split_once(" · FM assistant changed ").and_then(|(h, r)| r.strip_suffix(", reverted").map(|d| (h, d))) {
+        return format!("{hhmm} · Il vice FM ha modificato {day}, ripristinato");
+    }
+    if let Some((last, n)) = en.strip_prefix("Checks every 8s and restores FM changes. Last check: ").and_then(|r| r.split_once(" · Restored: ")) {
+        return format!("Controlla ogni 8s e ripristina le modifiche di FM. Ultimo: {last} · Ripristinati: {n}");
     }
     if let Some(rest) = en.strip_prefix("The capture of the FM window has almost no text (") {
         if let Some(n) = rest.split_once(" lines).").map(|x| x.0) {

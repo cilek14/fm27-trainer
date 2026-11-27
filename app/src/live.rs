@@ -65,14 +65,26 @@ enum Aux {
 #[derive(Clone)]
 pub struct LogEntry {
     pub at: chrono::DateTime<chrono::Local>,
+    #[allow(dead_code)]
     pub text: String,
+    #[allow(dead_code)]
     pub auto: bool,
+}
+
+/// Otomatik geri alma etkinlik kaydı (son 20 kayıt, bellek içi).
+#[derive(Clone, Debug)]
+pub struct AutoEvent {
+    #[allow(dead_code)]
+    pub at: chrono::DateTime<chrono::Local>,
+    pub text: String,
 }
 
 pub struct LiveState {
     pub connected: bool,
     /// Wat er de laatste keer gebeurde met de training (nieuwste eerst).
     pub log: Vec<LogEntry>,
+    pub auto_events: Vec<AutoEvent>,
+    pub reverted_days: HashSet<NaiveDate>,
     pub last_check: Option<chrono::DateTime<chrono::Local>>,
     /// Dagen die deze sessie zijn (terug)gezet.
     pub fixed_total: usize,
@@ -120,6 +132,8 @@ impl Default for LiveState {
         LiveState {
             connected: false,
             log: Vec::new(),
+            auto_events: Vec::new(),
+            reverted_days: HashSet::new(),
             last_check: None,
             fixed_total: 0,
             fm_had: HashMap::new(),
@@ -269,6 +283,7 @@ impl LiveState {
         self.choice = choice;
         self.training = None;
         self.fm_had.clear();
+        self.reverted_days.clear();
         self.tactics = None;
         self.last_auto = Some(Instant::now());
         self.last_poll = None;
@@ -283,6 +298,17 @@ impl LiveState {
     }
 
     /// Sağlıklı oyuncuların ortalama kondisyonu (0–100 %).
+    pub fn record_auto_revert(&mut self, day_label: &str, at: chrono::DateTime<chrono::Local>) {
+        let hhmm = at.format("%H:%M").to_string();
+        let text = t!(
+            format!("{hhmm} · FM-assistent wijzigde {day_label}, teruggezet"),
+            format!("{hhmm} · FM assistant changed {day_label}, reverted"),
+            format!("{hhmm} · FM asistanı {day_label} gününü değiştirdi, geri alındı")
+        );
+        self.auto_events.insert(0, AutoEvent { at, text });
+        self.auto_events.truncate(20);
+    }
+
     pub fn avg_condition(&self) -> Option<f32> {
         let mut sum = 0.0_f32;
         let mut cnt = 0_usize;
@@ -548,7 +574,17 @@ impl LiveState {
                             for w in o.weeks.iter().filter(|w| w.written > 0) {
                                 for d in 0..7 {
                                     if w.editable[d] && w.current[d] != w.planned[d] {
-                                        self.fm_had.insert(w.start + Duration::days(d as i64), w.current[d]);
+                                        let day_date = w.start + Duration::days(d as i64);
+                                        self.fm_had.insert(day_date, w.current[d]);
+                                        if auto {
+                                            self.reverted_days.insert(day_date);
+                                            let day_label = format!(
+                                                "{} {}",
+                                                crate::i18n::weekday_short(d),
+                                                crate::i18n::date_short(day_date)
+                                            );
+                                            self.record_auto_revert(&day_label, chrono::Local::now());
+                                        }
                                     }
                                 }
                                 let date = crate::i18n::date_short(w.start);
@@ -603,5 +639,22 @@ impl LiveState {
             self.last_auto = Some(Instant::now());
             self.training_job(ctx, eff, settings, true, false, true);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_events_record_formats_and_caps_at_20() {
+        let mut live = LiveState::default();
+        let now = chrono::Local::now();
+        for i in 0..25 {
+            live.record_auto_revert(&format!("Day {i}"), now);
+        }
+        assert_eq!(live.auto_events.len(), 20);
+        assert!(live.auto_events[0].text.contains("Day 24"));
+        assert!(live.auto_events[0].text.contains("·"));
     }
 }

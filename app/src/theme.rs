@@ -618,6 +618,7 @@ pub fn segmented_full<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: 
 }
 
 /// Sessie als gekleurde chip.
+#[allow(dead_code)]
 pub fn session_chip(ui: &mut Ui, text: &str, color: Color32, highlight: bool) -> Response {
     Frame::new()
         .fill(tint(color, if highlight { 0.30 } else { 0.14 }))
@@ -808,6 +809,7 @@ pub fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
 }
 
 /// Kleine statistiek: label boven, waarde eronder.
+#[allow(dead_code)]
 pub fn mini_stat(ui: &mut Ui, label: &str, value: &str) {
     ui.vertical(|ui| {
         ui.label(caps(label));

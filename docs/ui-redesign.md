@@ -10,7 +10,7 @@ Bu dosya arayüz yenilemesinin tek kaynağıdır. Her fazda önce bu dosyayı ok
 | 2 | Global bağlantı durumu ve boş durumlar | tamamlandı |
 | 3 | "Bu hafta" ana ekranı | tamamlandı |
 | 4 | Takım analizi ve Oyuncular tablosu | tamamlandı |
-| 5 | Takvim | bekliyor |
+| 5 | Takvim | tamamlandı |
 | 6 | Cila ve kontrol | bekliyor |
 
 ## Neden değişiyor (mevcut arayüzün sorunları)

@@ -454,6 +454,19 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Risk" => "Risque",
         "Select at least one player with an applicable suggestion" => "Sélectionnez au moins un joueur avec une suggestion applicable",
         "Tactical score" => "Score tactique",
+        "Activity log (last 20)" => "Journal d'activité (20 derniers)",
+        "Auto-keep on plan" => "Maintien automatique",
+        "Balanced week" => "Semaine équilibrée",
+        "Calendar" => "Calendrier",
+        "Development week" => "Semaine de développement",
+        "In-possession week" => "Semaine en possession",
+        "Out-of-possession week" => "Semaine sans ballon",
+        "Outlined = set by assistant · shield = auto-reverted from FM assistant · struck = what FM planned" => "Encadré = défini par l'app · bouclier = rétabli auto · barré = plan de FM",
+        "Plan settings" => "Paramètres du plan",
+        "Rest week" => "Semaine de repos",
+        "Reverted after FM assistant changed this day" => "Rétabli après modification par l'adjoint FM",
+        "Week settings" => "Réglages semaine",
+        "Weekly and season training schedule, synced with FM's calendar." => "Programme hebdomadaire et saisonnier synchronisé avec le calendrier de FM.",
         "unconvincing" => "peu convaincant",
         "very low" => "très faible",
         "waiting for the Breakdown in FM" => "en attente des données de FM",
@@ -707,6 +720,12 @@ pub fn translate_dynamic(en: String) -> String {
     // Live & Vision
     if let Some(n) = en.strip_prefix("Tactical understanding put back to 100% for ").and_then(|r| r.strip_suffix(" players (FM had let it drop).")) {
         return format!("Compréhension tactique remise à 100 % pour {n} joueurs.");
+    }
+    if let Some((hhmm, day)) = en.split_once(" · FM assistant changed ").and_then(|(h, r)| r.strip_suffix(", reverted").map(|d| (h, d))) {
+        return format!("{hhmm} · L'adjoint FM a modifié {day}, rétabli");
+    }
+    if let Some((last, n)) = en.strip_prefix("Checks every 8s and restores FM changes. Last check: ").and_then(|r| r.split_once(" · Restored: ")) {
+        return format!("Vérifie toutes les 8s et rétablit les modifications de FM. Dernier : {last} · Rétablis : {n}");
     }
     if let Some(rest) = en.strip_prefix("The capture of the FM window has almost no text (") {
         if let Some(n) = rest.split_once(" lines).").map(|x| x.0) {
