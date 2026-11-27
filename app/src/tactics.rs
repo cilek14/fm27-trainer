@@ -98,7 +98,7 @@ impl Line {
     }
 
     /// De positiecijfers die voor deze linie tellen.
-    fn positions(self, side: Side) -> &'static [usize] {
+    pub fn positions(self, side: Side) -> &'static [usize] {
         match (self, side) {
             (Line::Keeper, _) => &[GK],
             (Line::CentreBack, _) => &[DC],

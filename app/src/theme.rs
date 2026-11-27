@@ -8,24 +8,24 @@ use std::sync::Arc;
 
 pub use egui_phosphor::regular as icon;
 
-// ---- kleuren ------------------------------------------------------------------
-pub const BG: Color32 = Color32::from_rgb(9, 10, 14);
-pub const SIDEBAR: Color32 = Color32::from_rgb(12, 13, 18);
-pub const SURFACE: Color32 = Color32::from_rgb(18, 20, 27);
-pub const SURFACE2: Color32 = Color32::from_rgb(27, 30, 40);
-pub const HOVER: Color32 = Color32::from_rgb(36, 40, 53);
-pub const BORDER: Color32 = Color32::from_rgb(32, 36, 47);
-pub const TRACK: Color32 = Color32::from_rgb(31, 35, 46);
-pub const TEXT: Color32 = Color32::from_rgb(238, 240, 245);
-pub const TEXT_DIM: Color32 = Color32::from_rgb(156, 163, 179);
-pub const TEXT_FAINT: Color32 = Color32::from_rgb(104, 111, 128);
-pub const ACCENT: Color32 = Color32::from_rgb(126, 111, 255);
-pub const ACCENT_HI: Color32 = Color32::from_rgb(150, 138, 255);
-pub const ACCENT_SOFT: Color32 = Color32::from_rgb(33, 30, 64);
-pub const SUCCESS: Color32 = Color32::from_rgb(61, 214, 140);
-pub const WARNING: Color32 = Color32::from_rgb(245, 181, 68);
-pub const DANGER: Color32 = Color32::from_rgb(255, 92, 108);
-pub const INFO: Color32 = Color32::from_rgb(76, 178, 255);
+// ---- kleuren (Pitch Obsidian & Emerald Telemetry) ----------------------------
+pub const BG: Color32 = Color32::from_rgb(11, 17, 20);
+pub const SIDEBAR: Color32 = Color32::from_rgb(15, 23, 28);
+pub const SURFACE: Color32 = Color32::from_rgb(18, 28, 34);
+pub const SURFACE2: Color32 = Color32::from_rgb(25, 38, 46);
+pub const HOVER: Color32 = Color32::from_rgb(33, 50, 61);
+pub const BORDER: Color32 = Color32::from_rgb(33, 50, 59);
+pub const TRACK: Color32 = Color32::from_rgb(28, 42, 50);
+pub const TEXT: Color32 = Color32::from_rgb(236, 244, 247);
+pub const TEXT_DIM: Color32 = Color32::from_rgb(148, 169, 180);
+pub const TEXT_FAINT: Color32 = Color32::from_rgb(122, 134, 150);
+pub const ACCENT: Color32 = Color32::from_rgb(16, 185, 129);
+pub const ACCENT_HI: Color32 = Color32::from_rgb(52, 211, 153);
+pub const ACCENT_SOFT: Color32 = Color32::from_rgb(14, 51, 42);
+pub const SUCCESS: Color32 = Color32::from_rgb(34, 197, 94);
+pub const WARNING: Color32 = Color32::from_rgb(245, 158, 11);
+pub const DANGER: Color32 = Color32::from_rgb(244, 63, 94);
+pub const INFO: Color32 = Color32::from_rgb(56, 189, 248);
 
 /// Mengt twee kleuren (t = 0: a, t = 1: b).
 pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
@@ -156,19 +156,19 @@ pub fn install(ctx: &egui::Context) {
         *v = egui::Visuals::dark();
         v.panel_fill = BG;
         v.window_fill = SURFACE;
-        v.extreme_bg_color = Color32::from_rgb(8, 9, 12);
-        v.faint_bg_color = Color32::from_rgb(22, 25, 33);
+        v.extreme_bg_color = Color32::from_rgb(9, 14, 17);
+        v.faint_bg_color = Color32::from_rgb(21, 32, 39);
         v.code_bg_color = SURFACE2;
         v.window_stroke = Stroke::new(1.0_f32, BORDER);
-        v.window_corner_radius = CornerRadius::same(14);
+        v.window_corner_radius = CornerRadius::same(12);
         v.menu_corner_radius = CornerRadius::same(10);
-        v.window_shadow = Shadow { offset: [0, 10], blur: 30, spread: 0, color: Color32::from_black_alpha(110) };
-        v.popup_shadow = Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(100) };
+        v.window_shadow = Shadow { offset: [0, 10], blur: 28, spread: 0, color: Color32::from_black_alpha(120) };
+        v.popup_shadow = Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(110) };
         v.selection.bg_fill = ACCENT;
         v.selection.stroke = Stroke::new(1.0_f32, Color32::WHITE);
-        v.hyperlink_color = ACCENT;
+        v.hyperlink_color = ACCENT_HI;
         v.striped = false;
-        let r = CornerRadius::same(9);
+        let r = CornerRadius::same(8);
         let w = &mut v.widgets;
         w.noninteractive.bg_fill = SURFACE;
         w.noninteractive.weak_bg_fill = SURFACE;
@@ -182,7 +182,7 @@ pub fn install(ctx: &egui::Context) {
         w.inactive.corner_radius = r;
         w.hovered.bg_fill = HOVER;
         w.hovered.weak_bg_fill = HOVER;
-        w.hovered.bg_stroke = Stroke::new(1.0_f32, Color32::from_rgb(58, 64, 82));
+        w.hovered.bg_stroke = Stroke::new(1.0_f32, Color32::from_rgb(47, 73, 86));
         w.hovered.fg_stroke = Stroke::new(1.5_f32, Color32::WHITE);
         w.hovered.corner_radius = r;
         w.hovered.expansion = 0.0;
@@ -219,7 +219,12 @@ pub fn caps(s: impl Into<String>) -> RichText {
     } else {
         raw.to_uppercase()
     };
-    RichText::new(up).font(FontId::new(11.0, semibold())).color(TEXT_FAINT)
+    RichText::new(up).font(FontId::new(12.5, semibold())).color(TEXT_FAINT)
+}
+
+/// Tablo sütun ve gün başlıkları (sentence case, 12.5 px).
+pub fn col_header(s: impl Into<String>) -> RichText {
+    RichText::new(s).font(FontId::new(12.5, semibold())).color(TEXT_DIM)
 }
 
 /// Özel çizilmiş taktik saha arması logosu ("FM27 Training Assistant").
@@ -267,7 +272,7 @@ pub fn brand_logo(ui: &mut Ui, size: f32) {
     p.circle_filled(bl, (size * 0.068).max(2.2), SUCCESS);
     p.circle_filled(br, (size * 0.058).max(2.0), Color32::from_rgba_unmultiplied(238, 240, 245, 190));
     p.circle_filled(mid, (size * 0.062).max(2.0), Color32::WHITE);
-    p.circle_filled(tip, (size * 0.065).max(2.2), ACCENT_HI);
+    p.circle_filled(tip, (size * 0.065).max(2.2), INFO);
 }
 
 // ---- bouwstenen -----------------------------------------------------------------
@@ -275,13 +280,33 @@ pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     Frame::new()
         .fill(SURFACE)
         .stroke(Stroke::new(1.0_f32, BORDER))
-        .corner_radius(CornerRadius::same(16))
-        .inner_margin(Margin::same(20))
+        .corner_radius(CornerRadius::same(12))
+        .inner_margin(Margin::same(18))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             add(ui)
         })
         .inner
+}
+
+/// Üst kenar vurgulu özel telemetri kartı.
+pub fn card_accent<R>(ui: &mut Ui, accent: Color32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let resp = Frame::new()
+        .fill(SURFACE)
+        .stroke(Stroke::new(1.0_f32, BORDER))
+        .corner_radius(CornerRadius::same(12))
+        .inner_margin(Margin { left: 16, right: 16, top: 15, bottom: 15 })
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            add(ui)
+        });
+    let r = resp.response.rect;
+    let top_bar = egui::Rect::from_min_max(
+        egui::pos2(r.left() + 10.0, r.top() + 0.5),
+        egui::pos2(r.right() - 10.0, r.top() + 2.5),
+    );
+    ui.painter().rect_filled(top_bar, CornerRadius::same(2), mix(accent, Color32::WHITE, 0.12));
+    resp.inner
 }
 
 /// Paginakop: titel + acties op de eerste rij, ondertitel eronder zodat niets overlapt.
@@ -294,7 +319,10 @@ pub fn page_header(ui: &mut Ui, title_text: &str, subtitle: &str, actions: impl 
         ui.add_space(2.0);
         ui.add(egui::Label::new(dim(subtitle)).wrap());
     }
-    ui.add_space(16.0);
+    ui.add_space(10.0);
+    let (sep_rect, _) = ui.allocate_exact_size(vec2(ui.available_width().max(20.0), 1.0), Sense::hover());
+    ui.painter().hline(sep_rect.x_range(), sep_rect.center().y, Stroke::new(1.0_f32, BORDER));
+    ui.add_space(14.0);
 }
 
 pub fn progress(ui: &mut Ui, value: f32, height: f32, color: Color32) {
@@ -344,7 +372,7 @@ pub fn stat_tile_delta(
     bar: Option<f32>,
     delta: Option<f32>,
 ) {
-    card(ui, |ui| {
+    card_accent(ui, color, |ui| {
         ui.horizontal(|ui| {
             ui.label(ic(icon_s).size(15.0).color(color));
             ui.add(egui::Label::new(caps(label)).truncate());
@@ -353,7 +381,7 @@ pub fn stat_tile_delta(
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(value).font(FontId::new(32.0, bold())).color(TEXT));
+                    ui.label(RichText::new(value).font(FontId::new(30.0, bold())).color(TEXT));
                     if let Some(d) = delta.filter(|x| x.abs() >= 1.0) {
                         let up = d > 0.0;
                         let dc = if up { SUCCESS } else { DANGER };
@@ -366,7 +394,7 @@ pub fn stat_tile_delta(
                 }
             });
             if let Some(b) = bar {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| ring(ui, b, 54.0, color));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| ring(ui, b, 52.0, color));
             }
         });
     });
@@ -391,19 +419,19 @@ pub fn pill(ui: &mut Ui, text: &str, color: Color32) -> Response {
 }
 
 pub fn primary_button(ui: &mut Ui, icon_s: &str, text: &str, enabled: bool) -> Response {
-    let job = icon_label(icon_s, text, FontId::new(14.0, semibold()), if enabled { Color32::WHITE } else { TEXT_FAINT });
+    let base_fill = Color32::from_rgb(5, 150, 105);
+    let job = icon_label(icon_s, text, FontId::new(13.5, semibold()), if enabled { Color32::WHITE } else { TEXT_FAINT });
     let galley = ui.fonts(|f| f.layout_job(job));
-    let size = vec2(galley.size().x + 32.0, 36.0);
+    let size = vec2(galley.size().x + 28.0, 35.0);
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { Sense::click() } else { Sense::hover() });
     let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), enabled && resp.hovered(), QUICK);
     let down = enabled && resp.is_pointer_button_down_on();
-    let fill = if !enabled { SURFACE2 } else if down { mix(ACCENT, BG, 0.18) } else { mix(ACCENT, ACCENT_HI, hover) };
+    let fill = if !enabled { SURFACE2 } else if down { mix(base_fill, BG, 0.22) } else { mix(base_fill, ACCENT, hover) };
     let p = ui.painter();
     if enabled {
-        // zachte gloed onder de knop
-        p.rect_filled(rect.translate(vec2(0.0, 3.0)).shrink2(vec2(6.0, 2.0)), CornerRadius::same(12), mix(BG, ACCENT, 0.16 + 0.12 * hover));
+        p.rect_filled(rect.translate(vec2(0.0, 2.5)).shrink2(vec2(6.0, 2.0)), CornerRadius::same(10), mix(BG, ACCENT, 0.15 + 0.12 * hover));
     }
-    p.rect_filled(rect, CornerRadius::same(10), fill);
+    p.rect_filled(rect, CornerRadius::same(9), fill);
     p.galley(rect.center() - galley.size() / 2.0, galley, Color32::WHITE);
     if enabled { resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { resp }
 }
@@ -426,14 +454,26 @@ pub fn small_button(ui: &mut Ui, text: &str, enabled: bool) -> Response {
 /// Sıcak kehribar tonlu destek / Buy Me a Coffee butonu (`full_width = true` yan menü için).
 pub fn support_button(ui: &mut Ui, icon_s: &str, text: &str, full_width: bool) -> Response {
     let fg = Color32::from_rgb(252, 214, 134);
-    let job = icon_label(icon_s, text, FontId::new(13.0, semibold()), fg);
-    let galley = ui.fonts(|f| f.layout_job(job));
+    let galley = if text.is_empty() {
+        let mut job = egui::text::LayoutJob::default();
+        job.append(
+            icon_s,
+            0.0,
+            egui::text::TextFormat { font_id: FontId::new(15.5, icons()), color: fg, valign: egui::Align::Center, ..Default::default() },
+        );
+        ui.fonts(|f| f.layout_job(job))
+    } else {
+        let job = icon_label(icon_s, text, FontId::new(13.0, semibold()), fg);
+        ui.fonts(|f| f.layout_job(job))
+    };
     let w = if full_width {
         ui.available_width().max(galley.size().x + 24.0)
+    } else if text.is_empty() {
+        36.0
     } else {
         galley.size().x + 28.0
     };
-    let h = if full_width { 32.0 } else { 36.0 };
+    let h = if full_width { 32.0 } else { 34.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(w, h), Sense::click());
     let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), QUICK);
     let fill = tint(WARNING, 0.13 + 0.11 * hover);
@@ -445,7 +485,43 @@ pub fn support_button(ui: &mut Ui, icon_s: &str, text: &str, full_width: bool) -
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// Üst yatay navigasyon sekmesi (Top Command Bar için).
+pub fn nav_tab(ui: &mut Ui, icon_s: &str, label: &str, selected: bool) -> Response {
+    let font = FontId::new(13.0, medium());
+    let mut measure = egui::text::LayoutJob::default();
+    let fmt = |f: FontId, c: Color32| egui::text::TextFormat { font_id: f, color: c, valign: egui::Align::Center, ..Default::default() };
+    measure.append(icon_s, 0.0, fmt(FontId::new(15.0, icons()), TEXT));
+    measure.append(" ", 0.0, fmt(font.clone(), TEXT));
+    measure.append(label, 0.0, fmt(font.clone(), TEXT));
+    let text_galley = ui.fonts(|f| f.layout_job(measure));
+    let w = text_galley.size().x + 20.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, 34.0), Sense::click());
+    let sel = ui.ctx().animate_bool_with_time(resp.id.with("s"), selected, 0.2);
+    let hov = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered() && !selected, QUICK);
+    let p = ui.painter();
+    let fill = mix(mix(SIDEBAR, SURFACE2, hov), ACCENT_SOFT, sel);
+    p.rect_filled(rect, CornerRadius::same(9), fill);
+    if sel > 0.01 {
+        let bar_w = (w - 14.0) * sel;
+        let bar = egui::Rect::from_center_size(
+            egui::pos2(rect.center().x, rect.bottom() - 2.0),
+            vec2(bar_w.max(6.0), 2.5),
+        );
+        p.rect_filled(bar, CornerRadius::same(2), ACCENT_HI);
+    }
+    let text_col = mix(mix(TEXT_DIM, TEXT, hov), Color32::WHITE, sel);
+    let icon_col = mix(mix(TEXT_DIM, TEXT, hov), ACCENT_HI, sel);
+    let mut drawn = egui::text::LayoutJob::default();
+    drawn.append(icon_s, 0.0, fmt(FontId::new(15.0, icons()), icon_col));
+    drawn.append(" ", 0.0, fmt(font.clone(), text_col));
+    drawn.append(label, 0.0, fmt(font, text_col));
+    let galley = ui.fonts(|f| f.layout_job(drawn));
+    p.galley(rect.center() - galley.size() / 2.0, galley, text_col);
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 /// Item in de zijbalk.
+#[allow(dead_code)]
 pub fn nav_item(ui: &mut Ui, icon_s: &str, label: &str, selected: bool) -> Response {
     let size = vec2(ui.available_width(), 38.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
@@ -500,6 +576,7 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
 }
 
 /// Mevcut genişliğe tam oturan kompakt segment seçici (ör. yan menüdeki `TR | EN | NL`).
+#[allow(dead_code)]
 pub fn segmented_full<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &str, &str)]) -> bool {
     let n = options.len().max(1);
     let total = ui.available_width().max(90.0);

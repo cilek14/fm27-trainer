@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use crate::live::LiveState;
 use crate::model::{level_color, level_name};
 use crate::t;
-use crate::tactics::Player as TacticPlayer;
+use crate::tactics::{self, Player as TacticPlayer};
 use crate::theme::{self, icon};
 
 /// FM27 Bireysel Antrenman Yoğunluğu seviyeleri (`EventFmxPlayerTrainingIntensityLevelChanged`).
@@ -283,20 +283,71 @@ pub struct PlayerBottleneck {
     pub advice: &'static str,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PosRoleOption {
+    pub role_id: i64,
+    pub pos_id: i32,
+    pub name: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RoleScope {
+    #[default]
+    CurrentEleven,
+    BestEleven,
+}
+
+impl RoleScope {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::CurrentEleven => t!("Huidige elf", "Current eleven", "Mevcut ilk 11"),
+            Self::BestEleven => t!("Beste elf", "Best eleven", "Önerilen en iyi 11"),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RoleTrainingProposal {
+    pub uid: u32,
+    pub runtime_id: u32,
+    pub name: String,
+    pub place_label: &'static str,
+    pub pos_idx: usize,
+    pub pos_rating: u8,
+    pub pos_word: &'static str,
+    pub ip_bit: Option<u8>,
+    pub ip_code: String,
+    pub ip_name: String,
+    pub oop_bit: Option<u8>,
+    pub oop_code: String,
+    pub oop_name: String,
+    pub matched_pos_role: Option<PosRoleOption>,
+    pub matched_oop_role: Option<(i64, String)>,
+}
+
 pub struct ParsedBepInEx {
     pub bottlenecks: Vec<PlayerBottleneck>,
     pub intensities: HashMap<u32, IntensityLevel>,
     pub focus_options: HashMap<i32, String>,
+    pub pos_role_options: Vec<PosRoleOption>,
+    pub oop_role_options: HashMap<i64, String>,
     pub session_ready: bool,
 }
 
-#[derive(Default)]
 pub struct IndividualState {
     pub profile: IntensityProfile,
     pub bottlenecks: Vec<PlayerBottleneck>,
     pub current_intensities: HashMap<u32, IntensityLevel>,
     pub focus_options: HashMap<i32, String>,
+    pub pos_role_options: Vec<PosRoleOption>,
+    pub oop_role_options: HashMap<i64, String>,
     pub applied_focuses: HashMap<u32, AdditionalFocus>,
+    pub role_training_mode: bool,
+    pub role_scope: RoleScope,
+    pub role_apply_ip: bool,
+    pub role_apply_oop: bool,
+    pub role_approved: HashMap<u32, bool>,
+    pub applied_roles: HashMap<u32, (Option<u8>, Option<u8>)>,
     pub session_ready: bool,
     pub auto_apply_intensity: bool,
     pub filter_bottlenecks_only: bool,
@@ -305,6 +356,34 @@ pub struct IndividualState {
     pub status: String,
     pub status_error: bool,
     tactics_requested: bool,
+}
+
+impl Default for IndividualState {
+    fn default() -> Self {
+        Self {
+            profile: IntensityProfile::default(),
+            bottlenecks: Vec::new(),
+            current_intensities: HashMap::new(),
+            focus_options: HashMap::new(),
+            pos_role_options: Vec::new(),
+            oop_role_options: HashMap::new(),
+            applied_focuses: HashMap::new(),
+            role_training_mode: true,
+            role_scope: RoleScope::default(),
+            role_apply_ip: true,
+            role_apply_oop: true,
+            role_approved: HashMap::new(),
+            applied_roles: HashMap::new(),
+            session_ready: false,
+            auto_apply_intensity: false,
+            filter_bottlenecks_only: false,
+            last_cmd_result_utc: String::new(),
+            last_auto_apply: None,
+            status: String::new(),
+            status_error: false,
+            tactics_requested: false,
+        }
+    }
 }
 
 fn cmd_file() -> PathBuf {
@@ -404,9 +483,43 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
         }
     }
 
+    let mut pos_role_options = Vec::new();
+    if let Some(arr) = root.get("pos_role_options").and_then(|v| v.as_array()) {
+        for item in arr {
+            let role_id = item.get("role_id").and_then(|v| v.as_i64());
+            let pos_id = item.get("pos_id").and_then(|v| v.as_i64());
+            let name = item.get("name").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty());
+            if let (Some(role_id), Some(pos_id), Some(name)) = (role_id, pos_id, name) {
+                pos_role_options.push(PosRoleOption {
+                    role_id,
+                    pos_id: pos_id as i32,
+                    name: name.to_string(),
+                });
+            }
+        }
+    }
+
+    let mut oop_role_options = HashMap::new();
+    if let Some(oo) = root.get("oop_role_options").and_then(|v| v.as_object()) {
+        for (k, v) in oo {
+            if let (Ok(id), Some(name)) = (k.parse::<i64>(), v.as_str()) {
+                if !name.trim().is_empty() {
+                    oop_role_options.insert(id, name.trim().to_string());
+                }
+            }
+        }
+    }
+
     let mut out = Vec::new();
     let Some(data) = root.get("data").and_then(|v| v.as_object()) else {
-        return ParsedBepInEx { bottlenecks: out, intensities, focus_options, session_ready };
+        return ParsedBepInEx {
+            bottlenecks: out,
+            intensities,
+            focus_options,
+            pos_role_options,
+            oop_role_options,
+            session_ready,
+        };
     };
     let Some(te) = data
         .iter()
@@ -414,11 +527,25 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
         .or_else(|| data.iter().find(|(k, _)| k.ends_with(".TacticalEffectiveness")))
         .map(|(_, v)| v)
     else {
-        return ParsedBepInEx { bottlenecks: out, intensities, focus_options, session_ready };
+        return ParsedBepInEx {
+            bottlenecks: out,
+            intensities,
+            focus_options,
+            pos_role_options,
+            oop_role_options,
+            session_ready,
+        };
     };
 
     let Some(players) = find_prefix(te, "Players").and_then(|v| v.as_array()) else {
-        return ParsedBepInEx { bottlenecks: out, intensities, focus_options, session_ready };
+        return ParsedBepInEx {
+            bottlenecks: out,
+            intensities,
+            focus_options,
+            pos_role_options,
+            oop_role_options,
+            session_ready,
+        };
     };
 
     for item in players {
@@ -540,7 +667,14 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
     }
 
     out.sort_by(|a, b| a.overall.partial_cmp(&b.overall).unwrap_or(std::cmp::Ordering::Equal));
-    ParsedBepInEx { bottlenecks: out, intensities, focus_options, session_ready }
+    ParsedBepInEx {
+        bottlenecks: out,
+        intensities,
+        focus_options,
+        pos_role_options,
+        oop_role_options,
+        session_ready,
+    }
 }
 
 /// Sakatlık önleyici akıllı bireysel yoğunluk algoritması (%100 meşru FM yoğunluk seviyeleri + profil desteği).
@@ -995,6 +1129,186 @@ pub fn write_focus_command(manager_runtime_id: u32, items: &[(u32, i32, String)]
     Ok(count)
 }
 
+fn best_position_index_for_place(player: &TacticPlayer, place: &tactics::Place) -> usize {
+    let candidates = place.line.positions(place.side);
+    candidates
+        .iter()
+        .copied()
+        .max_by_key(|&idx| player.positions.get(idx).copied().unwrap_or(1))
+        .unwrap_or_else(|| candidates.first().copied().unwrap_or(0))
+}
+
+fn match_pos_role_option(
+    opts: &[PosRoleOption],
+    ip_bit: Option<u8>,
+    ip_name: &str,
+    pos_idx: usize,
+) -> Option<PosRoleOption> {
+    let bit = ip_bit? as i64;
+    let pos_matches = |pid: i32| pid == pos_idx as i32 || (pos_idx < 31 && pid == (1i32 << pos_idx));
+    // 1. Kesin rol ID/mask + pozisyon eşleşmesi
+    if let Some(m) = opts
+        .iter()
+        .find(|o| pos_matches(o.pos_id) && (o.role_id == bit || (bit < 62 && o.role_id == (1i64 << bit))))
+    {
+        return Some(m.clone());
+    }
+    // 2. İsim + pozisyon eşleşmesi
+    if !ip_name.is_empty() {
+        let low = ip_name.to_lowercase();
+        if let Some(m) = opts
+            .iter()
+            .find(|o| pos_matches(o.pos_id) && o.name.to_lowercase().contains(&low))
+        {
+            return Some(m.clone());
+        }
+    }
+    // 3. Yalnız rol ID eşleşmesi
+    opts.iter()
+        .find(|o| o.role_id == bit || (bit < 62 && o.role_id == (1i64 << bit)))
+        .cloned()
+}
+
+fn match_oop_role_option(opts: &HashMap<i64, String>, oop_bit: Option<u8>, oop_name: &str) -> Option<(i64, String)> {
+    let bit = oop_bit? as i64;
+    if let Some(name) = opts.get(&bit) {
+        return Some((bit, name.clone()));
+    }
+    if bit < 62 {
+        let mask = 1i64 << bit;
+        if let Some(name) = opts.get(&mask) {
+            return Some((mask, name.clone()));
+        }
+    }
+    if !oop_name.is_empty() {
+        let low = oop_name.to_lowercase();
+        if let Some((&id, name)) = opts.iter().find(|(_, n)| n.to_lowercase().contains(&low)) {
+            return Some((id, name.clone()));
+        }
+    }
+    None
+}
+
+pub fn compute_role_proposals(
+    td: &tactics::Data,
+    squad_rids: &HashMap<u32, u32>,
+    pos_opts: &[PosRoleOption],
+    oop_opts: &HashMap<i64, String>,
+    scope: RoleScope,
+) -> Vec<RoleTrainingProposal> {
+    let Some(tactic) = td.tactics.get(td.current).or_else(|| td.tactics.first()) else {
+        return Vec::new();
+    };
+    let places = tactics::places(tactic);
+    let best_idx = if scope == RoleScope::BestEleven {
+        tactics::best_eleven(&places, &td.players)
+    } else {
+        Vec::new()
+    };
+
+    let mut out = Vec::with_capacity(places.len());
+    for (slot_i, place) in places.iter().enumerate() {
+        let player_opt = match scope {
+            RoleScope::CurrentEleven => place.uid.and_then(|uid| td.players.iter().find(|p| p.uid == uid)),
+            RoleScope::BestEleven => best_idx.get(slot_i).and_then(|&j| td.players.get(j)),
+        };
+        let Some(p) = player_opt else { continue };
+        let runtime_id = squad_rids.get(&p.uid).copied().unwrap_or(0);
+        let pos_idx = best_position_index_for_place(p, place);
+        let pos_rating = tactics::position_rating(p, place);
+        let pos_word = tactics::position_word(pos_rating);
+        let (ip_code, ip_name) = tactics::ip_label(place.ip);
+        let (oop_code, oop_name) = tactics::oop_label(place.oop);
+        let matched_pos_role = match_pos_role_option(pos_opts, place.ip, &ip_name, pos_idx);
+        let matched_oop_role = match_oop_role_option(oop_opts, place.oop, &oop_name);
+
+        out.push(RoleTrainingProposal {
+            uid: p.uid,
+            runtime_id,
+            name: p.name.clone(),
+            place_label: place.line.label(place.side),
+            pos_idx,
+            pos_rating,
+            pos_word,
+            ip_bit: place.ip,
+            ip_code,
+            ip_name,
+            oop_bit: place.oop,
+            oop_code,
+            oop_name,
+            matched_pos_role,
+            matched_oop_role,
+        });
+    }
+    out
+}
+
+pub fn build_role_proposals(
+    live: &LiveState,
+    pos_opts: &[PosRoleOption],
+    oop_opts: &HashMap<i64, String>,
+    scope: RoleScope,
+) -> Vec<RoleTrainingProposal> {
+    let Some(td) = &live.tactics else { return Vec::new() };
+    let mut squad_rids = HashMap::new();
+    for p in &live.squad {
+        if let (Some(uid), Some(rid)) = (
+            p.get("uid").and_then(|v| v.as_u64()),
+            p.get("runtime_id").and_then(|v| v.as_u64()),
+        ) {
+            if rid > 0 {
+                squad_rids.insert(uid as u32, rid as u32);
+            }
+        }
+    }
+    compute_role_proposals(td, &squad_rids, pos_opts, oop_opts, scope)
+}
+
+pub fn write_role_training_command(
+    manager_runtime_id: u32,
+    pos_items: &[(u32, i64, i32, String)],
+    oop_items: &[(u32, i64, String)],
+) -> Result<usize, String> {
+    let valid_pos: Vec<Value> = pos_items
+        .iter()
+        .filter(|(rid, role_id, pos_id, _)| *rid != 0 && *role_id >= 0 && *pos_id >= 0)
+        .map(|(rid, role_id, pos_id, name)| {
+            json!({
+                "runtime_id": rid,
+                "role_id": role_id,
+                "pos_id": pos_id,
+                "name": name,
+            })
+        })
+        .collect();
+    let valid_oop: Vec<Value> = oop_items
+        .iter()
+        .filter(|(rid, role_id, _)| *rid != 0 && *role_id >= 0)
+        .map(|(rid, role_id, name)| {
+            json!({
+                "runtime_id": rid,
+                "role_id": role_id,
+                "name": name,
+            })
+        })
+        .collect();
+    if valid_pos.is_empty() && valid_oop.is_empty() {
+        return Err(t!(
+            "Open eerst het Individuele Trainingsmenu in FM zodat positie- en rolopties gelezen worden.",
+            "Open Individual Training once in FM so position/role option IDs are captured.",
+            "Pozisyon/rol kimliklerinin alınması için FM27'de Bireysel Antrenman sekmesini bir kez açın."
+        )
+        .to_string());
+    }
+    let count = valid_pos.len() + valid_oop.len();
+    write_cmd_payload(json!({
+        "manager_runtime_id": manager_runtime_id,
+        "pos_role_items": valid_pos,
+        "oop_role_items": valid_oop,
+    }))?;
+    Ok(count)
+}
+
 fn write_cmd_payload(payload: Value) -> Result<(), String> {
     let _ = std::fs::create_dir_all(crate::data_dir());
     let path = cmd_file();
@@ -1125,7 +1439,7 @@ pub fn render_page(
             if theme::button(
                 ui,
                 icon::BRAIN,
-                t!("Lees uit BepInEx", "Read from BepInEx", "BepInEx'ten oku"),
+                t!("Uit spelmodule lezen", "Read from game plugin", "Oyun eklentisinden oku"),
                 true,
             )
             .clicked()
@@ -1142,6 +1456,7 @@ pub fn render_page(
                 ),
                 can_apply,
             )
+            .on_disabled_hover_text(t!("Verbind met FM27", "Connect to FM27", "FM27'ye bağlanın"))
             .clicked()
             {
                 apply_all = true;
@@ -1166,9 +1481,9 @@ pub fn render_page(
                     state.current_intensities.insert(*rid, *lvl);
                 }
                 state.status = t!(
-                    format!("Opdracht voor {n} spelers verstuurd naar FM27 (BepInEx)…"),
-                    format!("Sent intensity command for {n} players to FM27 (BepInEx)…"),
-                    format!("{n} oyuncu için yoğunluk komutu FM27'ye (BepInEx) gönderildi…")
+                    format!("Opdracht voor {n} spelers verstuurd naar FM27…"),
+                    format!("Sent intensity command for {n} players to FM27…"),
+                    format!("{n} oyuncu için yoğunluk komutu FM27'ye gönderildi…")
                 );
                 state.status_error = false;
             }
@@ -1326,9 +1641,9 @@ pub fn render_page(
         if state.bottlenecks.is_empty() {
             ui.add(
                 egui::Label::new(theme::dim(t!(
-                    "Nog geen spelersdata uit BepInEx ontvangen. Open in FM27 eenmaal het scherm Tactical Effectiveness (met FM27Trainer.Bridge v0.6+ actief) zodat de individuele scores binnenkomen.",
-                    "No per-player BepInEx data yet. Open Tactical Effectiveness once in FM27 (with FM27Trainer.Bridge v0.6+ active) to capture individual tactical scores.",
-                    "Henüz oyuncu bazlı BepInEx verisi yok. FM27'de eklenti yüklüyken Taktiksel Verimlilik ekranını bir kez açtığınızda her oyuncunun taktik puanı burada en zayıftan en güçlüye sıralanır."
+                    "Nog geen spelersdata uit de spelmodule ontvangen. Open in FM27 eenmaal het scherm Tactical Effectiveness zodat de individuele scores binnenkomen.",
+                    "No per-player game plugin data yet. Open Tactical Effectiveness once in FM27 to capture individual tactical scores.",
+                    "Henüz oyun eklentisinden oyuncu verisi alınmadı. FM27'de Taktiksel Verimlilik ekranını bir kez açtığınızda her oyuncunun taktik puanı burada en zayıftan en güçlüye sıralanır."
                 )))
                 .wrap(),
             );
@@ -1351,13 +1666,13 @@ pub fn render_page(
                     .spacing([14.0, 7.0])
                     .striped(true)
                     .show(ui, |ui| {
-                        ui.label(theme::caps(t!("Speler", "Player", "Oyuncu")));
-                        ui.label(theme::caps(t!("Totaal", "Overall", "Genel")));
-                        ui.label(theme::caps(t!("Begrip", "Understanding", "Anlayış")));
-                        ui.label(theme::caps(t!("Rol", "Role Fit", "Rol Uyumu")));
-                        ui.label(theme::caps(t!("Kwaliteit", "Capability", "Kalite")));
-                        ui.label(theme::caps(t!("Zwakste punt", "Main Drag", "Ana Darboğaz")));
-                        ui.label(theme::caps(t!("Advies", "Advice", "Öneri")));
+                        ui.label(theme::col_header(t!("Speler", "Player", "Oyuncu")));
+                        ui.label(theme::col_header(t!("Totaal", "Overall", "Genel")));
+                        ui.label(theme::col_header(t!("Begrip", "Understanding", "Anlayış")));
+                        ui.label(theme::col_header(t!("Rol", "Role Fit", "Rol Uyumu")));
+                        ui.label(theme::col_header(t!("Kwaliteit", "Capability", "Kalite")));
+                        ui.label(theme::col_header(t!("Zwakste punt", "Main Drag", "Ana Darboğaz")));
+                        ui.label(theme::col_header(t!("Advies", "Advice", "Öneri")));
                         ui.end_row();
 
                         for b in shown.into_iter().take(25) {
@@ -1437,11 +1752,6 @@ pub fn render_page(
                 "Automatically guard intensity as condition changes",
                 "Kondisyon değiştikçe önerilen yoğunluğu otomatik uygula"
             )));
-            ui.label(theme::faint(t!(
-                "(100% legitiem via FM's eigen individuele trainingsmenu — geen geheugen-cheats)",
-                "(100% legitimate via FM's native individual training event — zero memory cheats)",
-                "(%100 hilesiz: belleğe dokunmaz, FM'nin kendi Bireysel Antrenman menüsü olayını kullanır)"
-            )));
         });
         ui.add_space(8.0);
 
@@ -1459,13 +1769,13 @@ pub fn render_page(
                 .spacing([12.0, 6.0])
                 .striped(true)
                 .show(ui, |ui| {
-                    ui.label(theme::caps(t!("Speler", "Player", "Oyuncu")));
-                    ui.label(theme::caps(t!("Lft", "Age", "Yaş")));
-                    ui.label(theme::caps(t!("Conditie", "Condition", "Kondisyon")));
-                    ui.label(theme::caps(t!("Scherpte", "Sharpness", "Keskinlik")));
-                    ui.label(theme::caps(t!("Aanbevolen", "Recommended", "Önerilen")));
-                    ui.label(theme::caps(t!("Snel zetten", "Quick set", "Tek Tık Seçim")));
-                    ui.label(theme::caps(t!("Waarom", "Reason", "Gerekçe")));
+                    ui.label(theme::col_header(t!("Speler", "Player", "Oyuncu")));
+                    ui.label(theme::col_header(t!("Lft", "Age", "Yaş")));
+                    ui.label(theme::col_header(t!("Conditie", "Condition", "Kondisyon")));
+                    ui.label(theme::col_header(t!("Scherpte", "Sharpness", "Keskinlik")));
+                    ui.label(theme::col_header(t!("Aanbevolen", "Recommended", "Önerilen")));
+                    ui.label(theme::col_header(t!("Snel zetten", "Quick set", "Tek Tık Seçim")));
+                    ui.label(theme::col_header(t!("Waarom", "Reason", "Gerekçe")));
                     ui.end_row();
 
                     for r in &recs {
@@ -1548,7 +1858,12 @@ pub fn render_page(
 
     ui.add_space(14.0);
 
-    // ---- BÖLÜM 3: Rol Zorlamadan Akıllı Ek Odak (Additional Focus) Önerisi
+    // ---- BÖLÜM 3: Taktik Rolü Bireysel Antrenmanı (Önizle -> Onayla -> FM27'ye Yaz)
+    render_tactic_role_card(ui, state, live, mgr_id, on_save_prefs);
+
+    ui.add_space(14.0);
+
+    // ---- BÖLÜM 4: Rol Zorlamadan Akıllı Ek Odak (Additional Focus) Önerisi
     theme::card(ui, |ui| {
         let mut apply_all_focus = false;
         let can_apply_focus = live.connected && !focus_recs.is_empty() && !state.focus_options.is_empty();
@@ -1581,6 +1896,7 @@ pub fn render_page(
                     ),
                     can_apply_focus,
                 )
+                .on_disabled_hover_text(t!("Verbind met FM27", "Connect to FM27", "FM27'ye bağlanın"))
                 .clicked()
                 {
                     apply_all_focus = true;
@@ -1659,12 +1975,12 @@ pub fn render_page(
             .spacing([12.0, 6.0])
             .striped(true)
             .show(ui, |ui| {
-                ui.label(theme::caps(t!("Speler", "Player", "Oyuncu")));
-                ui.label(theme::caps(t!("Pos", "Pos", "Mevki")));
-                ui.label(theme::caps(t!("Aanbevolen Focus", "Suggested Focus", "Önerilen Ek Odak")));
-                ui.label(theme::caps(t!("Zwakste attributen", "Weakest Attributes", "Eksik Özellikler")));
-                ui.label(theme::caps(t!("Actie", "Apply", "Uygula")));
-                ui.label(theme::caps(t!("Uitleg", "Reason", "Açıklama")));
+                ui.label(theme::col_header(t!("Speler", "Player", "Oyuncu")));
+                ui.label(theme::col_header(t!("Pos", "Pos", "Mevki")));
+                ui.label(theme::col_header(t!("Aanbevolen Focus", "Suggested Focus", "Önerilen Ek Odak")));
+                ui.label(theme::col_header(t!("Zwakste attributen", "Weakest Attributes", "Eksik Özellikler")));
+                ui.label(theme::col_header(t!("Actie", "Apply", "Uygula")));
+                ui.label(theme::col_header(t!("Uitleg", "Reason", "Açıklama")));
                 ui.end_row();
 
                 for r in focus_recs.iter().take(28) {
@@ -1711,6 +2027,241 @@ pub fn render_page(
     });
 
     let _ = vec2(0.0, 0.0);
+}
+
+fn render_tactic_role_card(
+    ui: &mut Ui,
+    state: &mut IndividualState,
+    live: &LiveState,
+    mgr_id: u32,
+    on_save_prefs: &mut bool,
+) {
+    theme::card_accent(ui, theme::ACCENT, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(theme::ic(icon::STRATEGY).color(theme::ACCENT_HI).size(18.0));
+            ui.label(theme::h2(t!(
+                "Tactische rol als individuele training",
+                "Tactic Role Individual Training",
+                "Taktik Rolü Bireysel Antrenmanı"
+            )));
+            theme::pill(
+                ui,
+                t!("Alleen na goedkeuring", "Preview & Approve", "Önizle & Onayla"),
+                theme::INFO,
+            );
+            let live_opts_count = state.pos_role_options.len() + state.oop_role_options.len();
+            if live_opts_count > 0 {
+                theme::pill(
+                    ui,
+                    &t!(
+                        format!("{live_opts_count} rolopties gereed"),
+                        format!("{live_opts_count} role options captured"),
+                        format!("{live_opts_count} FM rol seçeneği hazır")
+                    ),
+                    theme::SUCCESS,
+                );
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if theme::toggle(ui, &mut state.role_training_mode).changed() {
+                    *on_save_prefs = true;
+                }
+            });
+        });
+        ui.add_space(4.0);
+        ui.add(
+            egui::Label::new(theme::dim(t!(
+                "Toont eerst de rol en positie per speler uit je tactiek. Niets wordt naar FM geschreven totdat je de spelers aanvinkt en op Goedkeuren & Schrijven klikt.",
+                "Previews each player's tactical position and In/Out of Possession role first. Nothing is written into FM27 until you review, tick players, and click Approve & Write.",
+                "Oyunculara taktikteki mevki ve topla/topsuz rolleri bireysel antrenman olarak önceden gösterir. Onay kutularını seçip 'Onayla ve FM27'ye Yaz' demeden hiçbir şey yazılmaz."
+            )))
+            .wrap(),
+        );
+
+        if !state.role_training_mode {
+            return;
+        }
+
+        ui.add_space(8.0);
+        let proposals = build_role_proposals(live, &state.pos_role_options, &state.oop_role_options, state.role_scope);
+        for p in &proposals {
+            state.role_approved.entry(p.uid).or_insert(p.pos_rating >= 12);
+        }
+
+        if proposals.is_empty() {
+            ui.label(theme::dim(t!(
+                "Verbind met een actieve save in FM27 om de actieve tactiek en rollen op te halen.",
+                "Connect to an active save in FM27 to preview your tactic's roles per player.",
+                "Taktiğinizdeki rolleri oyuncu bazında önizlemek için FM27'de kariyerinizi açın."
+            )));
+            return;
+        }
+
+        ui.horizontal_wrapped(|ui| {
+            let scopes = [
+                (RoleScope::CurrentEleven, RoleScope::CurrentEleven.label()),
+                (RoleScope::BestEleven, RoleScope::BestEleven.label()),
+            ];
+            theme::segmented(ui, &mut state.role_scope, &scopes);
+            ui.add_space(10.0);
+            ui.checkbox(
+                &mut state.role_apply_ip,
+                t!("Positie / rol met bal", "Position / IP Role", "Mevki / Topla Rol"),
+            );
+            ui.checkbox(
+                &mut state.role_apply_oop,
+                t!("Rol zonder bal", "OOP Role", "Topsuz Rol"),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if theme::small_button(ui, t!("Alles uit", "Clear", "Temizle"), true).clicked() {
+                    for p in &proposals {
+                        state.role_approved.insert(p.uid, false);
+                    }
+                }
+                if theme::small_button(ui, t!("Alleen passend (12+)", "Fit 12+ only", "Yalnız 12+ Uyumlu"), true).clicked() {
+                    for p in &proposals {
+                        state.role_approved.insert(p.uid, p.pos_rating >= 12);
+                    }
+                }
+                if theme::small_button(ui, t!("Alles aan", "Select all", "Tümünü Seç"), true).clicked() {
+                    for p in &proposals {
+                        state.role_approved.insert(p.uid, true);
+                    }
+                }
+            });
+        });
+
+        let has_live_role_ids = proposals.iter().any(|p| p.matched_pos_role.is_some() || p.matched_oop_role.is_some());
+        if !has_live_role_ids {
+            ui.add_space(4.0);
+            ui.label(theme::faint(t!(
+                "Tip: open eenmaal Individuele Training in FM27 zodat de spelmodule rol-ID's kan lezen.",
+                "Tip: open Individual Training once in FM27 so the game plugin can capture Position & Role IDs.",
+                "İpucu: Canlı Mevki ve Rol kimliklerinin okunması için FM27'de Bireysel Antrenman ekranını bir kez açın."
+            )));
+        }
+
+        ui.add_space(8.0);
+        let mut selected_count = 0usize;
+        let mut writable_pos: Vec<(u32, i64, i32, String)> = Vec::new();
+        let mut writable_oop: Vec<(u32, i64, String)> = Vec::new();
+        let mut pending_records: Vec<(u32, Option<u8>, Option<u8>)> = Vec::new();
+
+        egui::Grid::new("tactic_role_preview_grid")
+            .num_columns(7)
+            .spacing([12.0, 6.0])
+            .striped(true)
+            .show(ui, |ui| {
+                ui.label(theme::col_header(t!("Akkoord", "Approve", "Onay")));
+                ui.label(theme::col_header(t!("Speler", "Player", "Oyuncu")));
+                ui.label(theme::col_header(t!("Positie", "Position", "Mevki")));
+                ui.label(theme::col_header(t!("Rol met bal", "In Possession Role", "Topla Rol")));
+                ui.label(theme::col_header(t!("Rol zonder bal", "Out of Possession Role", "Topsuz Rol")));
+                ui.label(theme::col_header(t!("Positiewaarde", "Position Fit", "Mevki Uyumu")));
+                ui.label(theme::col_header(t!("Status", "Status", "Durum")));
+                ui.end_row();
+
+                for p in &proposals {
+                    let approved = state.role_approved.entry(p.uid).or_insert(p.pos_rating >= 12);
+                    ui.checkbox(approved, "");
+                    if *approved {
+                        selected_count += 1;
+                        if p.runtime_id != 0 {
+                            if state.role_apply_ip {
+                                if let Some(m) = &p.matched_pos_role {
+                                    writable_pos.push((p.runtime_id, m.role_id, m.pos_id, m.name.clone()));
+                                }
+                            }
+                            if state.role_apply_oop {
+                                if let Some((id, nm)) = &p.matched_oop_role {
+                                    writable_oop.push((p.runtime_id, *id, nm.clone()));
+                                }
+                            }
+                            pending_records.push((p.uid, p.ip_bit, p.oop_bit));
+                        }
+                    }
+
+                    ui.label(theme::label_strong(&p.name));
+                    theme::pill(ui, p.place_label, theme::INFO);
+
+                    if !p.ip_name.is_empty() {
+                        ui.label(format!("{} · {}", p.ip_code, p.ip_name));
+                    } else {
+                        ui.label(theme::dim(&p.ip_code));
+                    }
+
+                    if !p.oop_name.is_empty() {
+                        ui.label(format!("{} · {}", p.oop_code, p.oop_name));
+                    } else {
+                        ui.label(theme::dim(&p.oop_code));
+                    }
+
+                    let fit_col = if p.pos_rating >= 15 {
+                        theme::SUCCESS
+                    } else if p.pos_rating >= 12 {
+                        theme::INFO
+                    } else {
+                        theme::WARNING
+                    };
+                    theme::pill(ui, &format!("{} ({})", p.pos_word, p.pos_rating), fit_col);
+
+                    let written_same = state.applied_roles.get(&p.uid) == Some(&(p.ip_bit, p.oop_bit));
+                    if written_same {
+                        theme::pill(ui, t!("✓ Geschreven", "✓ Written", "✓ Yazıldı"), theme::SUCCESS);
+                    } else if p.matched_pos_role.is_some() || p.matched_oop_role.is_some() {
+                        theme::pill(ui, t!("Klaar", "Ready", "Hazır"), theme::ACCENT);
+                    } else {
+                        theme::pill(ui, t!("Wacht op FM-ID's", "Awaiting IDs", "FM verisi bekleniyor"), theme::TEXT_FAINT);
+                    }
+                    ui.end_row();
+                }
+            });
+
+        ui.add_space(10.0);
+        let can_write_roles = live.connected
+            && selected_count > 0
+            && (!writable_pos.is_empty() || !writable_oop.is_empty())
+            && (state.role_apply_ip || state.role_apply_oop);
+
+        ui.horizontal_wrapped(|ui| {
+            ui.label(theme::dim(t!(
+                format!("Geselecteerd: {selected_count} / {} spelers", proposals.len()),
+                format!("Selected: {selected_count} / {} players", proposals.len()),
+                format!("Onaylanan: {selected_count} / {} oyuncu", proposals.len())
+            )));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if theme::primary_button(
+                    ui,
+                    icon::CHECK_CIRCLE,
+                    t!(
+                        "Goedkeuren & in FM27 zetten",
+                        "Approve & Write to FM27",
+                        "Onayla ve FM27'ye Yaz"
+                    ),
+                    can_write_roles,
+                )
+                .clicked()
+                {
+                    match write_role_training_command(mgr_id, &writable_pos, &writable_oop) {
+                        Ok(n) => {
+                            for (uid, ipb, oopb) in pending_records {
+                                state.applied_roles.insert(uid, (ipb, oopb));
+                            }
+                            state.status = t!(
+                                format!("Goedgekeurde tactiekrollen ({n} acties) naar FM27 gestuurd…"),
+                                format!("Sent approved tactic role training ({n} actions) to FM27…"),
+                                format!("Onaylanan taktik rolleri ({n} işlem) FM27'ye gönderildi…")
+                            );
+                            state.status_error = false;
+                        }
+                        Err(e) => {
+                            state.status = e;
+                            state.status_error = true;
+                        }
+                    }
+                }
+            });
+        });
+    });
 }
 
 fn score_cell(ui: &mut Ui, v: Option<f32>) {
@@ -1896,5 +2447,59 @@ mod tests {
         assert_eq!(parsed.bottlenecks[0].name, "Kadro Bekçisi");
         assert!((parsed.bottlenecks[0].overall - 54.0).abs() < 0.01);
         assert_eq!(parsed.bottlenecks[0].weakest_score, 48.0);
+    }
+
+    #[test]
+    fn parses_pos_and_oop_role_options_from_bepinex() {
+        let sample = json!({
+            "session_ready": true,
+            "pos_role_options": [
+                { "role_id": 43, "pos_id": 11, "name": "Playmaking Winger (AMR)" },
+                { "role_id": 12, "pos_id": 0, "name": "Ball-Playing Goalkeeper" }
+            ],
+            "oop_role_options": {
+                "1": "Sweeper Keeper",
+                "38": "Winger"
+            }
+        });
+        let parsed = parse_bepinex_individual(&sample, &HashMap::new());
+        assert_eq!(parsed.pos_role_options.len(), 2);
+        assert_eq!(parsed.pos_role_options[0].role_id, 43);
+        assert_eq!(parsed.oop_role_options.get(&38).map(String::as_str), Some("Winger"));
+    }
+
+    #[test]
+    fn computes_tactic_role_proposals_with_safe_approval_defaults() {
+        let gk = mk_player(1, 0, &[]);
+        let w = mk_player(2, 11, &[]);
+        let td = tactics::Data {
+            current: 0,
+            tactics: vec![tactics::Tactic {
+                index: 0,
+                style: "4-3-3".into(),
+                slots: vec![
+                    tactics::Slot { uid: Some(1), ip: Some(12), oop: Some(1), oop_order: 0 },
+                    tactics::Slot { uid: Some(2), ip: Some(43), oop: Some(38), oop_order: 8 },
+                ],
+            }],
+            players: vec![gk, w],
+            bench: Vec::new(),
+        };
+        let mut rids = HashMap::new();
+        rids.insert(1, 501);
+        rids.insert(2, 502);
+        let pos_opts = vec![
+            PosRoleOption { role_id: 12, pos_id: 0, name: "Ball-Playing Goalkeeper".into() },
+            PosRoleOption { role_id: 43, pos_id: 11, name: "Playmaking Winger".into() },
+        ];
+        let mut oop_opts = HashMap::new();
+        oop_opts.insert(1, "Sweeper Keeper".into());
+        oop_opts.insert(38, "Winger".into());
+
+        let props = compute_role_proposals(&td, &rids, &pos_opts, &oop_opts, RoleScope::CurrentEleven);
+        assert_eq!(props.len(), 2);
+        assert_eq!(props[0].runtime_id, 501);
+        assert_eq!(props[0].matched_pos_role.as_ref().map(|x| x.role_id), Some(12));
+        assert_eq!(props[1].matched_oop_role.as_ref().map(|x| x.0), Some(38));
     }
 }

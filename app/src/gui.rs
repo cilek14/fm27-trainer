@@ -92,12 +92,15 @@ struct Settings {
     /// Otomatik güncelleme: yeni sürüm varsa arka planda indirip uygular.
     #[serde(default = "yes")]
     auto_update: bool,
+    /// Taktik rollerini bireysel antrenman olarak önizleyip onaylayarak FM27'ye yazma modu.
+    #[serde(default = "yes")]
+    role_training_mode: bool,
     planner: PlannerSettings,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { lang: i18n::detect(), rate: 1.17, capture_delay: true, auto_training: true, allow_untested: false, keep_understanding: false, auto_read: false, auto_memory_sync: false, no_cheat_mode: true, auto_individual_intensity: false, intensity_profile: individual::IntensityProfile::default(), auto_read_secs: 10, manager_club: None, training_team: None, auto_update: true, planner: PlannerSettings::default() }
+        Settings { lang: i18n::detect(), rate: 1.17, capture_delay: true, auto_training: true, allow_untested: false, keep_understanding: false, auto_read: false, auto_memory_sync: false, no_cheat_mode: true, auto_individual_intensity: false, intensity_profile: individual::IntensityProfile::default(), auto_read_secs: 10, manager_club: None, training_team: None, auto_update: true, role_training_mode: true, planner: PlannerSettings::default() }
     }
 }
 
@@ -266,6 +269,7 @@ struct App {
     analysis_rx: Option<mpsc::Receiver<AnalysisResult>>,
     /// de lopende uitlezing is door automatisch uitlezen gestart (stil, haalt FM niet naar voren)
     auto_pending: bool,
+    auto_fallback_file: bool,
     auto_note: String,
     last_auto: std::time::Instant,
     image_path: String,
@@ -332,6 +336,7 @@ impl App {
         let mut individual = IndividualState::default();
         individual.auto_apply_intensity = settings.auto_individual_intensity;
         individual.profile = settings.intensity_profile;
+        individual.role_training_mode = settings.role_training_mode;
         App {
             page,
             shown_page: None,
@@ -342,6 +347,7 @@ impl App {
             status_error: false,
             analysis_rx: None,
             auto_pending: false,
+            auto_fallback_file: false,
             auto_note: String::new(),
             last_auto: std::time::Instant::now(),
             image_path: String::new(),
@@ -474,6 +480,7 @@ impl App {
                     self.auto_note = t!("wacht op de Breakdown in FM", "waiting for the Breakdown in FM").to_string();
                 }
                 Ok((a, src)) => {
+                    self.auto_fallback_file = false;
                     if auto {
                         self.auto_note = t!(format!("bijgewerkt ({})", chrono::Local::now().format("%H:%M:%S")), format!("updated ({})", chrono::Local::now().format("%H:%M:%S"))).to_string();
                     }
@@ -518,109 +525,126 @@ impl App {
                     self.week_plan = None;
                     self.year.clear();
                 }
-                Err(e) => self.set_status(e, true),
+                Err(e) => {
+                    if std::mem::take(&mut self.auto_fallback_file) && !auto {
+                        self.show_file = true;
+                        self.set_status(
+                            t!(
+                                "Kies hieronder een schermafbeelding (PNG) om uit bestand te lezen.",
+                                "Select a Breakdown screenshot (PNG) below to read from file.",
+                                "Dosyadan okumak için aşağıdan bir ekran görüntüsü (PNG) seçin."
+                            ),
+                            false,
+                        );
+                    } else {
+                        self.set_status(e, true);
+                    }
+                }
             }
+        }
+    }
+
+    /// Veri kaynağını otomatik seçer: önce oyun eklentisi, yoksa ekran, o da yoksa dosya.
+    fn refresh_data_auto(&mut self, ctx: &egui::Context) {
+        if read_bepinex_dump().is_some() {
+            self.sync_from_bepinex(true);
+        } else if self.live.connected {
+            self.last_auto = std::time::Instant::now();
+            self.auto_fallback_file = true;
+            self.start_analysis(ctx, None);
+        } else if !self.image_path.trim().is_empty() {
+            let p = PathBuf::from(self.image_path.trim().trim_matches('\''));
+            self.start_analysis(ctx, Some(p));
+        } else {
+            self.last_auto = std::time::Instant::now();
+            self.auto_fallback_file = true;
+            self.start_analysis(ctx, None);
         }
     }
 
     // -------------------------------------------------------------------- shell
 
-    fn sidebar(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("sidebar")
-            .exact_width(236.0)
-            .resizable(false)
+    fn topbar(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::top("topbar")
+            .exact_height(62.0)
             .show_separator_line(false)
-            .frame(Frame::new().fill(theme::SIDEBAR).inner_margin(Margin { left: 14, right: 14, top: 20, bottom: 16 }))
+            .frame(Frame::new().fill(theme::SIDEBAR).inner_margin(Margin { left: 20, right: 20, top: 10, bottom: 10 }))
             .show(ctx, |ui| {
-                // haarlijn tussen zijbalk en inhoud
-                let edge = ui.max_rect().expand2(vec2(14.0, 20.0));
-                ui.painter().vline(edge.right() - 0.5, edge.y_range(), Stroke::new(1.0_f32, theme::BORDER));
-                ui.horizontal(|ui| {
-                    theme::brand_logo(ui, 40.0);
-                    ui.add_space(2.0);
+                let edge = ui.max_rect().expand2(vec2(20.0, 10.0));
+                ui.painter().hline(edge.x_range(), edge.bottom() - 0.5, Stroke::new(1.0_f32, theme::BORDER));
+
+                ui.horizontal_centered(|ui| {
+                    theme::brand_logo(ui, 34.0);
+                    ui.add_space(4.0);
                     ui.vertical(|ui| {
-                        ui.add_space(1.0);
-                        ui.label(RichText::new("FM27 Training").font(egui::FontId::new(15.0, theme::bold())).color(theme::TEXT));
-                        ui.label(RichText::new("Assistant").font(egui::FontId::new(12.5, theme::semibold())).color(theme::SUCCESS));
+                        ui.spacing_mut().item_spacing = vec2(5.0, 1.0);
+                        ui.add_space(3.0);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("FM27 Training").font(egui::FontId::new(13.5, theme::bold())).color(theme::TEXT));
+                            ui.label(RichText::new("Assistant").font(egui::FontId::new(13.0, theme::semibold())).color(theme::ACCENT_HI));
+                        });
+                        ui.label(
+                            RichText::new(format!("v{} · Pitch Telemetry", env!("CARGO_PKG_VERSION")))
+                                .size(10.5)
+                                .color(theme::TEXT_FAINT),
+                        );
                     });
-                });
-                ui.add_space(22.0);
-                ui.label(theme::caps(t!("Menu", "Menu", "Menü")));
-                ui.add_space(4.0);
-                let items = [
-                    (Page::Overview, icon::GAUGE, t!("Overzicht", "Overview")),
-                    (Page::Training, icon::BARBELL, t!("Training", "Training")),
-                    (Page::Individual, icon::USERS_THREE, t!("Individueel", "Individual", "Bireysel")),
-                    (Page::Planning, icon::CALENDAR_DOTS, t!("Planning", "Planning")),
-                    (Page::Tactics, icon::STRATEGY, t!("Tactiek", "Tactics")),
-                    (Page::Settings, icon::GEAR_SIX, t!("Instellingen", "Settings")),
-                ];
-                for (p, ic, label) in items {
-                    if theme::nav_item(ui, ic, label, self.page == p).clicked() {
-                        self.page = p;
+
+                    ui.add_space(14.0);
+                    let items = [
+                        (Page::Overview, icon::GAUGE, t!("Overzicht", "Overview")),
+                        (Page::Training, icon::BARBELL, t!("Training", "Training")),
+                        (Page::Individual, icon::USERS_THREE, t!("Individueel", "Individual", "Bireysel")),
+                        (Page::Planning, icon::CALENDAR_DOTS, t!("Planning", "Planning")),
+                        (Page::Tactics, icon::STRATEGY, t!("Tactiek", "Tactics")),
+                        (Page::Settings, icon::GEAR_SIX, t!("Instellingen", "Settings")),
+                    ];
+                    for (p, ic, label) in items {
+                        if theme::nav_tab(ui, ic, label, self.page == p).clicked() {
+                            self.page = p;
+                        }
+                        ui.add_space(2.0);
                     }
-                    ui.add_space(2.0);
-                }
-                ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(theme::faint(format!("v{}", env!("CARGO_PKG_VERSION"))));
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let tip = t!(
+                            "Steun de ontwikkeling (buymeacoffee.com/cilek14)",
+                            "Support development (buymeacoffee.com/cilek14)",
+                            "Geliştirmeyi destekle (buymeacoffee.com/cilek14)"
+                        );
+                        if theme::support_button(ui, icon::COFFEE, "", false)
+                            .on_hover_text(tip)
+                            .clicked()
+                        {
+                            open_path(std::path::Path::new(DONATE_URL));
+                        }
+
+                        ui.add_space(4.0);
+                        let (c, txt) = if !agent::LIVE_SUPPORTED {
+                            (theme::TEXT_FAINT, t!("Live: alleen macOS", "Live: macOS only").to_string())
+                        } else if self.live.connected {
+                            (theme::SUCCESS, self.live.club_name().unwrap_or_else(|| t!("Verbonden met FM27", "Connected to FM27").to_string()))
+                        } else {
+                            (theme::TEXT_FAINT, t!("Niet verbonden", "Not connected").to_string())
+                        };
+                        Frame::new()
+                            .fill(theme::SURFACE)
+                            .stroke(Stroke::new(1.0_f32, theme::BORDER))
+                            .corner_radius(CornerRadius::same(16))
+                            .inner_margin(Margin::symmetric(10, 5))
+                            .show(ui, |ui| {
+                                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                    ui.set_height(20.0);
+                                    theme::status_dot(ui, c);
+                                    ui.add(egui::Label::new(RichText::new(txt).size(12.5).color(theme::TEXT)).truncate());
+                                });
+                            });
+
                         if let Some(ver) = self.updater.available_version().map(str::to_string) {
+                            ui.add_space(4.0);
                             if theme::small_button(ui, &format!("↑ v{ver}"), true).clicked() {
                                 self.page = Page::Settings;
                             }
-                        }
-                    });
-                    ui.add_space(6.0);
-                    let mut lang = self.settings.lang;
-                    let changed_bottom = theme::segmented_full(
-                        ui,
-                        &mut lang,
-                        &[(Lang::Fr, "FR", "Français"), (Lang::It, "IT", "Italiano"), (Lang::Es, "ES", "Español")],
-                    );
-                    ui.add_space(3.0);
-                    let changed_top = theme::segmented_full(
-                        ui,
-                        &mut lang,
-                        &[(Lang::Tr, "TR", "Türkçe"), (Lang::En, "EN", "English"), (Lang::Nl, "NL", "Nederlands")],
-                    );
-                    if changed_top || changed_bottom {
-                        self.settings.lang = lang;
-                        i18n::set(lang);
-                        self.save_settings();
-                    }
-                    ui.add_space(8.0);
-                    let tip = t!(
-                        "Steun de ontwikkeling (buymeacoffee.com/cilek14)",
-                        "Support development (buymeacoffee.com/cilek14)",
-                        "Geliştirmeyi destekle (buymeacoffee.com/cilek14)"
-                    );
-                    if theme::support_button(
-                        ui,
-                        icon::COFFEE,
-                        t!("Buy Me a Coffee", "Buy Me a Coffee", "Buy Me a Coffee"),
-                        true,
-                    )
-                    .on_hover_text(tip)
-                    .clicked()
-                    {
-                        open_path(std::path::Path::new(DONATE_URL));
-                    }
-                    ui.add_space(8.0);
-                    Frame::new().fill(theme::SURFACE).stroke(Stroke::new(1.0_f32, theme::BORDER)).corner_radius(CornerRadius::same(12)).inner_margin(Margin::same(12)).show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        ui.horizontal(|ui| {
-                            let (c, txt) = if !agent::LIVE_SUPPORTED {
-                                (theme::TEXT_FAINT, t!("Live: alleen macOS", "Live: macOS only"))
-                            } else if self.live.connected {
-                                (theme::SUCCESS, t!("Verbonden met FM27", "Connected to FM27"))
-                            } else {
-                                (theme::TEXT_FAINT, t!("Niet verbonden", "Not connected"))
-                            };
-                            theme::status_dot(ui, c);
-                            ui.label(RichText::new(txt).size(13.0).color(theme::TEXT));
-                        });
-                        if let Some(n) = self.live.club_name() {
-                            ui.label(theme::faint(n));
                         }
                     });
                 });
@@ -712,9 +736,9 @@ impl App {
             if explicit {
                 self.set_status(
                     t!(
-                        "Geen BepInEx-data gevonden. Open in FM27 eenmaal Tactical Effectiveness.",
-                        "No BepInEx data found. Open Tactical Effectiveness once in FM27.",
-                        "BepInEx verisi bulunamadı. FM27'de Taktiksel Verimlilik ekranını bir kez açın."
+                        "Geen gegevens van spelmodule gevonden. Open in FM27 eenmaal Tactical Effectiveness.",
+                        "No game plugin data found. Open Tactical Effectiveness once in FM27.",
+                        "Oyun eklentisi verisi bulunamadı. FM27'de Taktiksel Verimlilik ekranını bir kez açın."
                     ),
                     true,
                 );
@@ -756,6 +780,21 @@ impl App {
                 for (id, name) in parsed.focus_options {
                     self.individual.focus_options.insert(id, name);
                 }
+                for opt in parsed.pos_role_options {
+                    if let Some(existing) = self
+                        .individual
+                        .pos_role_options
+                        .iter_mut()
+                        .find(|x| x.pos_id == opt.pos_id && x.role_id == opt.role_id)
+                    {
+                        existing.name = opt.name;
+                    } else {
+                        self.individual.pos_role_options.push(opt);
+                    }
+                }
+                for (id, name) in parsed.oop_role_options {
+                    self.individual.oop_role_options.insert(id, name);
+                }
                 self.individual.session_ready = parsed.session_ready;
             }
         }
@@ -780,9 +819,9 @@ impl App {
         if explicit || changed {
             self.set_status(
                 t!(
-                    "Alle 17 factoren exact uit FM27 (BepInEx) gelezen.",
-                    "Read all 17 exact factors from FM27 (BepInEx).",
-                    "17 faktör ve 4 bileşen FM27 (BepInEx) üzerinden kesin değerlerle okundu."
+                    "Alle 17 factoren exact uit de spelmodule gelezen.",
+                    "Read all 17 exact factors from game plugin.",
+                    "17 faktör ve 4 bileşen oyun eklentisi üzerinden kesin değerlerle okundu."
                 ),
                 false,
             );
@@ -799,68 +838,122 @@ impl App {
         };
         let busy = self.analysis_rx.is_some();
         let live_busy = self.live.busy();
+        let mut refresh_auto = false;
         let mut read = false;
         let mut read_bep = false;
         let mut file = false;
+        let menu_id = ui.make_persistent_id("overview_read_menu");
         theme::page_header(
             ui,
             t!("Tactical Effectiveness", "Tactical Effectiveness", "Taktiksel Verimlilik"),
             &subtitle,
             |ui| {
-            if theme::button(ui, icon::EXPORT, t!("Uit bestand", "From file"), !busy).clicked() {
-                file = true;
-            }
-            if theme::button(ui, icon::CAMERA, t!("Lees FM-scherm", "Read FM screen"), !busy).clicked() {
-                read = true;
-            }
-            if theme::primary_button(
-                ui,
-                icon::BRAIN,
-                t!("Lees uit BepInEx", "Read from BepInEx", "BepInEx'ten oku"),
-                !busy,
-            )
-            .clicked()
-            {
-                read_bep = true;
-            }
-            if busy || live_busy {
-                ui.spinner();
-            }
-        });
+                let menu_resp = theme::button(ui, icon::CARET_DOWN, "", !busy).on_hover_text(t!(
+                    "Leesopties",
+                    "Read options",
+                    "Okuma seçenekleri"
+                ));
+                if menu_resp.clicked() {
+                    ui.memory_mut(|m| m.toggle_popup(menu_id));
+                }
+                egui::popup::popup_below_widget(
+                    ui,
+                    menu_id,
+                    &menu_resp,
+                    egui::PopupCloseBehavior::CloseOnClickOutside,
+                    |ui| {
+                        ui.set_min_width(240.0);
+                        if theme::button(
+                            ui,
+                            icon::BRAIN,
+                            t!("Uit spelmodule lezen", "Read from game plugin", "Oyun eklentisinden oku"),
+                            !busy,
+                        )
+                        .clicked()
+                        {
+                            read_bep = true;
+                            ui.memory_mut(|m| m.close_popup());
+                        }
+                        ui.add_space(2.0);
+                        if theme::button(
+                            ui,
+                            icon::CAMERA,
+                            t!("Van scherm lezen", "Read from screen", "Ekrandan oku"),
+                            !busy,
+                        )
+                        .clicked()
+                        {
+                            read = true;
+                            ui.memory_mut(|m| m.close_popup());
+                        }
+                        ui.add_space(2.0);
+                        if theme::button(
+                            ui,
+                            icon::EXPORT,
+                            t!("Uit bestand lezen", "Read from file", "Dosyadan oku"),
+                            !busy,
+                        )
+                        .clicked()
+                        {
+                            file = true;
+                            ui.memory_mut(|m| m.close_popup());
+                        }
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            if theme::toggle(ui, &mut self.settings.auto_read).changed() {
+                                self.last_auto = std::time::Instant::now() - std::time::Duration::from_secs(600);
+                                self.auto_note.clear();
+                                self.save_settings();
+                            }
+                            ui.label(theme::label_strong(t!(
+                                "Automatisch van scherm lezen",
+                                "Auto-read from screen",
+                                "Ekrandan otomatik oku"
+                            )));
+                        });
+                        if self.settings.auto_read {
+                            ui.horizontal(|ui| {
+                                ui.label(theme::dim(t!("elke", "every")));
+                                if ui.add(egui::DragValue::new(&mut self.settings.auto_read_secs).range(5..=120).suffix(" s")).changed() {
+                                    self.save_settings();
+                                }
+                            });
+                        }
+                    },
+                );
+                if theme::primary_button(
+                    ui,
+                    icon::ARROW_COUNTER_CLOCKWISE,
+                    t!("Gegevens vernieuwen", "Refresh data", "Verileri güncelle"),
+                    !busy,
+                )
+                .clicked()
+                {
+                    refresh_auto = true;
+                }
+                if busy || live_busy {
+                    ui.spinner();
+                }
+            },
+        );
+        if refresh_auto {
+            self.refresh_data_auto(ctx);
+        }
         if read_bep {
             self.sync_from_bepinex(true);
         }
         if read {
             self.last_auto = std::time::Instant::now();
+            self.auto_fallback_file = false;
             self.start_analysis(ctx, None);
         }
         if file {
             self.show_file = !self.show_file;
         }
-
-        ui.horizontal(|ui| {
-            if theme::toggle(ui, &mut self.settings.auto_read).changed() {
-                self.last_auto = std::time::Instant::now() - std::time::Duration::from_secs(600);
-                self.auto_note.clear();
-                self.save_settings();
-            }
-            ui.label(theme::label_strong(t!("Automatisch uitlezen", "Auto-read")));
-            if self.settings.auto_read {
-                ui.label(theme::dim(t!("elke", "every")));
-                if ui.add(egui::DragValue::new(&mut self.settings.auto_read_secs).range(5..=120).suffix(" s")).changed() {
-                    self.save_settings();
-                }
-                if !self.auto_note.is_empty() {
-                    theme::pill(ui, &self.auto_note, theme::INFO);
-                }
-            } else {
-                ui.label(theme::faint(t!(
-                    "Laat de Breakdown in FM open staan en de app leest hem zelf opnieuw.",
-                    "Leave the Breakdown open in FM and the app re-reads it by itself."
-                )));
-            }
-        });
-        ui.add_space(12.0);
+        if self.settings.auto_read && !self.auto_note.is_empty() {
+            theme::pill(ui, &self.auto_note, theme::INFO);
+            ui.add_space(8.0);
+        }
         if self.show_file {
             theme::card(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -1348,7 +1441,7 @@ impl App {
                 plan_grid(ui, p);
                 if !p.notes.is_empty() {
                     ui.add_space(8.0);
-                    ui.label(theme::caps(t!("Buiten de training", "Beyond training")));
+                    ui.label(theme::col_header(t!("Buiten de training", "Beyond training")));
                     for n in &p.notes {
                         ui.add(egui::Label::new(theme::dim(format!("• {n}"))).wrap());
                     }
@@ -1414,7 +1507,7 @@ impl App {
         theme::card(ui, |ui| {
             egui::Grid::new("cal").num_columns(5).spacing([14.0, 8.0]).striped(true).show(ui, |ui| {
                 for h in [t!("Week van", "Week of"), t!("Periode", "Period"), t!("Wedstrijden", "Matches"), "Focus", t!("Tactisch", "Tactical")] {
-                    ui.label(theme::caps(h));
+                    ui.label(theme::col_header(h));
                 }
                 ui.end_row();
                 for (wi, week) in self.calendar.iter_mut().enumerate() {
@@ -1591,7 +1684,7 @@ impl App {
             ui.add_space(6.0);
             egui::Grid::new("tactic_slots").num_columns(6).spacing([18.0, 10.0]).striped(true).show(ui, |ui| {
                 for h in [t!("Plek", "Place"), t!("Rol met / zonder bal", "Role in / out of possession"), t!("Speler", "Player"), t!("Geschikt", "Fit"), t!("Positie", "Position"), t!("Beter in de selectie", "Better in the squad")] {
-                    ui.label(theme::caps(h));
+                    ui.label(theme::col_header(h));
                 }
                 ui.end_row();
                 for &i in &order {
@@ -1958,28 +2051,32 @@ impl App {
             theme::card(&mut cols[0], |ui| {
                 ui.label(theme::h2(t!("Algemeen", "General")));
                 ui.add_space(6.0);
+                let lang_name = |l: Lang| match l {
+                    Lang::Tr => "Türkçe",
+                    Lang::En => "English",
+                    Lang::Nl => "Nederlands",
+                    Lang::Fr => "Français",
+                    Lang::It => "Italiano",
+                    Lang::Es => "Español",
+                };
                 ui.horizontal(|ui| {
                     ui.label(theme::ic(icon::TRANSLATE).color(theme::ACCENT));
                     ui.label(t!("Taal", "Language"));
+                    let mut lang = self.settings.lang;
+                    egui::ComboBox::from_id_salt("settings_lang")
+                        .width(170.0)
+                        .selected_text(lang_name(lang))
+                        .show_ui(ui, |ui| {
+                            for l in [Lang::Tr, Lang::En, Lang::Nl, Lang::Fr, Lang::It, Lang::Es] {
+                                ui.selectable_value(&mut lang, l, lang_name(l));
+                            }
+                        });
+                    if lang != self.settings.lang {
+                        self.settings.lang = lang;
+                        i18n::set(lang);
+                        dirty = true;
+                    }
                 });
-                ui.add_space(4.0);
-                let mut lang = self.settings.lang;
-                let changed_top = theme::segmented_full(
-                    ui,
-                    &mut lang,
-                    &[(Lang::Tr, "Türkçe", "Türkçe"), (Lang::En, "English", "English"), (Lang::Nl, "Nederlands", "Nederlands")],
-                );
-                ui.add_space(4.0);
-                let changed_bottom = theme::segmented_full(
-                    ui,
-                    &mut lang,
-                    &[(Lang::Fr, "Français", "Français"), (Lang::It, "Italiano", "Italiano"), (Lang::Es, "Español", "Español")],
-                );
-                if changed_top || changed_bottom {
-                    self.settings.lang = lang;
-                    i18n::set(lang);
-                    dirty = true;
-                }
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.label(theme::ic(icon::COINS).color(theme::ACCENT));
@@ -2273,12 +2370,12 @@ impl eframe::App for App {
         }
         self.last_memory_rev = self.live.memory_rev;
         let _ = (self.settings.auto_memory_sync, self.memory_sync_pending);
-        self.sidebar(ctx);
+        self.topbar(ctx);
         egui::CentralPanel::default()
-            .frame(Frame::new().fill(theme::BG).inner_margin(Margin { left: 28, right: 28, top: 24, bottom: 16 }))
+            .frame(Frame::new().fill(theme::BG).inner_margin(Margin { left: 28, right: 28, top: 20, bottom: 18 }))
             .show(ctx, |ui| {
                 ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                    ui.set_max_width(ui.available_width().min(1400.0));
+                    ui.set_max_width(ui.available_width().min(1440.0));
                     // pagina komt zacht binnen: kort vervagen en een paar pixels omhoog schuiven
                     if self.shown_page != Some(self.page) {
                         self.shown_page = Some(self.page);
@@ -2301,6 +2398,7 @@ impl eframe::App for App {
                             if save_auto {
                                 self.settings.auto_individual_intensity = self.individual.auto_apply_intensity;
                                 self.settings.intensity_profile = self.individual.profile;
+                                self.settings.role_training_mode = self.individual.role_training_mode;
                                 self.save_settings();
                             }
                         }
@@ -2444,7 +2542,7 @@ fn week_card(ui: &mut Ui, w: &live_training::WeekPreview, today: Option<NaiveDat
                 let ui = &mut cols[d];
                 let date = w.start + Duration::days(d as i64);
                 let past = today.is_some_and(|t| date <= t);
-                ui.label(theme::caps(i18n::weekday_short(d)));
+                ui.label(theme::col_header(i18n::weekday_short(d)));
                 ui.label(theme::faint(i18n::date_short(date)));
                 // wat FM wilde: nu afwijkend (wordt aangepast) of eerder teruggezet
                 let differs = w.current[d] != w.planned[d];
@@ -2497,7 +2595,7 @@ fn plan_grid(ui: &mut Ui, p: &WeekPlan) {
     ui.columns(7, |cols| {
         for (i, d) in p.days.iter().enumerate() {
             let ui = &mut cols[i];
-            ui.label(theme::caps(i18n::weekday_short(i)));
+            ui.label(theme::col_header(i18n::weekday_short(i)));
             ui.label(theme::faint(format!("{} · {}", i18n::date_short(d.date), d.role.label())));
             for s in &d.slots {
                 chip(ui, s, false, false);

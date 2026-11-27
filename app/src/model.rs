@@ -386,12 +386,12 @@ impl Category {
     /// Kleur voor de GUI en de HTML-export (RGB).
     pub fn color(self) -> [u8; 3] {
         match self {
-            Category::TacticalUnderstanding => [139, 124, 255],
-            Category::MatchPreparation => [76, 178, 255],
-            Category::FootballingDevelopment => [61, 214, 140],
-            Category::PhysicalRecovery => [245, 181, 68],
+            Category::TacticalUnderstanding => [16, 185, 129],
+            Category::MatchPreparation => [56, 189, 248],
+            Category::FootballingDevelopment => [163, 230, 53],
+            Category::PhysicalRecovery => [245, 158, 11],
             Category::ExtraCurricular => [244, 114, 182],
-            Category::Fixed => [255, 92, 108],
+            Category::Fixed => [244, 63, 94],
         }
     }
 }
@@ -867,40 +867,46 @@ impl Effectiveness {
     }
 }
 
-/// Kleurklasse van een meter: rood → groen, zoals FM27 ze toont.
-pub fn level_name(score: f32) -> &'static str {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Band {
+    VeryLow,
+    Low,
+    Fair,
+    Good,
+    Excellent,
+}
+
+/// Skorun ait olduğu tek kaynaklı performans bandı (<25, <45, <60, <80, ≥80).
+pub fn band(score: f32) -> Band {
     match score {
-        s if s < 25.0 => crate::t!("zeer laag", "very low"),
-        s if s < 45.0 => crate::t!("laag", "low"),
-        s if s < 60.0 => crate::t!("matig", "fair"),
-        s if s < 80.0 => crate::t!("goed", "good"),
-        _ => crate::t!("uitstekend", "excellent"),
+        s if s < 25.0 => Band::VeryLow,
+        s if s < 45.0 => Band::Low,
+        s if s < 60.0 => Band::Fair,
+        s if s < 80.0 => Band::Good,
+        _ => Band::Excellent,
     }
 }
 
-pub fn level_color(score: f32) -> [u8; 3] {
-    // rood (0) → oranje → geel → limoen → groen (100), zoals de FM27-meters
-    let stops: [(f32, [f32; 3]); 5] = [
-        (0.0, [230.0, 60.0, 50.0]),
-        (35.0, [240.0, 130.0, 30.0]),
-        (55.0, [235.0, 215.0, 40.0]),
-        (75.0, [170.0, 220.0, 50.0]),
-        (100.0, [60.0, 200.0, 90.0]),
-    ];
-    let s = score.clamp(0.0, 100.0);
-    for w in stops.windows(2) {
-        let (a, ca) = w[0];
-        let (b, cb) = w[1];
-        if s <= b {
-            let t = (s - a) / (b - a);
-            return [
-                (ca[0] + (cb[0] - ca[0]) * t) as u8,
-                (ca[1] + (cb[1] - ca[1]) * t) as u8,
-                (ca[2] + (cb[2] - ca[2]) * t) as u8,
-            ];
-        }
+/// Performans bandının yerelleştirilmiş etiketi.
+pub fn level_name(score: f32) -> &'static str {
+    match band(score) {
+        Band::VeryLow => crate::t!("zeer laag", "very low"),
+        Band::Low => crate::t!("laag", "low"),
+        Band::Fair => crate::t!("matig", "fair"),
+        Band::Good => crate::t!("goed", "good"),
+        Band::Excellent => crate::t!("uitstekend", "excellent"),
     }
-    [60, 200, 90]
+}
+
+/// Performans bandı için sabit, etiketiyle tutarlı RGB renk.
+pub fn level_color(score: f32) -> [u8; 3] {
+    match band(score) {
+        Band::VeryLow => [244, 63, 94],
+        Band::Low => [240, 101, 90],
+        Band::Fair => [245, 158, 11],
+        Band::Good => [132, 204, 22],
+        Band::Excellent => [34, 197, 94],
+    }
 }
 
 #[cfg(test)]
@@ -987,5 +993,24 @@ mod tests {
         for gap in 305..=319 {
             assert_eq!(session_by_code(gap), None, "unexpected code in 305..=319 gap: {gap}");
         }
+    }
+
+    #[test]
+    fn band_thresholds_and_colors_are_consistent() {
+        assert_eq!(band(0.0), Band::VeryLow);
+        assert_eq!(band(24.9), Band::VeryLow);
+        assert_eq!(band(25.0), Band::Low);
+        assert_eq!(band(44.9), Band::Low);
+        assert_eq!(band(45.0), Band::Fair);
+        assert_eq!(band(59.9), Band::Fair);
+        assert_eq!(band(60.0), Band::Good);
+        assert_eq!(band(79.9), Band::Good);
+        assert_eq!(band(80.0), Band::Excellent);
+        assert_eq!(band(100.0), Band::Excellent);
+
+        assert_eq!(level_color(60.0), level_color(79.9));
+        assert_eq!(level_color(45.0), level_color(59.9));
+        assert_ne!(level_color(59.9), level_color(60.0));
+        assert_ne!(level_color(79.9), level_color(80.0));
     }
 }
