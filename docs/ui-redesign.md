@@ -7,7 +7,7 @@ Bu dosya arayüz yenilemesinin tek kaynağıdır. Her fazda önce bu dosyayı ok
 | Faz | Konu | Durum |
 |---|---|---|
 | 1 | Hızlı kazanımlar | tamamlandı |
-| 2 | Global bağlantı durumu ve boş durumlar | bekliyor |
+| 2 | Global bağlantı durumu ve boş durumlar | tamamlandı |
 | 3 | "Bu hafta" ana ekranı | bekliyor |
 | 4 | Takım analizi ve Oyuncular tablosu | bekliyor |
 | 5 | Takvim | bekliyor |

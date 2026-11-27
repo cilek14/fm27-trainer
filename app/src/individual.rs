@@ -1395,6 +1395,7 @@ pub fn render_page(
     live: &mut LiveState,
     on_read_bepinex: &mut bool,
     on_save_prefs: &mut bool,
+    on_open_setup: &mut bool,
 ) {
     if live.connected && live.tactics.is_none() && !live.tactics_busy() && !state.tactics_requested {
         state.tactics_requested = true;
@@ -1426,40 +1427,42 @@ pub fn render_page(
             "Maç öncesi risk radarı, taktiği aşağı çeken oyuncular, profil destekli yoğunluk ve rol zorlamadan Ek Odak."
         ),
         |ui| {
-            if theme::button(
-                ui,
-                icon::ARROW_COUNTER_CLOCKWISE,
-                t!("Ververs selectie", "Refresh squad", "Kadroyu yenile"),
-                !live.busy(),
-            )
-            .clicked()
-            {
-                refresh_squad = true;
-            }
-            if theme::button(
-                ui,
-                icon::BRAIN,
-                t!("Uit spelmodule lezen", "Read from game plugin", "Oyun eklentisinden oku"),
-                true,
-            )
-            .clicked()
-            {
-                *on_read_bepinex = true;
-            }
-            if theme::primary_button(
-                ui,
-                icon::LIGHTNING,
-                t!(
-                    "Zet aanbevolen intensiteit in FM",
-                    "Apply recommended intensity",
-                    "Önerilen yoğunlukları FM'ye uygula"
-                ),
-                can_apply,
-            )
-            .on_disabled_hover_text(t!("Verbind met FM27", "Connect to FM27", "FM27'ye bağlanın"))
-            .clicked()
-            {
-                apply_all = true;
+            if live.connected {
+                if theme::button(
+                    ui,
+                    icon::ARROW_COUNTER_CLOCKWISE,
+                    t!("Ververs selectie", "Refresh squad", "Kadroyu yenile"),
+                    !live.busy(),
+                )
+                .clicked()
+                {
+                    refresh_squad = true;
+                }
+                if theme::button(
+                    ui,
+                    icon::BRAIN,
+                    t!("Uit spelmodule lezen", "Read from game plugin", "Oyun eklentisinden oku"),
+                    true,
+                )
+                .clicked()
+                {
+                    *on_read_bepinex = true;
+                }
+                if theme::primary_button(
+                    ui,
+                    icon::LIGHTNING,
+                    t!(
+                        "Zet aanbevolen intensiteit in FM",
+                        "Apply recommended intensity",
+                        "Önerilen yoğunlukları FM'ye uygula"
+                    ),
+                    can_apply,
+                )
+                .on_disabled_hover_text(t!("Verbind met FM27", "Connect to FM27", "FM27'ye bağlanın"))
+                .clicked()
+                {
+                    apply_all = true;
+                }
             }
         },
     );
@@ -1513,6 +1516,41 @@ pub fn render_page(
                 });
             });
         ui.add_space(12.0);
+    }
+
+    if !live.connected {
+        theme::card(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(theme::ic(icon::USERS_THREE).size(24.0).color(theme::ACCENT));
+                ui.vertical(|ui| {
+                    ui.label(theme::h2(t!(
+                        "Verbind met FM27 voor spelersgegevens",
+                        "Connect to FM27 for player data",
+                        "Oyuncu verileri için FM27'ye bağlan"
+                    )));
+                    ui.add(
+                        egui::Label::new(theme::dim(t!(
+                            "Conditie, knelpunten, intensiteit, tactische rollen en extra focus verschijnen zodra FM27 actief is.",
+                            "Squad condition, bottlenecks, intensity, tactic roles and Additional Focus appear once FM27 is running.",
+                            "Kadro kondisyonu, darboğaz raporu, bireysel yoğunluk, taktik rolü ve ek odak önerileri FM27 açıkken görünür."
+                        )))
+                        .wrap(),
+                    );
+                });
+            });
+            ui.add_space(10.0);
+            if theme::primary_button(
+                ui,
+                icon::PLUGS_CONNECTED,
+                t!("Hoe verbind ik?", "How do I connect?", "Nasıl bağlanırım?"),
+                true,
+            )
+            .clicked()
+            {
+                *on_open_setup = true;
+            }
+        });
+        return;
     }
 
     // ---- MAÇ ÖNCESİ YORGUNLUK & SAKATLIK RİSKİ RADARI

@@ -234,7 +234,7 @@ fn read_bepinex_dump() -> Option<(Effectiveness, String)> {
         return None;
     }
     let when = chrono::Local::now().format("%d-%m %H:%M");
-    eff.source = format!("FM27 BepInEx · {when}");
+    eff.source = format!("FM27 · {when}");
     Some((eff, updated))
 }
 
@@ -275,6 +275,7 @@ struct App {
     image_path: String,
     show_file: bool,
     edit_mode: bool,
+    show_setup: bool,
     plan_tab: PlanTab,
     week_start: String,
     week_matches: [bool; 7],
@@ -353,6 +354,7 @@ impl App {
             image_path: String::new(),
             show_file: false,
             edit_mode: false,
+            show_setup: std::env::var_os("FM27_SETUP").is_some(),
             plan_tab: PlanTab::Week,
             week_start: monday.format("%Y-%m-%d").to_string(),
             week_matches,
@@ -426,6 +428,17 @@ impl App {
 
     fn has_data(&self) -> bool {
         !self.eff.source.is_empty()
+    }
+
+    fn last_read_hhmm(&self) -> Option<&str> {
+        let s = self.eff.source.trim().trim_end_matches('*').trim();
+        let tok = s.split_whitespace().last()?;
+        let b = tok.as_bytes();
+        if b.len() == 5 && b[2] == b':' && b[0].is_ascii_digit() && b[1].is_ascii_digit() && b[3].is_ascii_digit() && b[4].is_ascii_digit() {
+            Some(tok)
+        } else {
+            None
+        }
     }
 
     fn club_history_key(&self) -> String {
@@ -627,7 +640,8 @@ impl App {
                         } else {
                             (theme::TEXT_FAINT, t!("Niet verbonden", "Not connected").to_string())
                         };
-                        Frame::new()
+                        let hhmm = self.last_read_hhmm().map(str::to_string);
+                        let resp = Frame::new()
                             .fill(theme::SURFACE)
                             .stroke(Stroke::new(1.0_f32, theme::BORDER))
                             .corner_radius(CornerRadius::same(16))
@@ -637,8 +651,19 @@ impl App {
                                     ui.set_height(20.0);
                                     theme::status_dot(ui, c);
                                     ui.add(egui::Label::new(RichText::new(txt).size(12.5).color(theme::TEXT)).truncate());
+                                    if let Some(t) = &hhmm {
+                                        ui.label(RichText::new(format!("· {t}")).size(11.5).color(theme::TEXT_FAINT));
+                                    }
                                 });
-                            });
+                            })
+                            .response;
+                        if self.has_data() {
+                            resp.on_hover_text(t!(
+                                format!("Laatste meting: {}", self.eff.source),
+                                format!("Last reading: {}", self.eff.source),
+                                format!("Son okuma: {}", self.eff.source)
+                            ));
+                        }
 
                         if let Some(ver) = self.updater.available_version().map(str::to_string) {
                             ui.add_space(4.0);
@@ -666,68 +691,219 @@ impl App {
         ui.add_space(12.0);
     }
 
-    /// Kaart met stappen om FM met de module te starten.
-    fn connect_card(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        theme::card(ui, |ui| {
-            if !agent::LIVE_SUPPORTED {
-                ui.label(theme::h2(t!("Live in FM is niet beschikbaar op dit systeem", "Live in FM is not available on this system")));
-                ui.label(theme::dim(t!("Uitlezen, planning en export werken wel.", "Reading, planning and export do work.")));
-                return;
-            }
-            let windows = cfg!(windows);
+    fn render_global_strip(&mut self, ui: &mut Ui) {
+        if self.live.connected && self.has_data() {
+            return;
+        }
+        let col = if !self.live.connected { theme::WARNING } else { theme::INFO };
+        let msg = if !self.live.connected && !self.has_data() {
+            t!(
+                "FM27 niet verbonden en nog geen gegevens gelezen.",
+                "FM27 not connected and no data read yet.",
+                "FM27 bağlı değil ve henüz veri okunmadı."
+            )
+        } else if !self.live.connected {
+            t!(
+                "FM27 niet verbonden — open het spel voor livefuncties.",
+                "FM27 not connected — open the game for live features.",
+                "FM27 bağlı değil — canlı özellikler için oyunu açın."
+            )
+        } else {
+            t!(
+                "Tactical Effectiveness is nog niet uitgelezen.",
+                "Tactical Effectiveness has not been read yet.",
+                "Taktiksel Verimlilik henüz okunmadı."
+            )
+        };
+        Frame::new()
+            .fill(theme::tint(col, 0.10))
+            .stroke(Stroke::new(1.0_f32, theme::tint(col, 0.38)))
+            .corner_radius(CornerRadius::same(10))
+            .inner_margin(Margin::symmetric(14, 7))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    theme::status_dot(ui, col);
+                    ui.add(egui::Label::new(RichText::new(msg).size(13.0).color(theme::TEXT)).truncate());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let btn_lbl = if self.show_setup {
+                            t!("Sluiten", "Close", "Kapat")
+                        } else {
+                            t!("Hoe verbind ik?", "How do I connect?", "Nasıl bağlanırım?")
+                        };
+                        if theme::small_button(ui, btn_lbl, true).clicked() {
+                            self.show_setup = !self.show_setup;
+                        }
+                    });
+                });
+            });
+        ui.add_space(10.0);
+    }
+
+    fn render_setup_flow(&mut self, ui: &mut Ui, ctx: &egui::Context) {
+        let step1_done = self.live.connected;
+        let step2_done = self.live.connected && self.live.club.is_some();
+        let step3_done = self.has_data();
+        let mut trigger_start = false;
+        let mut trigger_reconnect = false;
+        let mut trigger_refresh = false;
+        let mut close = false;
+        let windows = cfg!(windows);
+        let live_supported = agent::LIVE_SUPPORTED;
+        let busy = self.live.busy() || self.analysis_rx.is_some();
+
+        theme::card_accent(ui, theme::ACCENT, |ui| {
             ui.horizontal(|ui| {
-                ui.label(theme::ic(icon::PLUGS_CONNECTED).size(28.0).color(theme::ACCENT));
+                ui.label(theme::ic(icon::PLUGS_CONNECTED).color(theme::ACCENT_HI).size(18.0));
+                ui.label(theme::h2(t!("Verbinden met FM27", "Connect to FM27", "FM27'ye bağlanma adımları")));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if theme::small_button(ui, t!("Sluiten", "Close", "Kapat"), true).clicked() {
+                        close = true;
+                    }
+                });
+            });
+            ui.add_space(8.0);
+            if !live_supported {
+                ui.label(theme::dim(t!(
+                    "Live-verbinding is op dit systeem niet beschikbaar; uitlezen en plannen werken wel.",
+                    "Live connection is unavailable on this system; reading and planning still work.",
+                    "Canlı bağlantı bu sistemde kullanılamıyor; okuma ve planlama özellikleri yine çalışır."
+                )));
+            }
+            ui.columns(3, |cols| {
+                step_card_status(
+                    &mut cols[0],
+                    1,
+                    step1_done,
+                    icon::PLAY,
+                    t!("Start FM27", "Start FM27", "FM27'yi başlat"),
+                    |ui| {
+                        ui.add(
+                            egui::Label::new(theme::dim(if windows {
+                                t!(
+                                    "Start FM27 via Steam, Game Pass of Epic.",
+                                    "Launch FM27 via Steam, Game Pass or Epic.",
+                                    "FM27'yi Steam, Game Pass veya Epic üzerinden başlat."
+                                )
+                            } else {
+                                t!(
+                                    "Start FM27 met de module via Steam.",
+                                    "Launch FM27 with the module via Steam.",
+                                    "Steam açıkken FM27'yi modül ile başlat."
+                                )
+                            }))
+                            .wrap(),
+                        );
+                        if !step1_done && live_supported {
+                            ui.add_space(6.0);
+                            ui.horizontal_wrapped(|ui| {
+                                let start_lbl = if windows {
+                                    t!("Start FM27", "Start FM27", "FM27'yi başlat")
+                                } else {
+                                    t!("Start FM met module", "Start FM with module", "FM27'yi modülle başlat")
+                                };
+                                if theme::small_button(ui, start_lbl, !busy).clicked() {
+                                    trigger_start = true;
+                                }
+                                if theme::small_button(ui, t!("Opnieuw verbinden", "Reconnect", "Yeniden bağlan"), !busy).clicked() {
+                                    trigger_reconnect = true;
+                                }
+                            });
+                        }
+                    },
+                );
+                step_card_status(
+                    &mut cols[1],
+                    2,
+                    step2_done,
+                    icon::FOLDER_OPEN,
+                    t!("Laad je save", "Load your save", "Kariyerini yükle"),
+                    |ui| {
+                        ui.add(
+                            egui::Label::new(theme::dim(t!(
+                                "Laad je carrière; de app verbindt vanzelf.",
+                                "Load your save; the app connects automatically.",
+                                "Kariyerini yükle; uygulama oyuna otomatik bağlanır."
+                            )))
+                            .wrap(),
+                        );
+                    },
+                );
+                step_card_status(
+                    &mut cols[2],
+                    3,
+                    step3_done,
+                    icon::GAUGE,
+                    t!("Open Tactical Effectiveness", "Open Tactical Effectiveness", "Taktiksel Verimlilik ekranını aç"),
+                    |ui| {
+                        ui.add(
+                            egui::Label::new(theme::dim(t!(
+                                "Open het scherm in FM27 en klik op Verileri güncelle.",
+                                "Open Tactical Effectiveness in FM27 and refresh data.",
+                                "FM27'de Taktiksel Verimlilik ekranını aç ve Verileri güncelle'ye tıkla."
+                            )))
+                            .wrap(),
+                        );
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            if theme::small_button(ui, t!("Gegevens vernieuwen", "Refresh data", "Verileri güncelle"), !busy).clicked() {
+                                trigger_refresh = true;
+                            }
+                        });
+                    },
+                );
+            });
+            ui.add_space(6.0);
+            ui.label(theme::faint(t!(
+                "Alleen training: de app past uitsluitend het trainingsschema aan, zonder cheats.",
+                "Training-only: only training schedules and options are written, zero memory cheats.",
+                "Yalnızca antrenman: editör veya hile içermez, yalnızca antrenman ayarlarını yazar."
+            )));
+        });
+        ui.add_space(12.0);
+
+        if trigger_start {
+            self.live.start_fm(ctx);
+        }
+        if trigger_reconnect {
+            self.live.refresh(ctx, t!("verbinden", "connect"), None);
+        }
+        if trigger_refresh {
+            self.refresh_data_auto(ctx);
+        }
+        if close {
+            self.show_setup = false;
+        }
+    }
+
+    /// Tekil sayfa boş durumu (bağlantı yoksa tekrarlanan kart yerine global kuruluma yönlendirir).
+    fn empty_connect_card(&mut self, ui: &mut Ui, ctx: &egui::Context, title: &str, desc: &str) {
+        let mut open_setup = false;
+        let mut reconnect = false;
+        theme::card(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(theme::ic(icon::PLUGS_CONNECTED).size(24.0).color(theme::ACCENT));
                 ui.vertical(|ui| {
-                    ui.label(theme::h2(t!("Verbind met Football Manager", "Connect to Football Manager")));
-                    ui.label(theme::dim(if windows {
-                        t!(
-                            "De app leest FM27 rechtstreeks terwijl het draait. Je hoeft niets te installeren.",
-                            "The app reads FM27 directly while it runs. Nothing to install."
-                        )
-                    } else {
-                        t!(
-                            "De app praat rechtstreeks met FM27 via een kleine module die met FM meestart.",
-                            "The app talks to FM27 directly through a small module that starts with FM."
-                        )
-                    }));
+                    ui.label(theme::h2(title));
+                    ui.add(egui::Label::new(theme::dim(desc)).wrap());
                 });
             });
             ui.add_space(10.0);
-            let steps = if windows {
-                [
-                    (1, t!("Start FM27 op de pc: Steam (of de knop hieronder), Xbox-app / Game Pass of Epic.", "Start FM27 on your PC: Steam (or the button below), the Xbox app / Game Pass or Epic.")),
-                    (2, t!("Laad je save.", "Load your save.")),
-                    (3, t!("De app verbindt vanzelf.", "The app connects automatically.")),
-                ]
-            } else {
-                [
-                    (1, t!("Sla je spel op en sluit FM27.", "Save your game and quit FM27.")),
-                    (2, t!("Klik op 'Start FM met module' (Steam moet open zijn).", "Click 'Start FM with module' (Steam must be open).")),
-                    (3, t!("Laad je save. De app verbindt vanzelf.", "Load your save. The app connects automatically.")),
-                ]
-            };
-            for (n, s) in steps {
-                ui.horizontal(|ui| {
-                    Frame::new().fill(theme::ACCENT_SOFT).corner_radius(CornerRadius::same(20)).inner_margin(Margin::symmetric(8, 2)).show(ui, |ui| {
-                        ui.label(RichText::new(n.to_string()).color(theme::ACCENT).strong());
-                    });
-                    ui.label(s);
-                });
-            }
-            ui.add_space(10.0);
             ui.horizontal(|ui| {
-                let start = if windows { t!("Start FM27", "Start FM27") } else { t!("Start FM met module", "Start FM with module") };
-                if theme::primary_button(ui, icon::PLAY, start, !self.live.busy()).clicked() {
-                    self.live.start_fm(ctx);
+                if theme::primary_button(ui, icon::PLUGS_CONNECTED, t!("Hoe verbind ik?", "How do I connect?", "Nasıl bağlanırım?"), true).clicked() {
+                    open_setup = true;
                 }
-                if theme::button(ui, icon::ARROW_COUNTER_CLOCKWISE, t!("Opnieuw verbinden", "Reconnect"), !self.live.busy()).clicked() {
-                    self.live.refresh(ctx, t!("verbinden", "connect"), None);
-                }
-                if self.live.busy() {
-                    ui.spinner();
+                if agent::LIVE_SUPPORTED && theme::button(ui, icon::ARROW_COUNTER_CLOCKWISE, t!("Opnieuw verbinden", "Reconnect", "Yeniden bağlan"), !self.live.busy()).clicked() {
+                    reconnect = true;
                 }
             });
         });
+        if open_setup {
+            self.show_setup = true;
+        }
+        if reconnect {
+            self.live.refresh(ctx, t!("verbinden", "connect"), None);
+        }
     }
 
     /// BepInEx köprüsünden (bepinex-tactical-dump.json) 4 bileşen + 17 faktörü kesin değerlerle yükler.
@@ -1063,11 +1239,16 @@ impl App {
                 "FM27 Training Assistant plans your training on your weakest areas and keeps it in FM's calendar."
             ),
             |ui| {
-                if theme::primary_button(ui, icon::LIGHTNING, t!("Zet training nu in FM", "Apply training now"), can).clicked() {
-                    write = true;
-                }
-                if theme::button(ui, icon::EYE, t!("Bekijk plan", "Preview"), can).clicked() {
-                    view = true;
+                if connected {
+                    if theme::primary_button(ui, icon::LIGHTNING, t!("Zet training nu in FM", "Apply training now"), can)
+                        .on_disabled_hover_text(t!("Bezig…", "Reading…"))
+                        .clicked()
+                    {
+                        write = true;
+                    }
+                    if theme::button(ui, icon::EYE, t!("Bekijk plan", "Preview"), can).clicked() {
+                        view = true;
+                    }
                 }
                 if self.live.busy() {
                     ui.spinner();
@@ -1245,7 +1426,16 @@ impl App {
         ui.add_space(14.0);
 
         if !connected {
-            self.connect_card(ui, ctx);
+            self.empty_connect_card(
+                ui,
+                ctx,
+                t!("Verbind met FM27 voor live training", "Connect to FM27 for live training", "Canlı antrenman için FM27'ye bağlan"),
+                t!(
+                    "Kalenderbeheer, wedstrijdtik en terugzetten door de assistent verschijnen zodra je save is geladen.",
+                    "Calendar sync and assistant-override protection appear once your FM27 save is loaded.",
+                    "Takvim eşitleme ve asistan değişikliklerini geri alma özellikleri kariyerin yüklendiğinde görünür."
+                ),
+            );
             return;
         }
 
@@ -1579,7 +1769,7 @@ impl App {
             t!("Tactiek", "Tactics"),
             t!("Hoe goed je spelers bij de rollen van je tactiek passen", "How well your players fit the roles of your tactic"),
             |ui| {
-                if theme::primary_button(ui, icon::ARROWS_CLOCKWISE, if busy { t!("Bezig…", "Reading…") } else { t!("Opnieuw uitlezen", "Read again") }, connected && !busy).clicked() {
+                if connected && theme::primary_button(ui, icon::ARROWS_CLOCKWISE, if busy { t!("Bezig…", "Reading…") } else { t!("Opnieuw uitlezen", "Read again") }, !busy).clicked() {
                     reload = true;
                 }
             },
@@ -1588,7 +1778,16 @@ impl App {
             self.live.load_tactics(ctx);
         }
         if !connected {
-            self.connect_card(ui, ctx);
+            self.empty_connect_card(
+                ui,
+                ctx,
+                t!("Verbind met FM27 voor tactiekanalyse", "Connect to FM27 for tactic analysis", "Taktik analizi için FM27'ye bağlan"),
+                t!(
+                    "Rolgeschiktheid en het beste elftal worden berekend zodra je carrière in FM27 is geopend.",
+                    "Role fit and your best eleven are calculated once your FM27 save is loaded.",
+                    "Rol uygunluğu ve en iyi 11 hesabı FM27'de kariyerin açıldığında burada görünür."
+                ),
+            );
             return;
         }
         let err = self.live.tactics_error.clone();
@@ -2384,6 +2583,10 @@ impl eframe::App for App {
                     let t = theme::enter(ctx, 0.22);
                     ui.set_opacity(0.25 + 0.75 * t);
                     ui.add_space(8.0 * (1.0 - t));
+                    self.render_global_strip(ui);
+                    if self.show_setup {
+                        self.render_setup_flow(ui, ctx);
+                    }
                     self.render_update_banner(ui, ctx);
                     match self.page {
                         Page::Overview => self.page_overview(ui, ctx),
@@ -2391,7 +2594,19 @@ impl eframe::App for App {
                         Page::Individual => {
                             let mut read_bep = false;
                             let mut save_auto = false;
-                            individual::render_page(ui, ctx, &mut self.individual, &mut self.live, &mut read_bep, &mut save_auto);
+                            let mut open_setup = false;
+                            individual::render_page(
+                                ui,
+                                ctx,
+                                &mut self.individual,
+                                &mut self.live,
+                                &mut read_bep,
+                                &mut save_auto,
+                                &mut open_setup,
+                            );
+                            if open_setup {
+                                self.show_setup = true;
+                            }
                             if read_bep {
                                 self.sync_from_bepinex(true);
                             }
@@ -2481,18 +2696,32 @@ fn chip(ui: &mut Ui, name: &str, highlight: bool, faded: bool) {
     theme::session_chip(ui, &chip_name(disp), col, highlight).on_hover_text(hover);
 }
 
-fn step_card(ui: &mut Ui, n: u8, icon_s: &str, title: &str, body: impl FnOnce(&mut Ui)) {
+fn step_card_status(ui: &mut Ui, n: u8, done: bool, icon_s: &str, title: &str, body: impl FnOnce(&mut Ui)) {
     theme::card(ui, |ui| {
         ui.horizontal(|ui| {
-            Frame::new().fill(theme::ACCENT_SOFT).corner_radius(CornerRadius::same(20)).inner_margin(Margin::symmetric(8, 2)).show(ui, |ui| {
-                ui.label(RichText::new(n.to_string()).color(theme::ACCENT).strong());
-            });
-            ui.label(theme::ic(icon_s).color(theme::ACCENT).size(16.0));
+            let badge_col = if done { theme::SUCCESS } else { theme::ACCENT };
+            let badge_bg = if done { theme::tint(theme::SUCCESS, 0.18) } else { theme::ACCENT_SOFT };
+            Frame::new()
+                .fill(badge_bg)
+                .corner_radius(CornerRadius::same(20))
+                .inner_margin(Margin::symmetric(8, 2))
+                .show(ui, |ui| {
+                    if done {
+                        ui.label(theme::ic(icon::CHECK).color(badge_col).size(13.0));
+                    } else {
+                        ui.label(RichText::new(n.to_string()).color(badge_col).strong());
+                    }
+                });
+            ui.label(theme::ic(icon_s).color(badge_col).size(16.0));
             ui.label(theme::h2(title));
         });
         ui.add_space(4.0);
         body(ui);
     });
+}
+
+fn step_card(ui: &mut Ui, n: u8, icon_s: &str, title: &str, body: impl FnOnce(&mut Ui)) {
+    step_card_status(ui, n, false, icon_s, title, body);
 }
 
 fn codes_text(c: &[u16; 3]) -> String {
