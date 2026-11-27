@@ -28,6 +28,7 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Another in-possession role in the same line that the player's attributes suit clearly better." => "Un autre rôle avec ballon sur la même ligne nettement mieux adapté aux attributs du joueur.",
         "Apply" => "Appliquer",
         "Apply all Additional Focus" => "Appliquer tous les objectifs additionnels",
+        "Apply plan to FM" => "Appliquer le plan à FM",
         "Apply recommended intensity" => "Appliquer l'intensité recommandée",
         "Apply training now" => "Appliquer l'entraînement maintenant",
         "Approve" => "Approuver",
@@ -145,6 +146,8 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "How well your players fit the roles of your tactic" => "Adéquation de vos joueurs aux rôles de votre tactique",
         "How do I connect?" => "Comment me connecter ?",
         "INJURED" => "BLESSÉ",
+        "Injured" => "Blessé",
+        "Issue" => "Problème",
         "In Possession" => "Avec ballon",
         "In Possession Role" => "Rôle avec ballon",
         "Individual" => "Individuel",
@@ -194,7 +197,11 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "No Screen Recording permission. Switch on FM27 Training Assistant under System Settings → Privacy & Security → Screen Recording, then restart the app." => "Autorisation Enregistrement de l'écran manquante. Activez FM27 Training Assistant dans Réglages Système → Confidentialité et sécurité → Enregistrement de l'écran, puis redémarrez.",
         "No changes yet. When FM re-plans a week, you'll see here what was put back." => "Aucun changement pour l'instant. Si FM modifie une semaine, les restaurations apparaîtront ici.",
         "No per-player BepInEx data yet. Open Tactical Effectiveness once in FM27 (with FM27Trainer.Bridge v0.6+ active) to capture individual tactical scores." => "Pas encore de données joueur BepInEx. Ouvrez Efficacité Tactique dans FM27 (avec Bridge actif) pour capturer les scores individuels.",
+        "No Tactical Effectiveness data read yet. Click Refresh above to begin." => "Aucune donnée d'Efficacité Tactique lue. Cliquez sur Actualiser en haut pour commencer.",
+        "No intensity suggestions to apply" => "Aucune suggestion d'intensité à appliquer",
         "No per-player game plugin data yet. Open Tactical Effectiveness once in FM27 to capture individual tactical scores." => "Pas encore de données joueur du module. Ouvrez Efficacité Tactique une fois dans FM27 pour capturer les scores individuels.",
+        "No players need special attention this week." => "Aucun joueur ne nécessite d'attention particulière cette semaine.",
+        "No weekly schedule to show yet." => "Aucun programme hebdomadaire à afficher pour l'instant.",
         "No players below 65 — the entire squad is at a solid tactical level!" => "Aucun joueur sous 65 — tout l'effectif a un niveau tactique solide !",
         "No tactical sessions" => "Aucune séance tactique (Mode développement)",
         "No valid players found to apply." => "Aucun joueur valide trouvé à appliquer.",
@@ -236,8 +243,11 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Planning" => "Planification",
         "Play people in their natural position and role. Use Player View to see who drags the rating down." => "Alignez les joueurs à leur poste et rôle naturels. Utilisez la vue joueurs pour repérer qui fait baisser la note.",
         "Player" => "Joueur",
+        "Player warnings appear once FM27 is connected." => "Les alertes joueurs s'affichent dès que FM27 est connecté.",
         "Player Capability" => "Niveau du joueur",
         "Player development" => "Développement des joueurs",
+        "Players" => "Joueurs",
+        "Players needing attention" => "Joueurs à surveiller",
         "Players expect the style of your manager profile. The further your tactic strays from it, the lower this is." => "Les joueurs attendent le style de votre profil d'entraîneur. Plus votre tactique s'en éloigne, plus ce score baisse.",
         "Players struggle to carry out their roles. Pick roles that suit their attributes or strengthen the squad." => "Les joueurs ont du mal dans leurs rôles. Choisissez des rôles adaptés à leurs attributs ou renforcez l'effectif.",
         "Pos" => "Pos",
@@ -282,6 +292,7 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Reconnect" => "Reconnecter",
         "Recovery" => "Récupération",
         "Refresh squad" => "Actualiser l'effectif",
+        "Refresh" => "Actualiser",
         "Refresh data" => "Actualiser les données",
         "Regular week" => "Semaine normale",
         "Relationships or support are low; Team Bonding and playing time help." => "Relations ou soutien faibles ; Cohésion d'équipe et temps de jeu aident.",
@@ -327,6 +338,7 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Strength" => "Force",
         "Stricter injury guard: Half intensity earlier, 30+ veterans protected." => "Protection stricte : demi-intensité plus tôt, vétérans 30+ préservés.",
         "Suggested Focus" => "Objectif suggéré",
+        "Suggestion" => "Suggestion",
         "Sunday" => "Dimanche",
         "Support development" => "Soutenir le développement",
         "Support development (buymeacoffee.com/cilek14)" => "Soutenir le développement (buymeacoffee.com/cilek14)",
@@ -340,6 +352,7 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Tactical Effectiveness has not been read yet." => "Efficacité Tactique n'a pas encore été lue.",
         "Tactical Understanding" => "Compréhension tactique",
         "Tactics" => "Tactiques",
+        "Team analysis" => "Analyse d'équipe",
         "Team Bonding below Relationships (%)" => "Cohésion d'équipe sous Relations (%)",
         "The FM window is not visible. Bring FM into view (with the Breakdown open) and read again." => "La fenêtre FM n'est pas visible. Affichez FM à l'écran et relisez.",
         "The app connects automatically." => "L'application se connecte automatiquement.",
@@ -351,6 +364,8 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "The way to spread your available players over the eleven places with the highest total fit. Injured and suspended players are left out." => "Répartit les joueurs disponibles aux onze postes avec la meilleure adéquation totale (hors blessés/suspendus).",
         "This FM build has not been verified with FM27 Trainer yet: read-only. Check that club and squad match FM; you can allow changes in Settings." => "Cette version de FM27 n'a pas encore été vérifiée : mode lecture seule. Si le club et l'effectif correspondent à FM, autorisez l'écriture dans Paramètres.",
         "This FM build is tested." => "Cette version de FM est vérifiée.",
+        "This week" => "Cette semaine",
+        "This week's schedule" => "Programme de la semaine",
         "This is not the tactic in use: FM keeps your starting eleven for that tactic only. So below you only see the best eleven for this tactic." => "Ce n'est pas la tactique active : FM ne conserve le onze que pour la tactique utilisée. Voici uniquement le meilleur onze théorique.",
         "This is not your own team. The app can only plan its training if FM keeps a calendar of its own for it (you run this team's training). The plan uses the values you read last." => "Ce n'est pas votre équipe première. L'app ne peut planifier que si FM maintient son propre calendrier.",
         "Those slots go to player development; match preparation stays. Meant for use with \"Keep at 100 %\" for tactical understanding (Squad)." => "Ces créneaux passent au développement des joueurs ; la préparation de match reste. Idéal quand la compréhension tactique est élevée.",
@@ -389,6 +404,7 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Works once FM runs with the module (see below)." => "Fonctionne dès que FM tourne avec le module.",
         "Writing training into FM…" => "Écriture dans FM…",
         "Your eleven in this tactic" => "Votre onze dans cette tactique",
+        "Your lowest three factors appear here once you read Tactical Effectiveness." => "Vos trois facteurs les plus faibles s'affichent ici après la lecture.",
         "accomplished" => "accompli",
         "automatic" => "automatique",
         "average fit" => "adéquation moy.",
@@ -439,6 +455,27 @@ pub fn translate_static(en: &'static str) -> &'static str {
 pub fn translate_dynamic(en: String) -> String {
     if en == "your eleven is already the best" {
         return "votre onze est déjà optimal".into();
+    }
+    if let Some(t) = en.strip_prefix("Applied · ") {
+        return format!("Appliqué · {t}");
+    }
+    if let Some(t) = en.strip_prefix("Last read ") {
+        return format!("Dernière lecture {t}");
+    }
+    if let Some(m) = en.strip_prefix("Next match: ") {
+        return format!("Prochain match : {m}");
+    }
+    if let Some(n) = en.strip_prefix("Apply suggestions (").and_then(|r| r.strip_suffix(')')) {
+        return format!("Appliquer les conseils ({n})");
+    }
+    if let Some(c) = en.strip_prefix("Low condition (").and_then(|r| r.strip_suffix(')')) {
+        return format!("Condition faible ({c})");
+    }
+    if let Some(a) = en.strip_suffix("y · congested week") {
+        return format!("{a} ans · semaine chargée");
+    }
+    if let Some(s) = en.strip_prefix("Tactical bottleneck (").and_then(|r| r.strip_suffix(')')) {
+        return format!("Frein tactique ({s})");
     }
     if let Some(n) = en.strip_suffix(" role options captured") {
         return format!("{n} options de rôle capturées");

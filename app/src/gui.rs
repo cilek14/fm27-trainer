@@ -242,6 +242,7 @@ fn read_bepinex_dump() -> Option<(Effectiveness, String)> {
 
 #[derive(PartialEq, Clone, Copy)]
 enum Page {
+    Home,
     Overview,
     Training,
     Individual,
@@ -325,14 +326,16 @@ impl App {
         let monday = planner::monday_of(chrono::Local::now().date_naive());
         let mut week_matches = [false; 7];
         week_matches[6] = true;
-        // FM27_PAGE=training|planning|tactics|settings opent direct die pagina (handig bij testen)
+        // FM27_PAGE=home|overview|training|planning|individual|players|calendar|tactics|settings opent direct die pagina (handig bij testen)
         let page = match std::env::var("FM27_PAGE").unwrap_or_default().as_str() {
-            "training" => Page::Training,
-            "individual" => Page::Individual,
+            "overview" | "analysis" => Page::Overview,
+            "training" | "calendar" => Page::Training,
+            "individual" | "players" => Page::Individual,
             "planning" => Page::Planning,
             "tactics" => Page::Tactics,
             "settings" => Page::Settings,
-            _ => Page::Overview,
+            "home" | "" => Page::Home,
+            _ => Page::Home,
         };
         let mut individual = IndividualState::default();
         individual.auto_apply_intensity = settings.auto_individual_intensity;
@@ -603,14 +606,15 @@ impl App {
                         );
                     });
 
-                    ui.add_space(14.0);
+                    ui.add_space(12.0);
                     let items = [
-                        (Page::Overview, icon::GAUGE, t!("Overzicht", "Overview")),
-                        (Page::Training, icon::BARBELL, t!("Training", "Training")),
-                        (Page::Individual, icon::USERS_THREE, t!("Individueel", "Individual", "Bireysel")),
-                        (Page::Planning, icon::CALENDAR_DOTS, t!("Planning", "Planning")),
-                        (Page::Tactics, icon::STRATEGY, t!("Tactiek", "Tactics")),
-                        (Page::Settings, icon::GEAR_SIX, t!("Instellingen", "Settings")),
+                        (Page::Home, icon::HOUSE, t!("Deze week", "This week", "Bu hafta")),
+                        (Page::Overview, icon::GAUGE, t!("Teamanalyse", "Team analysis", "Takım analizi")),
+                        (Page::Training, icon::BARBELL, t!("Training", "Training", "Antrenman")),
+                        (Page::Planning, icon::CALENDAR_DOTS, t!("Planning", "Planning", "Planlama")),
+                        (Page::Individual, icon::USERS_THREE, t!("Spelers", "Players", "Oyuncular")),
+                        (Page::Tactics, icon::STRATEGY, t!("Tactiek", "Tactics", "Taktik")),
+                        (Page::Settings, icon::GEAR_SIX, t!("Instellingen", "Settings", "Ayarlar")),
                     ];
                     for (p, ic, label) in items {
                         if theme::nav_tab(ui, ic, label, self.page == p).clicked() {
@@ -2589,6 +2593,56 @@ impl eframe::App for App {
                     }
                     self.render_update_banner(ui, ctx);
                     match self.page {
+                        Page::Home => {
+                            let hkey = self.club_history_key();
+                            let diff = self.history.previous_diff(&hkey, &self.eff);
+                            let hhmm = self.last_read_hhmm().map(str::to_string);
+                            let has_data = self.has_data();
+                            let (msg, err) = (self.status.clone(), self.status_error);
+                            let act = crate::home::render(
+                                ui,
+                                &self.eff,
+                                has_data,
+                                hhmm.as_deref(),
+                                diff,
+                                &self.settings.planner,
+                                &self.live,
+                                &self.individual,
+                                &msg,
+                                err,
+                            );
+                            if act.refresh_data {
+                                self.refresh_data_auto(ctx);
+                            }
+                            if act.apply_plan {
+                                self.live.training(ctx, &self.eff, &self.settings.planner, true, false);
+                            }
+                            if let Some(batch) = act.apply_attention {
+                                let mgr_id = self
+                                    .live
+                                    .club
+                                    .as_ref()
+                                    .and_then(|c| c.get("manager_runtime_id"))
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0) as u32;
+                                match individual::write_intensity_command(mgr_id, &batch) {
+                                    Ok(n) => {
+                                        for (rid, lvl) in &batch {
+                                            self.individual.current_intensities.insert(*rid, *lvl);
+                                        }
+                                        self.set_status(
+                                            t!(
+                                                format!("Opdracht voor {n} spelers verstuurd naar FM27…"),
+                                                format!("Sent intensity command for {n} players to FM27…"),
+                                                format!("{n} oyuncu için yoğunluk komutu FM27'ye gönderildi…")
+                                            ),
+                                            false,
+                                        );
+                                    }
+                                    Err(e) => self.set_status(e, true),
+                                }
+                            }
+                        }
                         Page::Overview => self.page_overview(ui, ctx),
                         Page::Training => self.page_training(ui, ctx),
                         Page::Individual => {
@@ -2668,7 +2722,7 @@ fn morale_label(m: u64) -> &'static str {
 }
 
 /// Korte, leesbare sessienaam voor in chips.
-fn chip_name(name: &str) -> String {
+pub(crate) fn chip_name(name: &str) -> String {
     name.replace("Out Of Possession", "OOP")
         .replace("In Possession", "IP")
         .replace("Defensive", "Def.")

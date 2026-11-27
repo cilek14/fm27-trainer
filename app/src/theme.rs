@@ -631,6 +631,39 @@ pub fn session_chip(ui: &mut Ui, text: &str, color: Color32, highlight: bool) ->
         .response
 }
 
+/// Nötr zeminli, solda 3 px kategori şeritli, 12 px metinli, 24 px yüksekliğinde seans çipi.
+pub fn session_chip_bar(ui: &mut Ui, text: &str, color: Color32, highlight: bool, bold_text: bool) -> Response {
+    let w = ui.available_width().max(48.0);
+    let h = 24.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
+    if ui.is_rect_visible(rect) {
+        let p = ui.painter();
+        let bg = if highlight { tint(color, 0.16) } else { SURFACE2 };
+        let stroke = if highlight { Stroke::new(1.0_f32, color) } else { Stroke::new(1.0_f32, BORDER) };
+        p.rect_filled(rect, CornerRadius::same(6), bg);
+        p.rect_stroke(rect, CornerRadius::same(6), stroke, egui::StrokeKind::Inside);
+        let bar = egui::Rect::from_min_max(rect.min, egui::pos2(rect.left() + 3.0, rect.bottom()));
+        p.rect_filled(bar, CornerRadius { nw: 6, sw: 6, ne: 0, se: 0 }, color);
+        let font = FontId::new(12.0, if bold_text { bold() } else { medium() });
+        let galley = ui.fonts(|f| {
+            let mut job = egui::text::LayoutJob::single_section(
+                text.to_owned(),
+                egui::text::TextFormat { font_id: font, color: TEXT, ..Default::default() },
+            );
+            job.wrap = egui::text::TextWrapping {
+                max_width: (w - 14.0).max(20.0),
+                max_rows: 1,
+                break_anywhere: true,
+                overflow_character: Some('…'),
+            };
+            f.layout_job(job)
+        });
+        let pos = egui::pos2(rect.left() + 9.0, rect.center().y - galley.size().y * 0.5);
+        p.galley(pos, galley, TEXT);
+    }
+    resp
+}
+
 pub fn status_dot(ui: &mut Ui, color: Color32) {
     let (r, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
     ui.painter().circle_filled(r.center(), 5.0, mix(SURFACE, color, 0.28));
