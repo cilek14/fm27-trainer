@@ -442,6 +442,18 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "suspended" => "suspendu",
         "template" => "modèle",
         "type" => "type",
+        "17 factors" => "17 facteurs",
+        "Auto-apply" => "Application auto",
+        "By component" => "Par composante",
+        "By score" => "Par score",
+        "Injury risk, tactical bottlenecks, training intensity and Additional Focus in one sortable table." => "Risque de blessure, points faibles tactiques, intensité d'entraînement et objectif additionnel dans un seul tableau triable.",
+        "Loading squad data…" => "Chargement des données joueurs…",
+        "No player data available from FM27 yet." => "Aucune donnée joueur disponible depuis FM27 pour le moment.",
+        "Rec. focus" => "Objectif cons.",
+        "Rec. intensity" => "Intensité cons.",
+        "Risk" => "Risque",
+        "Select at least one player with an applicable suggestion" => "Sélectionnez au moins un joueur avec une suggestion applicable",
+        "Tactical score" => "Score tactique",
         "unconvincing" => "peu convaincant",
         "very low" => "très faible",
         "waiting for the Breakdown in FM" => "en attente des données de FM",
@@ -614,6 +626,12 @@ pub fn translate_dynamic(en: String) -> String {
     }
     if let Some(n) = en.strip_prefix("Sent Additional Focus command for ").and_then(|r| r.strip_suffix(" players to FM27…")) {
         return format!("Commande d'objectif additionnel envoyée pour {n} joueurs à FM27…");
+    }
+    if let Some(n) = en.strip_prefix("Apply suggestions to selected (").and_then(|r| r.strip_suffix(')')) {
+        return format!("Appliquer les suggestions à la sélection ({n})");
+    }
+    if let Some(n) = en.strip_prefix("Sent recommendations for ").and_then(|r| r.strip_suffix(" actions to FM27…")) {
+        return format!("Suggestions envoyées pour {n} actions vers FM27…");
     }
     if let Some(mid) = en.strip_prefix("Injured → low-strain technical/tactical focus (").and_then(|r| r.strip_suffix(").")) {
         return format!("Blessé → objectif technique/tactique léger ({mid}).");

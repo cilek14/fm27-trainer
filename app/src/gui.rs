@@ -257,6 +257,12 @@ enum PlanTab {
     Season,
 }
 
+#[derive(PartialEq, Clone, Copy)]
+enum FactorSort {
+    ByScore,
+    ByComponent,
+}
+
 type AnalysisResult = Result<(vision::Analysis, String), String>;
 
 struct App {
@@ -278,6 +284,7 @@ struct App {
     edit_mode: bool,
     show_setup: bool,
     plan_tab: PlanTab,
+    factor_sort: FactorSort,
     week_start: String,
     week_matches: [bool; 7],
     prev_sunday: bool,
@@ -359,6 +366,7 @@ impl App {
             edit_mode: false,
             show_setup: std::env::var_os("FM27_SETUP").is_some(),
             plan_tab: PlanTab::Week,
+            factor_sort: FactorSort::ByScore,
             week_start: monday.format("%Y-%m-%d").to_string(),
             week_matches,
             prev_sunday: true,
@@ -1025,7 +1033,7 @@ impl App {
         let menu_id = ui.make_persistent_id("overview_read_menu");
         theme::page_header(
             ui,
-            t!("Tactical Effectiveness", "Tactical Effectiveness", "Taktiksel Verimlilik"),
+            t!("Teamanalyse", "Team analysis", "Takım analizi"),
             &subtitle,
             |ui| {
                 let menu_resp = theme::button(ui, icon::CARET_DOWN, "", !busy).on_hover_text(t!(
@@ -1152,50 +1160,111 @@ impl App {
 
         let hkey = self.club_history_key();
         let diff = self.history.previous_diff(&hkey, &self.eff);
-
-        // onderdelen
-        ui.columns(4, |cols| {
-            for (i, c) in Component::ALL.iter().enumerate() {
-                let v = self.eff.component(*c);
-                let col = theme::rgb(level_color(v));
-                let ic = [icon::TARGET, icon::SOCCER_BALL, icon::USERS_THREE, icon::EYE][i];
-                theme::stat_tile_delta(
-                    &mut cols[i],
-                    ic,
-                    c.display_label(),
-                    &format!("{v:.0}"),
-                    level_name(v),
-                    col,
-                    Some(v),
-                    diff.map(|d| d.components[i]),
-                );
-            }
-        });
-        ui.add_space(14.0);
-
-        // factors per onderdeel
+        let wide = ui.available_width() >= 860.0;
         let mut changed = false;
-        ui.columns(4, |cols| {
-            for (i, c) in Component::ALL.iter().enumerate() {
-                let ui = &mut cols[i];
-                theme::card(ui, |ui| {
-                    ui.label(theme::caps(c.display_label()));
-                    ui.add_space(6.0);
-                    for f in Factor::ALL.iter().filter(|f| f.component() == *c) {
-                        let v = self.eff.get(*f);
-                        let fd = diff.and_then(|d| Factor::ALL.iter().position(|x| x == f).map(|idx| d.factors[idx]));
-                        theme::metric_row_delta(ui, f.display_label(), v, theme::rgb(level_color(v)), fd);
-                        if self.edit_mode {
-                            let mut nv = v;
-                            if ui.add(egui::Slider::new(&mut nv, 0.0..=100.0).show_value(false)).changed() && (nv - v).abs() > 0.01 {
-                                self.eff.set(*f, nv);
-                                changed = true;
+
+        let render_left = |ui: &mut Ui, eff: &Effectiveness, diff: Option<history::HistoryDiff>, points: &[history::HistoryPoint]| {
+            let icons = [icon::TARGET, icon::SOCCER_BALL, icon::USERS_THREE, icon::EYE];
+            for row in 0..2 {
+                ui.columns(2, |cols| {
+                    for (col_idx, col_ui) in cols.iter_mut().enumerate() {
+                        let i = row * 2 + col_idx;
+                        let c = Component::ALL[i];
+                        let v = eff.component(c);
+                        let col = theme::rgb(level_color(v));
+                        theme::component_tile(
+                            col_ui,
+                            icons[i],
+                            c.display_label(),
+                            v,
+                            level_name(v),
+                            col,
+                            diff.map(|d| d.components[i]),
+                        );
+                    }
+                });
+                if row == 0 {
+                    ui.add_space(10.0);
+                }
+            }
+            ui.add_space(12.0);
+            history::render_trend_card(ui, points);
+        };
+
+        let mut render_right = |ui: &mut Ui, eff: &mut Effectiveness, factor_sort: &mut FactorSort, edit_mode: &mut bool| {
+            theme::card(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(theme::ic(icon::SLIDERS).color(theme::ACCENT_HI).size(16.0));
+                    ui.label(theme::h2(t!("17 factoren", "17 factors", "17 faktör")));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let sort_opts = [
+                            (FactorSort::ByScore, t!("Op score", "By score", "Skora göre")),
+                            (FactorSort::ByComponent, t!("Per onderdeel", "By component", "Bileşene göre")),
+                        ];
+                        theme::segmented(ui, factor_sort, &sort_opts);
+                    });
+                });
+                ui.add_space(10.0);
+
+                let render_factor = |ui: &mut Ui, f: Factor, eff: &mut Effectiveness, diff: Option<history::HistoryDiff>, edit: bool, changed: &mut bool| {
+                    let v = eff.get(f);
+                    let fd = diff.and_then(|d| Factor::ALL.iter().position(|x| *x == f).map(|idx| d.factors[idx]));
+                    theme::factor_bar_row(ui, f.display_label(), v, theme::rgb(level_color(v)), fd);
+                    if edit {
+                        let mut nv = v;
+                        if ui.add(egui::Slider::new(&mut nv, 0.0..=100.0).show_value(false)).changed() && (nv - v).abs() > 0.01 {
+                            eff.set(f, nv);
+                            *changed = true;
+                        }
+                    }
+                };
+
+                match *factor_sort {
+                    FactorSort::ByScore => {
+                        let mut items: Vec<(Factor, f32)> = Factor::ALL.iter().map(|&f| (f, eff.get(f))).collect();
+                        items.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+                        for (f, _) in items {
+                            render_factor(ui, f, eff, diff, *edit_mode, &mut changed);
+                        }
+                    }
+                    FactorSort::ByComponent => {
+                        for (ci, c) in Component::ALL.iter().enumerate() {
+                            if ci > 0 {
+                                ui.add_space(6.0);
+                            }
+                            ui.label(theme::caps(c.display_label()));
+                            ui.add_space(4.0);
+                            for f in Factor::ALL.iter().filter(|f| f.component() == *c) {
+                                render_factor(ui, *f, eff, diff, *edit_mode, &mut changed);
                             }
                         }
                     }
-                });
-            }
-        });
+                }
+
+                ui.add_space(8.0);
+                ui.checkbox(
+                    edit_mode,
+                    t!(
+                        "Waarden handmatig aanpassen",
+                        "Adjust values manually",
+                        "Değerleri elle düzenle"
+                    ),
+                );
+            });
+        };
+
+        let pts = self.history.points(&hkey).to_vec();
+        if wide {
+            ui.columns(2, |cols| {
+                render_left(&mut cols[0], &self.eff, diff, &pts);
+                render_right(&mut cols[1], &mut self.eff, &mut self.factor_sort, &mut self.edit_mode);
+            });
+        } else {
+            render_left(ui, &self.eff, diff, &pts);
+            ui.add_space(12.0);
+            render_right(ui, &mut self.eff, &mut self.factor_sort, &mut self.edit_mode);
+        }
+
         if changed {
             self.eff.components.clear();
             if !self.eff.source.ends_with('*') {
@@ -1205,28 +1274,6 @@ impl App {
             self.week_plan = None;
             self.year.clear();
         }
-        ui.add_space(4.0);
-        ui.checkbox(&mut self.edit_mode, t!("Waarden handmatig aanpassen", "Adjust values manually"));
-        ui.add_space(10.0);
-
-        // prioriteiten
-        theme::card(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(theme::ic(icon::LIGHTNING).color(theme::WARNING).size(18.0));
-                ui.label(theme::h2(t!("Prioriteiten", "Priorities")));
-            });
-            ui.add_space(6.0);
-            for (f, v) in self.eff.weakest().into_iter().take(6) {
-                ui.horizontal(|ui| {
-                    ui.add_sized(vec2(250.0, 20.0), egui::Label::new(theme::label_strong(f.display_label())));
-                    theme::pill(ui, &format!("{v:.0} · {}", level_name(v)), theme::rgb(level_color(v)));
-                    ui.add(egui::Label::new(theme::dim(f.advice())).wrap());
-                });
-                ui.add_space(4.0);
-            }
-        });
-        ui.add_space(14.0);
-        history::render_trend_card(ui, self.history.points(&hkey));
     }
 
     // -------------------------------------------------------------------- training

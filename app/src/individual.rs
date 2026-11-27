@@ -4,14 +4,14 @@
 //! 3. Sakatlık Önleyici Akıllı Bireysel Antrenman Yoğunluğu (Yarı / Normal / Çift) + 3 Hazır Profil
 //! 4. Rol Zorlamadan Akıllı Ek Odak (Additional Focus) Önerisi & Uygulama (`EventFmxPlayerTrainingFocusChanged`)
 
-use eframe::egui::{self, CornerRadius, Frame, Margin, RichText, Stroke, Ui, vec2};
+use eframe::egui::{self, CornerRadius, Frame, Margin, RichText, Stroke, Ui};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::live::LiveState;
-use crate::model::{level_color, level_name};
+use crate::model::level_color;
 use crate::t;
 use crate::tactics::{self, Player as TacticPlayer};
 use crate::theme::{self, icon};
@@ -334,6 +334,80 @@ pub struct ParsedBepInEx {
     pub session_ready: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PlayerSortCol {
+    Name,
+    Position,
+    Condition,
+    Risk,
+    #[default]
+    TacticalScore,
+    RecommendedIntensity,
+    RecommendedFocus,
+}
+
+#[derive(Clone, Debug)]
+pub struct UnifiedPlayerRow {
+    pub key: u32,
+    pub uid: Option<u32>,
+    pub runtime_id: u32,
+    pub name: String,
+    pub position: Option<&'static str>,
+    pub age: Option<u8>,
+    pub condition: Option<f32>,
+    pub sharpness: Option<f32>,
+    pub injured: bool,
+    pub rest_match_warning: bool,
+    pub tactical_overall: Option<f32>,
+    pub tactical_detail: Option<String>,
+    pub intensity_rec: Option<IntensityLevel>,
+    pub intensity_cur: Option<IntensityLevel>,
+    pub intensity_reason: Option<String>,
+    pub focus_rec: Option<AdditionalFocus>,
+    pub focus_weak_attrs: Option<String>,
+    pub focus_reason: Option<String>,
+}
+
+impl UnifiedPlayerRow {
+    pub fn risk_rank(&self) -> u8 {
+        if self.injured {
+            2
+        } else if self.rest_match_warning {
+            1
+        } else {
+            0
+        }
+    }
+
+    pub fn has_applicable_suggestion(&self, focus_options: &HashMap<i32, String>) -> bool {
+        if self.runtime_id == 0 {
+            return false;
+        }
+        let has_int = self.intensity_rec.is_some();
+        let has_foc = self
+            .focus_rec
+            .and_then(|f| f.match_option_id(focus_options))
+            .is_some();
+        has_int || has_foc
+    }
+
+    pub fn needs_action(
+        &self,
+        focus_options: &HashMap<i32, String>,
+        applied_focuses: &HashMap<u32, AdditionalFocus>,
+    ) -> bool {
+        if self.runtime_id == 0 {
+            return false;
+        }
+        let int_diff = matches!(self.intensity_rec, Some(lvl) if self.intensity_cur != Some(lvl));
+        let foc_diff = self.focus_rec.is_some_and(|fc| {
+            fc.match_option_id(focus_options).is_some()
+                && self.uid.is_none_or(|u| applied_focuses.get(&u) != Some(&fc))
+        });
+        int_diff || foc_diff
+    }
+}
+
 pub struct IndividualState {
     pub profile: IntensityProfile,
     pub bottlenecks: Vec<PlayerBottleneck>,
@@ -350,7 +424,10 @@ pub struct IndividualState {
     pub applied_roles: HashMap<u32, (Option<u8>, Option<u8>)>,
     pub session_ready: bool,
     pub auto_apply_intensity: bool,
-    pub filter_bottlenecks_only: bool,
+    pub sort_col: PlayerSortCol,
+    pub sort_asc: bool,
+    pub selected_players: HashSet<u32>,
+    pub selection_seeded: bool,
     pub last_cmd_result_utc: String,
     pub last_auto_apply: Option<std::time::Instant>,
     pub status: String,
@@ -376,7 +453,10 @@ impl Default for IndividualState {
             applied_roles: HashMap::new(),
             session_ready: false,
             auto_apply_intensity: false,
-            filter_bottlenecks_only: false,
+            sort_col: PlayerSortCol::TacticalScore,
+            sort_asc: true,
+            selected_players: HashSet::new(),
+            selection_seeded: false,
             last_cmd_result_utc: String::new(),
             last_auto_apply: None,
             status: String::new(),
@@ -1309,6 +1389,250 @@ pub fn write_role_training_command(
     Ok(count)
 }
 
+pub fn build_unified_player_rows(
+    live: &LiveState,
+    state: &IndividualState,
+) -> (Vec<UnifiedPlayerRow>, usize) {
+    let (intensity_recs, week_matches) =
+        build_squad_recommendations(live, &state.current_intensities, state.profile);
+    let focus_recs = build_focus_recommendations(live);
+
+    let mut rows: Vec<UnifiedPlayerRow> = Vec::with_capacity(
+        intensity_recs.len().max(focus_recs.len()).max(state.bottlenecks.len()),
+    );
+    let mut by_rid: HashMap<u32, usize> = HashMap::new();
+    let mut by_name: HashMap<String, usize> = HashMap::new();
+
+    for r in intensity_recs {
+        let norm = r.name.trim().to_lowercase();
+        let idx = rows.len();
+        if r.runtime_id != 0 {
+            by_rid.insert(r.runtime_id, idx);
+        }
+        if !norm.is_empty() {
+            by_name.entry(norm).or_insert(idx);
+        }
+        rows.push(UnifiedPlayerRow {
+            key: r.runtime_id,
+            uid: None,
+            runtime_id: r.runtime_id,
+            name: r.name,
+            position: None,
+            age: r.age,
+            condition: Some(r.condition),
+            sharpness: Some(r.sharpness),
+            injured: r.injured,
+            rest_match_warning: r.rest_match_warning,
+            tactical_overall: None,
+            tactical_detail: None,
+            intensity_rec: Some(r.recommended),
+            intensity_cur: r.current,
+            intensity_reason: Some(r.reason),
+            focus_rec: None,
+            focus_weak_attrs: None,
+            focus_reason: None,
+        });
+    }
+
+    for f in focus_recs {
+        let norm = f.name.trim().to_lowercase();
+        let existing = (f.runtime_id != 0)
+            .then(|| by_rid.get(&f.runtime_id).copied())
+            .flatten()
+            .or_else(|| by_name.get(&norm).copied());
+
+        if let Some(idx) = existing {
+            let row = &mut rows[idx];
+            row.uid = Some(f.uid);
+            if row.runtime_id == 0 && f.runtime_id != 0 {
+                row.runtime_id = f.runtime_id;
+                by_rid.insert(f.runtime_id, idx);
+            }
+            row.position = Some(f.natural_pos);
+            row.focus_rec = Some(f.focus);
+            row.focus_weak_attrs = Some(f.weak_attrs);
+            row.focus_reason = Some(f.reason);
+        } else {
+            let idx = rows.len();
+            if f.runtime_id != 0 {
+                by_rid.insert(f.runtime_id, idx);
+            }
+            if !norm.is_empty() {
+                by_name.entry(norm).or_insert(idx);
+            }
+            rows.push(UnifiedPlayerRow {
+                key: f.runtime_id,
+                uid: Some(f.uid),
+                runtime_id: f.runtime_id,
+                name: f.name,
+                position: Some(f.natural_pos),
+                age: None,
+                condition: None,
+                sharpness: None,
+                injured: false,
+                rest_match_warning: false,
+                tactical_overall: None,
+                tactical_detail: None,
+                intensity_rec: None,
+                intensity_cur: None,
+                intensity_reason: None,
+                focus_rec: Some(f.focus),
+                focus_weak_attrs: Some(f.weak_attrs),
+                focus_reason: Some(f.reason),
+            });
+        }
+    }
+
+    for b in &state.bottlenecks {
+        let norm = b.name.trim().to_lowercase();
+        let existing = (b.runtime_id != 0)
+            .then(|| by_rid.get(&b.runtime_id).copied())
+            .flatten()
+            .or_else(|| by_name.get(&norm).copied());
+        let detail = format!("{} ({:.0})", b.weakest_label, b.weakest_score);
+
+        if let Some(idx) = existing {
+            let row = &mut rows[idx];
+            if row.runtime_id == 0 && b.runtime_id != 0 {
+                row.runtime_id = b.runtime_id;
+                by_rid.insert(b.runtime_id, idx);
+            }
+            row.tactical_overall = Some(b.overall);
+            row.tactical_detail = Some(detail);
+        } else {
+            let idx = rows.len();
+            if b.runtime_id != 0 {
+                by_rid.insert(b.runtime_id, idx);
+            }
+            if !norm.is_empty() {
+                by_name.entry(norm).or_insert(idx);
+            }
+            rows.push(UnifiedPlayerRow {
+                key: b.runtime_id,
+                uid: None,
+                runtime_id: b.runtime_id,
+                name: b.name.clone(),
+                position: None,
+                age: None,
+                condition: None,
+                sharpness: None,
+                injured: false,
+                rest_match_warning: false,
+                tactical_overall: Some(b.overall),
+                tactical_detail: Some(detail),
+                intensity_rec: None,
+                intensity_cur: state.current_intensities.get(&b.runtime_id).copied(),
+                intensity_reason: None,
+                focus_rec: None,
+                focus_weak_attrs: None,
+                focus_reason: None,
+            });
+        }
+    }
+
+    for (idx, row) in rows.iter_mut().enumerate() {
+        row.key = if row.runtime_id != 0 {
+            row.runtime_id
+        } else if let Some(uid) = row.uid.filter(|u| *u != 0) {
+            0x8000_0000 | uid
+        } else {
+            0x4000_0000 + idx as u32
+        };
+    }
+
+    (rows, week_matches)
+}
+
+pub fn sort_unified_rows(rows: &mut [UnifiedPlayerRow], col: PlayerSortCol, asc: bool) {
+    use std::cmp::Ordering;
+    let cmp_opt_f32 = |a: Option<f32>, b: Option<f32>, asc: bool| -> Ordering {
+        match (a, b) {
+            (Some(x), Some(y)) => {
+                let ord = x.partial_cmp(&y).unwrap_or(Ordering::Equal);
+                if asc { ord } else { ord.reverse() }
+            }
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        }
+    };
+    let cmp_opt_str = |a: Option<&str>, b: Option<&str>, asc: bool| -> Ordering {
+        match (a, b) {
+            (Some(x), Some(y)) => {
+                let ord = x.to_lowercase().cmp(&y.to_lowercase());
+                if asc { ord } else { ord.reverse() }
+            }
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        }
+    };
+
+    rows.sort_by(|a, b| {
+        let primary = match col {
+            PlayerSortCol::Name => {
+                let ord = a.name.to_lowercase().cmp(&b.name.to_lowercase());
+                if asc { ord } else { ord.reverse() }
+            }
+            PlayerSortCol::Position => cmp_opt_str(a.position, b.position, asc),
+            PlayerSortCol::Condition => cmp_opt_f32(a.condition, b.condition, asc),
+            PlayerSortCol::Risk => {
+                let ord = a.risk_rank().cmp(&b.risk_rank());
+                if asc { ord } else { ord.reverse() }
+            }
+            PlayerSortCol::TacticalScore => cmp_opt_f32(a.tactical_overall, b.tactical_overall, asc),
+            PlayerSortCol::RecommendedIntensity => cmp_opt_f32(
+                a.intensity_rec.map(|l| l.code() as f32),
+                b.intensity_rec.map(|l| l.code() as f32),
+                asc,
+            ),
+            PlayerSortCol::RecommendedFocus => cmp_opt_str(
+                a.focus_rec.map(|f| f.label()),
+                b.focus_rec.map(|f| f.label()),
+                asc,
+            ),
+        };
+        primary.then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+}
+
+pub fn write_combined_recommendations(
+    manager_runtime_id: u32,
+    intensity_items: &[(u32, IntensityLevel)],
+    focus_items: &[(u32, i32, String)],
+) -> Result<usize, String> {
+    let valid_int: Vec<Value> = intensity_items
+        .iter()
+        .filter(|(rid, _)| *rid != 0)
+        .map(|(rid, lvl)| json!({ "runtime_id": rid, "level": lvl.code() }))
+        .collect();
+    let valid_foc: Vec<Value> = focus_items
+        .iter()
+        .filter(|(rid, opt_id, _)| *rid != 0 && *opt_id >= 0)
+        .map(|(rid, opt_id, name)| json!({ "runtime_id": rid, "option_id": opt_id, "name": name }))
+        .collect();
+
+    match (valid_int.is_empty(), valid_foc.is_empty()) {
+        (true, true) => Err(t!(
+            "Geen geldige spelers gevonden om in te stellen.",
+            "No valid players found to apply.",
+            "Uygulanacak geçerli oyuncu referansı bulunamadı."
+        )
+        .to_string()),
+        (false, true) => write_intensity_command(manager_runtime_id, intensity_items),
+        (true, false) => write_focus_command(manager_runtime_id, focus_items),
+        (false, false) => {
+            let count = valid_int.len() + valid_foc.len();
+            write_cmd_payload(json!({
+                "manager_runtime_id": manager_runtime_id,
+                "items": valid_int,
+                "focus_items": valid_foc,
+            }))?;
+            Ok(count)
+        }
+    }
+}
+
 fn write_cmd_payload(payload: Value) -> Result<(), String> {
     let _ = std::fs::create_dir_all(crate::data_dir());
     let path = cmd_file();
@@ -1387,7 +1711,7 @@ impl IndividualState {
     }
 }
 
-/// Bireysel Analiz, Radar, Ek Odak & Yoğunluk sayfası.
+/// Oyuncular sayfası: birleşik sıralanabilir tablo + toplu öneri uygulama + taktik rolü kartı.
 pub fn render_page(
     ui: &mut Ui,
     ctx: &egui::Context,
@@ -1403,10 +1727,9 @@ pub fn render_page(
     }
     if !live.connected {
         state.tactics_requested = false;
+        state.selection_seeded = false;
     }
 
-    let (recs, week_matches) = build_squad_recommendations(live, &state.current_intensities, state.profile);
-    let focus_recs = build_focus_recommendations(live);
     let mgr_id = live
         .club
         .as_ref()
@@ -1414,17 +1737,15 @@ pub fn render_page(
         .and_then(|v| v.as_u64())
         .unwrap_or(0) as u32;
 
-    let can_apply = live.connected && !recs.is_empty();
-    let mut apply_all = false;
     let mut refresh_squad = false;
 
     theme::page_header(
         ui,
-        t!("Individueel & Knelpunten", "Individual & Bottlenecks", "Bireysel & Darboğaz"),
+        t!("Spelers", "Players", "Oyuncular"),
         t!(
-            "Pre-match blessureradar, knelpunt-rapport, slimme intensiteit en rolonafhankelijke extra focus.",
-            "Pre-match injury radar, bottleneck report, smart intensity and role-free Additional Focus advisor.",
-            "Maç öncesi risk radarı, taktiği aşağı çeken oyuncular, profil destekli yoğunluk ve rol zorlamadan Ek Odak."
+            "Blessurerisico, tactische knelpunten, trainingsintensiteit en extra focus in één overzicht.",
+            "Injury risk, tactical bottlenecks, training intensity and Additional Focus in one sortable table.",
+            "Sakatlık riski, taktik puanı, önerilen yoğunluk ve ek odak tek bir sıralanabilir tabloda."
         ),
         |ui| {
             if live.connected {
@@ -1448,53 +1769,14 @@ pub fn render_page(
                 {
                     *on_read_bepinex = true;
                 }
-                if theme::primary_button(
-                    ui,
-                    icon::LIGHTNING,
-                    t!(
-                        "Zet aanbevolen intensiteit in FM",
-                        "Apply recommended intensity",
-                        "Önerilen yoğunlukları FM'ye uygula"
-                    ),
-                    can_apply,
-                )
-                .on_disabled_hover_text(t!("Verbind met FM27", "Connect to FM27", "FM27'ye bağlanın"))
-                .clicked()
-                {
-                    apply_all = true;
-                }
             }
         },
     );
 
     if refresh_squad {
         state.tactics_requested = false;
+        state.selection_seeded = false;
         live.refresh(ctx, t!("verversen", "refresh", "yenile"), None);
-    }
-
-    if apply_all {
-        let batch: Vec<(u32, IntensityLevel)> = recs
-            .iter()
-            .filter(|r| r.runtime_id != 0)
-            .map(|r| (r.runtime_id, r.recommended))
-            .collect();
-        match write_intensity_command(mgr_id, &batch) {
-            Ok(n) => {
-                for (rid, lvl) in &batch {
-                    state.current_intensities.insert(*rid, *lvl);
-                }
-                state.status = t!(
-                    format!("Opdracht voor {n} spelers verstuurd naar FM27…"),
-                    format!("Sent intensity command for {n} players to FM27…"),
-                    format!("{n} oyuncu için yoğunluk komutu FM27'ye gönderildi…")
-                );
-                state.status_error = false;
-            }
-            Err(e) => {
-                state.status = e;
-                state.status_error = true;
-            }
-        }
     }
 
     if !state.status.is_empty() {
@@ -1553,220 +1835,25 @@ pub fn render_page(
         return;
     }
 
-    // ---- MAÇ ÖNCESİ YORGUNLUK & SAKATLIK RİSKİ RADARI
-    if live.connected && !recs.is_empty() {
-        let crit_cnt = recs.iter().filter(|r| r.rest_match_warning).count();
-        let vet_age = state.profile.veteran_age();
-        let vet_cnt = recs.iter().filter(|r| r.age.is_some_and(|a| a >= vet_age)).count();
-        let healthy: Vec<&IntensityRecommendation> = recs.iter().filter(|r| !r.injured).collect();
-        let avg_cond = if healthy.is_empty() {
-            0.0
-        } else {
-            healthy.iter().map(|r| r.condition).sum::<f32>() / healthy.len() as f32
-        };
-        let avg_shp = if healthy.is_empty() {
-            0.0
-        } else {
-            healthy.iter().map(|r| r.sharpness).sum::<f32>() / healthy.len() as f32
-        };
-
-        ui.columns(4, |cols| {
-            let fix_col = if week_matches >= 2 { theme::DANGER } else { theme::INFO };
-            theme::stat_tile(
-                &mut cols[0],
-                icon::CALENDAR_DOTS,
-                t!("Weekprogramma", "Weekly Fixture", "Haftalık Fikstür"),
-                &format!("{week_matches}"),
-                if week_matches >= 2 {
-                    t!("Drukke week", "Congested week", "Sıkışık hafta")
-                } else if week_matches == 0 {
-                    t!("Vrije week", "Quiet week", "Maçsız hafta")
-                } else {
-                    t!("Normale week", "Regular week", "Tek maçlı hafta")
-                },
-                fix_col,
-                None,
-            );
-
-            let risk_col = if crit_cnt == 0 {
-                theme::SUCCESS
-            } else if crit_cnt <= 2 {
-                theme::WARNING
-            } else {
-                theme::DANGER
-            };
-            theme::stat_tile(
-                &mut cols[1],
-                icon::WARNING,
-                t!("Blessure & Rust", "Injury & Critical Risk", "Kritik Risk & Sakat"),
-                &format!("{crit_cnt}"),
-                if crit_cnt == 0 {
-                    t!("Geen kritieke spelers", "Squad looks fresh", "Kritik oyuncu yok")
-                } else {
-                    t!("Spelers sparen", "Rotate / rest needed", "Dinlendirme önerilir")
-                },
-                risk_col,
-                None,
-            );
-
-            theme::stat_tile(
-                &mut cols[2],
-                icon::USERS_THREE,
-                t!("Veteranbescherming", "Veteran Guard", "Veteran Koruması"),
-                &format!("{vet_cnt}"),
-                &t!(
-                    format!("{vet_age}+ jaar beschermd"),
-                    format!("{vet_age}+ yrs guarded"),
-                    format!("{vet_age}+ yaş korumada")
-                ),
-                theme::ACCENT_HI,
-                None,
-            );
-
-            let ready_col = if avg_cond >= 84.0 {
-                theme::SUCCESS
-            } else if avg_cond >= 76.0 {
-                theme::WARNING
-            } else {
-                theme::DANGER
-            };
-            theme::stat_tile(
-                &mut cols[3],
-                icon::HEART,
-                t!("Selectiegereedheid", "Squad Readiness", "Kadro Hazırlığı"),
-                &format!("{avg_cond:.0}%"),
-                &t!(
-                    format!("Scherpte {avg_shp:.0}%"),
-                    format!("Sharpness {avg_shp:.0}%"),
-                    format!("Keskinlik %{avg_shp:.0}")
-                ),
-                ready_col,
-                Some(avg_cond),
-            );
-        });
-        ui.add_space(14.0);
-    }
-
-    // ---- BÖLÜM 1: Oyuncu Bazlı "Taktiği Kim Aşağı Çekiyor?" Raporu
-    theme::card(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(theme::ic(icon::TARGET).color(theme::WARNING).size(18.0));
-            ui.label(theme::h2(t!(
-                "Wie haalt de tactiek omlaag?",
-                "Who drags the tactic down?",
-                "Taktiği Kim Aşağı Çekiyor? (Oyuncu Darboğaz Raporu)"
-            )));
-            if !state.bottlenecks.is_empty() {
-                let avg = state.bottlenecks.iter().map(|b| b.overall).sum::<f32>() / state.bottlenecks.len() as f32;
-                theme::pill(
-                    ui,
-                    &t!(
-                        format!("{} spelers · gem. {avg:.0}", state.bottlenecks.len()),
-                        format!("{} players · avg {avg:.0}", state.bottlenecks.len()),
-                        format!("{} oyuncu · ort. {avg:.0}", state.bottlenecks.len())
-                    ),
-                    theme::rgb(level_color(avg)),
-                );
-                ui.add_space(8.0);
-                ui.checkbox(
-                    &mut state.filter_bottlenecks_only,
-                    t!("Alleen knelpunten (<65)", "Only bottlenecks (<65)", "Sadece darboğazları göster (<65)"),
-                );
-            }
-        });
-        ui.add_space(6.0);
-
-        if state.bottlenecks.is_empty() {
-            ui.add(
-                egui::Label::new(theme::dim(t!(
-                    "Nog geen spelersdata uit de spelmodule ontvangen. Open in FM27 eenmaal het scherm Tactical Effectiveness zodat de individuele scores binnenkomen.",
-                    "No per-player game plugin data yet. Open Tactical Effectiveness once in FM27 to capture individual tactical scores.",
-                    "Henüz oyun eklentisinden oyuncu verisi alınmadı. FM27'de Taktiksel Verimlilik ekranını bir kez açtığınızda her oyuncunun taktik puanı burada en zayıftan en güçlüye sıralanır."
-                )))
-                .wrap(),
-            );
-        } else {
-            let shown: Vec<&PlayerBottleneck> = state
-                .bottlenecks
-                .iter()
-                .filter(|b| !state.filter_bottlenecks_only || b.overall < 65.0)
-                .collect();
-
-            if shown.is_empty() {
-                ui.label(theme::dim(t!(
-                    "Geen spelers onder 65 — de hele selectie zit op een goed tactisch niveau!",
-                    "No players below 65 — the entire squad is at a solid tactical level!",
-                    "65 puanın altında oyuncu yok — tüm kadro taktiğe iyi uyum sağlamış durumda!"
-                )));
-            } else {
-                egui::Grid::new("bottleneck_grid")
-                    .num_columns(7)
-                    .spacing([14.0, 7.0])
-                    .striped(true)
-                    .show(ui, |ui| {
-                        ui.label(theme::col_header(t!("Speler", "Player", "Oyuncu")));
-                        ui.label(theme::col_header(t!("Totaal", "Overall", "Genel")));
-                        ui.label(theme::col_header(t!("Begrip", "Understanding", "Anlayış")));
-                        ui.label(theme::col_header(t!("Rol", "Role Fit", "Rol Uyumu")));
-                        ui.label(theme::col_header(t!("Kwaliteit", "Capability", "Kalite")));
-                        ui.label(theme::col_header(t!("Zwakste punt", "Main Drag", "Ana Darboğaz")));
-                        ui.label(theme::col_header(t!("Advies", "Advice", "Öneri")));
-                        ui.end_row();
-
-                        for b in shown.into_iter().take(25) {
-                            ui.label(theme::label_strong(&b.name));
-                            theme::pill(
-                                ui,
-                                &format!("{:.0} · {}", b.overall, level_name(b.overall)),
-                                theme::rgb(level_color(b.overall)),
-                            );
-                            score_cell(ui, b.understanding);
-                            score_cell(ui, b.role_suitability);
-                            score_cell(ui, b.capability);
-                            theme::pill(
-                                ui,
-                                &format!("{} ({:.0})", b.weakest_label, b.weakest_score),
-                                theme::rgb(level_color(b.weakest_score)),
-                            );
-                            ui.add(egui::Label::new(theme::dim(b.advice)).wrap());
-                            ui.end_row();
-                        }
-                    });
+    let (mut rows, week_matches) = build_unified_player_rows(live, state);
+    if !state.selection_seeded && !rows.is_empty() {
+        state.selected_players.clear();
+        for r in &rows {
+            if r.needs_action(&state.focus_options, &state.applied_focuses) {
+                state.selected_players.insert(r.key);
             }
         }
-    });
+        state.selection_seeded = true;
+    }
+    sort_unified_rows(&mut rows, state.sort_col, state.sort_asc);
 
-    ui.add_space(14.0);
+    let mut apply_selected = false;
+    let selected_count = rows
+        .iter()
+        .filter(|r| state.selected_players.contains(&r.key) && r.has_applicable_suggestion(&state.focus_options))
+        .count();
 
-    // ---- BÖLÜM 2: Sakatlık Önleyici Akıllı Bireysel Antrenman Yoğunluğu + Hazır Profiller
     theme::card(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(theme::ic(icon::HEART).color(theme::SUCCESS).size(18.0));
-            ui.label(theme::h2(t!(
-                "Slimme individuele trainingsintensiteit",
-                "Smart Injury-Safe Individual Intensity",
-                "Sakatlık Önleyici Akıllı Bireysel Yoğunluk"
-            )));
-            let half_n = recs.iter().filter(|r| r.recommended == IntensityLevel::Half).count();
-            let norm_n = recs.iter().filter(|r| r.recommended == IntensityLevel::Normal).count();
-            let dbl_n = recs.iter().filter(|r| r.recommended == IntensityLevel::Double).count();
-            if !recs.is_empty() {
-                theme::pill(
-                    ui,
-                    &t!(
-                        format!("{week_matches} wedstr. deze week"),
-                        format!("{week_matches} match(es) this week"),
-                        format!("Bu hafta {week_matches} maç")
-                    ),
-                    if week_matches >= 2 { theme::DANGER } else { theme::INFO },
-                );
-                theme::pill(ui, &format!("{}: {half_n}", IntensityLevel::Half.short_label()), IntensityLevel::Half.color());
-                theme::pill(ui, &format!("{}: {norm_n}", IntensityLevel::Normal.short_label()), IntensityLevel::Normal.color());
-                theme::pill(ui, &format!("{}: {dbl_n}", IntensityLevel::Double.short_label()), IntensityLevel::Double.color());
-            }
-        });
-        ui.add_space(6.0);
-
         ui.horizontal_wrapped(|ui| {
             ui.label(theme::label_strong(t!("Intensiteitsprofiel:", "Intensity profile:", "Yoğunluk profili:")));
             let prof_opts: [(IntensityProfile, &str); 3] = [
@@ -1776,295 +1863,287 @@ pub fn render_page(
             ];
             if theme::segmented(ui, &mut state.profile, &prof_opts) {
                 *on_save_prefs = true;
+                state.selection_seeded = false;
             }
-            ui.label(theme::faint(state.profile.description()));
-        });
-        ui.add_space(4.0);
+            ui.label(theme::ic(icon::INFO).color(theme::TEXT_FAINT).size(14.0))
+                .on_hover_text(state.profile.description());
 
-        ui.horizontal_wrapped(|ui| {
+            ui.add_space(8.0);
             if theme::toggle(ui, &mut state.auto_apply_intensity).changed() {
                 *on_save_prefs = true;
             }
             ui.label(theme::label_strong(t!(
+                "Automatisch toepassen",
+                "Auto-apply",
+                "Otomatik uygula"
+            )))
+            .on_hover_text(t!(
                 "Intensiteit automatisch bewaken bij conditiewijziging",
                 "Automatically guard intensity as condition changes",
                 "Kondisyon değiştikçe önerilen yoğunluğu otomatik uygula"
-            )));
-        });
-        ui.add_space(8.0);
+            ));
 
-        if !live.connected || recs.is_empty() {
-            ui.label(theme::dim(t!(
-                "Verbind eerst met een geopende save in FM27 om conditie, scherpte en leeftijd van je selectie te lezen.",
-                "Connect to an active save in FM27 first to read squad condition, sharpness and age.",
-                "Kadro kondisyon, maç keskinliği ve yaş verilerini okumak için FM27'de kariyerinizi açın."
-            )));
-        } else {
-            let mut single_cmd: Option<(u32, String, IntensityLevel)> = None;
-
-            egui::Grid::new("smart_intensity_grid")
-                .num_columns(7)
-                .spacing([12.0, 6.0])
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.label(theme::col_header(t!("Speler", "Player", "Oyuncu")));
-                    ui.label(theme::col_header(t!("Lft", "Age", "Yaş")));
-                    ui.label(theme::col_header(t!("Conditie", "Condition", "Kondisyon")));
-                    ui.label(theme::col_header(t!("Scherpte", "Sharpness", "Keskinlik")));
-                    ui.label(theme::col_header(t!("Aanbevolen", "Recommended", "Önerilen")));
-                    ui.label(theme::col_header(t!("Snel zetten", "Quick set", "Tek Tık Seçim")));
-                    ui.label(theme::col_header(t!("Waarom", "Reason", "Gerekçe")));
-                    ui.end_row();
-
-                    for r in &recs {
-                        ui.horizontal(|ui| {
-                            ui.label(theme::label_strong(&r.name));
-                            if r.rest_match_warning {
-                                theme::pill(
-                                    ui,
-                                    if r.injured {
-                                        t!("BLESSURE", "INJURED", "SAKAT")
-                                    } else {
-                                        t!("RUST", "REST", "DİNLENDİR")
-                                    },
-                                    theme::DANGER,
-                                );
-                            }
-                        });
-                        ui.label(theme::dim(r.age.map(|a| a.to_string()).unwrap_or_else(|| "—".into())));
-
-                        let cond_col = if r.condition >= 85.0 {
-                            theme::SUCCESS
-                        } else if r.condition >= 72.0 {
-                            theme::WARNING
-                        } else {
-                            theme::DANGER
-                        };
-                        theme::pill(ui, &format!("{:.0}%", r.condition), cond_col);
-
-                        let shp_col = if r.sharpness >= 80.0 {
-                            theme::SUCCESS
-                        } else if r.sharpness >= 65.0 {
-                            theme::INFO
-                        } else {
-                            theme::WARNING
-                        };
-                        theme::pill(ui, &format!("{:.0}%", r.sharpness), shp_col);
-
-                        ui.horizontal(|ui| {
-                            theme::pill(ui, r.recommended.label(), r.recommended.color());
-                            if r.current == Some(r.recommended) {
-                                ui.label(theme::ic(icon::CHECK_CIRCLE).color(theme::SUCCESS).size(14.0))
-                                    .on_hover_text(t!("Actief in FM", "Active in FM", "FM'de aktif"));
-                            }
-                        });
-
-                        ui.horizontal(|ui| {
-                            for lvl in [IntensityLevel::Half, IntensityLevel::Normal, IntensityLevel::Double] {
-                                let active = r.current == Some(lvl);
-                                let txt = if active {
-                                    format!("✓ {}", lvl.short_label())
-                                } else {
-                                    lvl.short_label().to_string()
-                                };
-                                if theme::small_button(ui, &txt, r.runtime_id != 0).clicked() {
-                                    single_cmd = Some((r.runtime_id, r.name.clone(), lvl));
-                                }
-                            }
-                        });
-
-                        ui.add(egui::Label::new(theme::dim(&r.reason)).wrap());
-                        ui.end_row();
-                    }
-                });
-
-            if let Some((rid, name, lvl)) = single_cmd {
-                match write_intensity_command(mgr_id, &[(rid, lvl)]) {
-                    Ok(_) => {
-                        state.current_intensities.insert(rid, lvl);
-                        state.status = format!("{name} → {}", lvl.label());
-                        state.status_error = false;
-                    }
-                    Err(e) => {
-                        state.status = e;
-                        state.status_error = true;
-                    }
-                }
-            }
-        }
-    });
-
-    ui.add_space(14.0);
-
-    // ---- BÖLÜM 3: Taktik Rolü Bireysel Antrenmanı (Önizle -> Onayla -> FM27'ye Yaz)
-    render_tactic_role_card(ui, state, live, mgr_id, on_save_prefs);
-
-    ui.add_space(14.0);
-
-    // ---- BÖLÜM 4: Rol Zorlamadan Akıllı Ek Odak (Additional Focus) Önerisi
-    theme::card(ui, |ui| {
-        let mut apply_all_focus = false;
-        let can_apply_focus = live.connected && !focus_recs.is_empty() && !state.focus_options.is_empty();
-
-        ui.horizontal_wrapped(|ui| {
-            ui.label(theme::ic(icon::SPARKLE).color(theme::ACCENT_HI).size(18.0));
-            ui.label(theme::h2(t!(
-                "Slimme Extra Focus (zonder rol te forceren)",
-                "Smart Additional Focus (role-free)",
-                "Rol Zorlamadan Akıllı Ek Odak (Additional Focus)"
-            )));
-            if !state.focus_options.is_empty() {
+            if week_matches >= 2 {
                 theme::pill(
                     ui,
                     &t!(
-                        format!("{} opties uit FM gelezen", state.focus_options.len()),
-                        format!("{} options captured", state.focus_options.len()),
-                        format!("{} FM seçeneği hazır", state.focus_options.len())
+                        format!("{week_matches} wedstr. deze week"),
+                        format!("{week_matches} match(es) this week"),
+                        format!("Bu hafta {week_matches} maç")
                     ),
-                    theme::SUCCESS,
+                    theme::DANGER,
                 );
             }
+
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if theme::small_button(
-                    ui,
-                    t!(
-                        "Pas alle extra focus toe",
-                        "Apply all Additional Focus",
-                        "Önerilen Ek Odakları FM'ye Uygula"
-                    ),
-                    can_apply_focus,
-                )
-                .on_disabled_hover_text(t!("Verbind met FM27", "Connect to FM27", "FM27'ye bağlanın"))
-                .clicked()
+                let apply_lbl = t!(
+                    format!("Pas suggesties toe op selectie ({selected_count})"),
+                    format!("Apply suggestions to selected ({selected_count})"),
+                    format!("Seçilenlere önerileri uygula ({selected_count})")
+                );
+                if theme::primary_button(ui, icon::LIGHTNING, &apply_lbl, selected_count > 0)
+                    .on_disabled_hover_text(t!(
+                        "Selecteer minstens één speler met een beschikbare suggestie",
+                        "Select at least one player with an applicable suggestion",
+                        "Uygulanabilir önerisi olan en az bir oyuncu seçin"
+                    ))
+                    .clicked()
                 {
-                    apply_all_focus = true;
+                    apply_selected = true;
                 }
             });
         });
-        ui.add_space(4.0);
-        ui.add(
-            egui::Label::new(theme::dim(t!(
-                "Gebruikt uitsluitend de natuurlijke positie van elke speler en zoekt de zwakste kernattributen op — geen enkele speler wordt in een ongeschikte tactische rol geduwd.",
-                "Looks strictly at each player's own natural position and weakest core attributes — never forces backups into unsuitable tactic roles.",
-                "Her oyuncunun sadece kendi doğal mevkisine göre en eksik kilit özellik grubunu bulur — yedekler uygun olmayan taktik rollerine asla zorlanmaz."
-            )))
-            .wrap(),
-        );
 
-        if state.focus_options.is_empty() && !focus_recs.is_empty() {
-            ui.add_space(4.0);
-            ui.label(theme::faint(t!(
-                "Tip: open in FM27 eenmaal het scherm Individuele Training om de directe 'Toepassen'-knoppen te activeren.",
-                "Tip: open Individual Training once in FM27 to capture live focus IDs and enable one-click apply.",
-                "İpucu: Tek tıkla uygulama butonlarının aktifleşmesi için FM27'de Bireysel Antrenman sekmesini bir kez açın (öneriler aşağıda listelenir)."
-            )));
-        }
-        ui.add_space(8.0);
+        ui.add_space(10.0);
 
-        if focus_recs.is_empty() {
-            ui.label(theme::dim(if live.tactics_busy() {
-                t!("Spelersattributen ophalen…", "Loading squad attributes…", "Oyuncu özellikleri yükleniyor…")
+        if rows.is_empty() {
+            ui.label(theme::dim(if live.busy() || live.tactics_busy() {
+                t!("Spelersgegevens laden…", "Loading squad data…", "Oyuncu verileri yükleniyor…")
             } else {
                 t!(
-                    "Verbind met FM27 om de attributen per speler uit te lezen.",
-                    "Connect to FM27 to read each player's attributes.",
-                    "Oyuncuların özellik profillerini görmek için FM27'ye bağlanın."
+                    "Nog geen spelersdata uit FM27 beschikbaar.",
+                    "No player data available from FM27 yet.",
+                    "FM27'den henüz oyuncu verisi alınmadı."
                 )
             }));
-            return;
-        }
-
-        if apply_all_focus {
-            let batch: Vec<(u32, i32, String)> = focus_recs
+        } else {
+            let selectable_keys: Vec<u32> = rows
                 .iter()
-                .filter_map(|r| {
-                    if r.runtime_id == 0 {
-                        return None;
-                    }
-                    let (opt_id, opt_name) = r.focus.match_option_id(&state.focus_options)?;
-                    Some((r.runtime_id, opt_id, opt_name))
-                })
+                .filter(|r| r.has_applicable_suggestion(&state.focus_options))
+                .map(|r| r.key)
                 .collect();
-            match write_focus_command(mgr_id, &batch) {
-                Ok(n) => {
-                    for r in &focus_recs {
-                        if r.runtime_id != 0 && r.focus.match_option_id(&state.focus_options).is_some() {
-                            state.applied_focuses.insert(r.uid, r.focus);
-                        }
-                    }
-                    state.status = t!(
-                        format!("Extra focus voor {n} spelers verstuurd naar FM27…"),
-                        format!("Sent Additional Focus command for {n} players to FM27…"),
-                        format!("{n} oyuncu için Ek Odak komutu FM27'ye gönderildi…")
-                    );
-                    state.status_error = false;
-                }
-                Err(e) => {
-                    state.status = e;
-                    state.status_error = true;
-                }
-            }
-        }
+            let mut all_checked = !selectable_keys.is_empty()
+                && selectable_keys.iter().all(|k| state.selected_players.contains(k));
 
-        let mut single_focus: Option<(u32, u32, String, AdditionalFocus, i32, String)> = None;
-
-        egui::Grid::new("smart_focus_grid")
-            .num_columns(6)
-            .spacing([12.0, 6.0])
-            .striped(true)
-            .show(ui, |ui| {
-                ui.label(theme::col_header(t!("Speler", "Player", "Oyuncu")));
-                ui.label(theme::col_header(t!("Pos", "Pos", "Mevki")));
-                ui.label(theme::col_header(t!("Aanbevolen Focus", "Suggested Focus", "Önerilen Ek Odak")));
-                ui.label(theme::col_header(t!("Zwakste attributen", "Weakest Attributes", "Eksik Özellikler")));
-                ui.label(theme::col_header(t!("Actie", "Apply", "Uygula")));
-                ui.label(theme::col_header(t!("Uitleg", "Reason", "Açıklama")));
-                ui.end_row();
-
-                for r in focus_recs.iter().take(28) {
-                    ui.label(theme::label_strong(&r.name));
-                    theme::pill(ui, r.natural_pos, theme::ACCENT);
-                    theme::pill(ui, r.focus.label(), theme::INFO);
-                    ui.label(theme::dim(&r.weak_attrs));
-
-                    let matched = if r.runtime_id != 0 {
-                        r.focus.match_option_id(&state.focus_options)
-                    } else {
-                        None
-                    };
-                    let applied = state.applied_focuses.get(&r.uid) == Some(&r.focus);
-                    let btn_txt = if applied {
-                        t!("✓ Gezet", "✓ Set", "✓ Seçildi")
-                    } else {
-                        t!("Toepassen", "Apply", "Uygula")
-                    };
-                    if theme::small_button(ui, btn_txt, matched.is_some()).clicked() {
-                        if let Some((opt_id, opt_name)) = matched {
-                            single_focus = Some((r.uid, r.runtime_id, r.name.clone(), r.focus, opt_id, opt_name));
+            egui::Grid::new("unified_players_grid")
+                .num_columns(8)
+                .spacing([12.0, 7.0])
+                .striped(true)
+                .show(ui, |ui| {
+                    if ui
+                        .add_enabled(
+                            !selectable_keys.is_empty(),
+                            egui::Checkbox::without_text(&mut all_checked),
+                        )
+                        .changed()
+                    {
+                        if all_checked {
+                            for k in &selectable_keys {
+                                state.selected_players.insert(*k);
+                            }
+                        } else {
+                            state.selected_players.clear();
                         }
                     }
 
-                    ui.add(egui::Label::new(theme::dim(&r.reason)).wrap());
+                    let cols: [(PlayerSortCol, &str); 7] = [
+                        (PlayerSortCol::Name, t!("Speler", "Player", "Oyuncu")),
+                        (PlayerSortCol::Position, t!("Pos", "Pos", "Mevki")),
+                        (PlayerSortCol::Condition, t!("Conditie", "Condition", "Kondisyon")),
+                        (PlayerSortCol::Risk, t!("Risico", "Risk", "Risk")),
+                        (PlayerSortCol::TacticalScore, t!("Tactiekscore", "Tactical score", "Taktik puanı")),
+                        (PlayerSortCol::RecommendedIntensity, t!("Aanbevolen intensiteit", "Rec. intensity", "Önerilen yoğunluk")),
+                        (PlayerSortCol::RecommendedFocus, t!("Aanbevolen focus", "Rec. focus", "Önerilen ek odak")),
+                    ];
+                    for (col, label) in cols {
+                        let active = state.sort_col == col;
+                        let arrow = if active {
+                            if state.sort_asc { " ▲" } else { " ▼" }
+                        } else {
+                            ""
+                        };
+                        let hdr_txt = theme::col_header(&format!("{label}{arrow}"))
+                            .color(if active { theme::TEXT } else { theme::TEXT_FAINT });
+                        let resp = ui.add(egui::Label::new(hdr_txt).sense(egui::Sense::click()));
+                        if resp.clicked() {
+                            if active {
+                                state.sort_asc = !state.sort_asc;
+                            } else {
+                                state.sort_col = col;
+                                state.sort_asc = col != PlayerSortCol::Risk;
+                            }
+                        }
+                        resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                    }
                     ui.end_row();
-                }
-            });
 
-        if let Some((uid, rid, name, focus, opt_id, opt_name)) = single_focus {
-            match write_focus_command(mgr_id, &[(rid, opt_id, opt_name)]) {
-                Ok(_) => {
-                    state.applied_focuses.insert(uid, focus);
-                    state.status = format!("{name} → {}", focus.label());
-                    state.status_error = false;
-                }
-                Err(e) => {
-                    state.status = e;
-                    state.status_error = true;
-                }
-            }
+                    for r in &rows {
+                        let can_pick = r.has_applicable_suggestion(&state.focus_options);
+                        let mut checked = state.selected_players.contains(&r.key);
+                        if ui
+                            .add_enabled(can_pick, egui::Checkbox::without_text(&mut checked))
+                            .changed()
+                        {
+                            if checked {
+                                state.selected_players.insert(r.key);
+                            } else {
+                                state.selected_players.remove(&r.key);
+                            }
+                        }
+
+                        let mut name_tip = String::new();
+                        if let Some(a) = r.age {
+                            name_tip.push_str(&format!("{a}"));
+                        }
+                        if let Some(s) = r.sharpness {
+                            if !name_tip.is_empty() {
+                                name_tip.push_str(" · ");
+                            }
+                            name_tip.push_str(&format!("{s:.0}%"));
+                        }
+                        let name_lbl = ui.label(theme::label_strong(&r.name));
+                        if !name_tip.is_empty() {
+                            name_lbl.on_hover_text(name_tip);
+                        }
+
+                        if let Some(pos) = r.position {
+                            theme::pill(ui, pos, theme::ACCENT);
+                        } else {
+                            ui.label(theme::faint("—"));
+                        }
+
+                        if let Some(c) = r.condition {
+                            let cond_col = if c >= 85.0 {
+                                theme::SUCCESS
+                            } else if c >= 72.0 {
+                                theme::WARNING
+                            } else {
+                                theme::DANGER
+                            };
+                            theme::pill(ui, &format!("{c:.0}%"), cond_col);
+                        } else {
+                            ui.label(theme::faint("—"));
+                        }
+
+                        if r.injured {
+                            theme::pill(ui, t!("BLESSURE", "INJURED", "SAKAT"), theme::DANGER);
+                        } else if r.rest_match_warning {
+                            theme::pill(ui, t!("RUST", "REST", "DİNLENDİR"), theme::WARNING);
+                        } else {
+                            ui.label(theme::faint("—"));
+                        }
+
+                        if let Some(ov) = r.tactical_overall {
+                            let resp = ui
+                                .horizontal(|ui| {
+                                    theme::pill(ui, &format!("{ov:.0}"), theme::rgb(level_color(ov)));
+                                })
+                                .response;
+                            if let Some(det) = &r.tactical_detail {
+                                resp.on_hover_text(det);
+                            }
+                        } else {
+                            ui.label(theme::faint("—"));
+                        }
+
+                        if let Some(lvl) = r.intensity_rec {
+                            let resp = ui
+                                .horizontal(|ui| {
+                                    theme::pill(ui, lvl.short_label(), lvl.color());
+                                    if r.intensity_cur == Some(lvl) {
+                                        ui.label(theme::ic(icon::CHECK_CIRCLE).color(theme::SUCCESS).size(13.0))
+                                            .on_hover_text(t!("Actief in FM", "Active in FM", "FM'de aktif"));
+                                    }
+                                })
+                                .response;
+                            if let Some(why) = &r.intensity_reason {
+                                resp.on_hover_text(why);
+                            }
+                        } else {
+                            ui.label(theme::faint("—"));
+                        }
+
+                        if let Some(fc) = r.focus_rec {
+                            let resp = ui
+                                .horizontal(|ui| {
+                                    theme::pill(ui, fc.label(), theme::INFO);
+                                    if r.uid.is_some_and(|u| state.applied_focuses.get(&u) == Some(&fc)) {
+                                        ui.label(theme::ic(icon::CHECK_CIRCLE).color(theme::SUCCESS).size(13.0))
+                                            .on_hover_text(t!("✓ Gezet", "✓ Set", "✓ Seçildi"));
+                                    }
+                                })
+                                .response;
+                            if let Some(tip) = r.focus_reason.as_deref().or(r.focus_weak_attrs.as_deref()) {
+                                resp.on_hover_text(tip);
+                            }
+                        } else {
+                            ui.label(theme::faint("—"));
+                        }
+
+                        ui.end_row();
+                    }
+                });
         }
     });
 
-    let _ = vec2(0.0, 0.0);
+    if apply_selected {
+        let mut int_batch: Vec<(u32, IntensityLevel)> = Vec::new();
+        let mut foc_batch: Vec<(u32, i32, String)> = Vec::new();
+        let mut foc_applied: Vec<(u32, AdditionalFocus)> = Vec::new();
+
+        for r in &rows {
+            if !state.selected_players.contains(&r.key) || r.runtime_id == 0 {
+                continue;
+            }
+            if let Some(lvl) = r.intensity_rec {
+                int_batch.push((r.runtime_id, lvl));
+            }
+            if let Some(fc) = r.focus_rec {
+                if let Some((opt_id, opt_name)) = fc.match_option_id(&state.focus_options) {
+                    foc_batch.push((r.runtime_id, opt_id, opt_name));
+                    if let Some(uid) = r.uid {
+                        foc_applied.push((uid, fc));
+                    }
+                }
+            }
+        }
+
+        match write_combined_recommendations(mgr_id, &int_batch, &foc_batch) {
+            Ok(n) => {
+                for (rid, lvl) in &int_batch {
+                    state.current_intensities.insert(*rid, *lvl);
+                }
+                for (uid, fc) in &foc_applied {
+                    state.applied_focuses.insert(*uid, *fc);
+                }
+                state.status = t!(
+                    format!("Aanbevelingen voor {n} acties verstuurd naar FM27…"),
+                    format!("Sent recommendations for {n} actions to FM27…"),
+                    format!("Seçili oyuncular için {n} öneri FM27'ye gönderildi…")
+                );
+                state.status_error = false;
+            }
+            Err(e) => {
+                state.status = e;
+                state.status_error = true;
+            }
+        }
+    }
+
+    ui.add_space(14.0);
+
+    // ---- Taktik Rolü Bireysel Antrenmanı (Önizle -> Onayla -> FM27'ye Yaz)
+    render_tactic_role_card(ui, state, live, mgr_id, on_save_prefs);
 }
 
 fn render_tactic_role_card(
@@ -2267,7 +2346,7 @@ fn render_tactic_role_card(
                 format!("Onaylanan: {selected_count} / {} oyuncu", proposals.len())
             )));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if theme::primary_button(
+                if theme::button(
                     ui,
                     icon::CHECK_CIRCLE,
                     t!(
@@ -2300,17 +2379,6 @@ fn render_tactic_role_card(
             });
         });
     });
-}
-
-fn score_cell(ui: &mut Ui, v: Option<f32>) {
-    match v {
-        Some(s) => {
-            theme::pill(ui, &format!("{s:.0}"), theme::rgb(level_color(s)));
-        }
-        None => {
-            ui.label(theme::faint("—"));
-        }
-    }
 }
 
 #[cfg(test)]
@@ -2539,5 +2607,48 @@ mod tests {
         assert_eq!(props[0].runtime_id, 501);
         assert_eq!(props[0].matched_pos_role.as_ref().map(|x| x.role_id), Some(12));
         assert_eq!(props[1].matched_oop_role.as_ref().map(|x| x.0), Some(38));
+    }
+
+    #[test]
+    fn unified_player_rows_merge_and_sort_cleanly() {
+        let mut live = LiveState::default();
+        live.squad = vec![
+            json!({ "uid": 10, "runtime_id": 510, "name": "Alpha", "age": 22, "condition": 9400, "sharpness": 8500, "injuries": [] }),
+            json!({ "uid": 11, "runtime_id": 511, "name": "Beta", "age": 31, "condition": 7800, "sharpness": 7500, "injuries": [] }),
+        ];
+        live.tactics = Some(tactics::Data {
+            current: 0,
+            tactics: Vec::new(),
+            players: vec![
+                mk_player(10, 12, &[("finishing", 9), ("composure", 10), ("long_shots", 8)]),
+                mk_player(11, 3, &[("positioning", 10), ("marking", 10), ("tackling", 11)]),
+            ],
+            bench: Vec::new(),
+        });
+        let mut state = IndividualState::default();
+        state.bottlenecks.push(PlayerBottleneck {
+            runtime_id: 511,
+            name: "Beta".into(),
+            overall: 52.0,
+            understanding: Some(49.0),
+            capability: Some(58.0),
+            role_suitability: Some(61.0),
+            buy_in: Some(65.0),
+            weakest_label: "Understanding",
+            weakest_score: 49.0,
+            advice: "Drill",
+        });
+
+        let (mut rows, _) = build_unified_player_rows(&live, &state);
+        assert_eq!(rows.len(), 2);
+        sort_unified_rows(&mut rows, PlayerSortCol::TacticalScore, true);
+        assert_eq!(rows[0].name, "Beta");
+        assert_eq!(rows[0].tactical_overall, Some(52.0));
+        assert_eq!(rows[0].position, Some("STP"));
+        assert_eq!(rows[1].name, "Alpha");
+        assert_eq!(rows[1].position, Some("SNT"));
+
+        sort_unified_rows(&mut rows, PlayerSortCol::Condition, false);
+        assert_eq!(rows[0].name, "Alpha");
     }
 }

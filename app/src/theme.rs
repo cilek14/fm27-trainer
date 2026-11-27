@@ -671,10 +671,12 @@ pub fn status_dot(ui: &mut Ui, color: Color32) {
 }
 
 /// Rij met naam, waarde en een dunne balk (voor de factors).
+#[allow(dead_code)]
 pub fn metric_row(ui: &mut Ui, name: &str, value: f32, color: Color32) {
     metric_row_delta(ui, name, value, color, None);
 }
 
+#[allow(dead_code)]
 pub fn metric_row_delta(ui: &mut Ui, name: &str, value: f32, color: Color32, delta: Option<f32>) {
     let w = ui.available_width();
     let d_opt = delta.filter(|x| x.abs() >= 1.0);
@@ -695,6 +697,97 @@ pub fn metric_row_delta(ui: &mut Ui, name: &str, value: f32, color: Color32, del
     });
     progress(ui, value, 5.0, color);
     ui.add_space(4.0);
+}
+
+/// Ringless 2x2 component summary card for Team Analysis (icon, label, big score, band, delta).
+pub fn component_tile(
+    ui: &mut Ui,
+    icon_glyph: &str,
+    label: &str,
+    value: f32,
+    band_label: &str,
+    color: Color32,
+    delta: Option<f32>,
+) {
+    let d_opt = delta.filter(|x| x.abs() >= 1.0);
+    card(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(ic(icon_glyph).color(color).size(15.0));
+            ui.add(egui::Label::new(caps(label)).truncate()).on_hover_text(label);
+        });
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(format!("{value:.0}"))
+                    .font(FontId::new(26.0, semibold()))
+                    .color(color),
+            );
+            ui.add_space(4.0);
+            ui.label(dim(band_label));
+            if let Some(d) = d_opt {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let up = d > 0.0;
+                    let dc = if up { SUCCESS } else { DANGER };
+                    let txt = if up { format!("▲+{:.0}", d) } else { format!("▼{:.0}", d) };
+                    ui.label(RichText::new(txt).font(FontId::new(11.5, semibold())).color(dc));
+                });
+            }
+        });
+    });
+}
+
+/// Compact 1-row factor bar: name + inline progress bar + right-aligned fixed score + fixed delta.
+pub fn factor_bar_row(ui: &mut Ui, name: &str, value: f32, color: Color32, delta: Option<f32>) {
+    let d_opt = delta.filter(|x| x.abs() >= 1.0);
+    let total_w = ui.available_width().max(200.0);
+    let score_w = 32.0;
+    let delta_w = 36.0;
+    let gap = 8.0;
+    let name_w = (total_w * 0.44).clamp(115.0, 215.0);
+    let bar_w = (total_w - name_w - score_w - delta_w - gap * 3.0).max(44.0);
+
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        ui.allocate_ui_with_layout(
+            vec2(name_w, 20.0),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.add(egui::Label::new(RichText::new(name).size(13.0).color(TEXT_DIM)).truncate())
+                    .on_hover_text(name);
+            },
+        );
+        ui.allocate_ui_with_layout(
+            vec2(bar_w, 20.0),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                progress(ui, value, 6.0, color);
+            },
+        );
+        ui.allocate_ui_with_layout(
+            vec2(score_w, 20.0),
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| {
+                ui.label(
+                    RichText::new(format!("{value:.0}"))
+                        .font(FontId::new(13.5, semibold()))
+                        .color(color),
+                );
+            },
+        );
+        ui.allocate_ui_with_layout(
+            vec2(delta_w, 20.0),
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| {
+                if let Some(d) = d_opt {
+                    let up = d > 0.0;
+                    let dc = if up { SUCCESS } else { DANGER };
+                    let txt = if up { format!("▲+{:.0}", d) } else { format!("▼{:.0}", d) };
+                    ui.label(RichText::new(txt).font(FontId::new(11.0, semibold())).color(dc));
+                }
+            },
+        );
+    });
+    ui.add_space(3.0);
 }
 
 /// Aan/uit-schakelaar.

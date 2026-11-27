@@ -442,6 +442,18 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "suspended" => "squalificato",
         "template" => "modello",
         "type" => "tipo",
+        "17 factors" => "17 fattori",
+        "Auto-apply" => "Applica in auto",
+        "By component" => "Per componente",
+        "By score" => "Per punteggio",
+        "Injury risk, tactical bottlenecks, training intensity and Additional Focus in one sortable table." => "Rischio infortuni, criticità tattiche, intensità e focus aggiuntivo in un'unica tabella ordinabile.",
+        "Loading squad data…" => "Caricamento dati squadra…",
+        "No player data available from FM27 yet." => "Nessun dato giocatore ancora disponibile da FM27.",
+        "Rec. focus" => "Focus cons.",
+        "Rec. intensity" => "Intensità cons.",
+        "Risk" => "Rischio",
+        "Select at least one player with an applicable suggestion" => "Seleziona almeno un giocatore con un suggerimento applicabile",
+        "Tactical score" => "Punteggio tattico",
         "unconvincing" => "poco convincente",
         "very low" => "molto basso",
         "waiting for the Breakdown in FM" => "in attesa dei dati da FM",
@@ -614,6 +626,12 @@ pub fn translate_dynamic(en: String) -> String {
     }
     if let Some(n) = en.strip_prefix("Sent Additional Focus command for ").and_then(|r| r.strip_suffix(" players to FM27…")) {
         return format!("Comando Focus aggiuntivo inviato per {n} giocatori a FM27…");
+    }
+    if let Some(n) = en.strip_prefix("Apply suggestions to selected (").and_then(|r| r.strip_suffix(')')) {
+        return format!("Applica suggerimenti ai selezionati ({n})");
+    }
+    if let Some(n) = en.strip_prefix("Sent recommendations for ").and_then(|r| r.strip_suffix(" actions to FM27…")) {
+        return format!("Suggerimenti inviati per {n} azioni a FM27…");
     }
     if let Some(mid) = en.strip_prefix("Injured → low-strain technical/tactical focus (").and_then(|r| r.strip_suffix(").")) {
         return format!("Infortunato → focus tecnico/tattico leggero ({mid}).");

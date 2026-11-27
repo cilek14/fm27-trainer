@@ -442,6 +442,18 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "suspended" => "sancionado",
         "template" => "plantilla",
         "type" => "tipo",
+        "17 factors" => "17 factores",
+        "Auto-apply" => "Aplicar auto",
+        "By component" => "Por componente",
+        "By score" => "Por puntuación",
+        "Injury risk, tactical bottlenecks, training intensity and Additional Focus in one sortable table." => "Riesgo de lesión, cuellos tácticos, intensidad y enfoque adicional en una tabla ordenable.",
+        "Loading squad data…" => "Cargando datos de la plantilla…",
+        "No player data available from FM27 yet." => "Aún no hay datos de jugadores desde FM27.",
+        "Rec. focus" => "Enfoque rec.",
+        "Rec. intensity" => "Intensidad rec.",
+        "Risk" => "Riesgo",
+        "Select at least one player with an applicable suggestion" => "Selecciona al menos un jugador con una sugerencia aplicable",
+        "Tactical score" => "Puntuación táctica",
         "unconvincing" => "poco convincente",
         "very low" => "muy bajo",
         "waiting for the Breakdown in FM" => "esperando datos de FM",
@@ -614,6 +626,12 @@ pub fn translate_dynamic(en: String) -> String {
     }
     if let Some(n) = en.strip_prefix("Sent Additional Focus command for ").and_then(|r| r.strip_suffix(" players to FM27…")) {
         return format!("Orden de Enfoque Adicional enviada para {n} jugadores a FM27…");
+    }
+    if let Some(n) = en.strip_prefix("Apply suggestions to selected (").and_then(|r| r.strip_suffix(')')) {
+        return format!("Aplicar sugerencias a la selección ({n})");
+    }
+    if let Some(n) = en.strip_prefix("Sent recommendations for ").and_then(|r| r.strip_suffix(" actions to FM27…")) {
+        return format!("Recomendaciones enviadas para {n} acciones a FM27…");
     }
     if let Some(mid) = en.strip_prefix("Injured → low-strain technical/tactical focus (").and_then(|r| r.strip_suffix(").")) {
         return format!("Lesionado → enfoque técnico/táctico suave ({mid}).");
