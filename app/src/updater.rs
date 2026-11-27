@@ -46,6 +46,7 @@ pub enum InstallOutcome {
 
 pub struct UpdaterState {
     pub status: UpdateStatus,
+    pub last_install_failed: bool,
     startup_checked: bool,
     rx_check: Option<mpsc::Receiver<Result<Option<ReleaseInfo>, String>>>,
     rx_install: Option<mpsc::Receiver<Result<InstallOutcome, String>>>,
@@ -55,10 +56,80 @@ impl Default for UpdaterState {
     fn default() -> Self {
         Self {
             status: UpdateStatus::Idle,
+            last_install_failed: false,
             startup_checked: false,
             rx_check: None,
             rx_install: None,
         }
+    }
+}
+
+pub(crate) fn append_update_log(updates_dir: &Path, msg: &str) {
+    use std::io::Write;
+    let _ = std::fs::create_dir_all(updates_dir);
+    let log_path = updates_dir.join("update.log");
+    let truncate = std::fs::metadata(&log_path)
+        .map(|m| m.len() > 65_536)
+        .unwrap_or(false);
+    let file_res = if truncate {
+        std::fs::File::create(&log_path)
+    } else {
+        std::fs::OpenOptions::new().create(true).append(true).open(&log_path)
+    };
+    if let Ok(mut f) = file_res {
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        let _ = writeln!(f, "[{ts}] {msg}");
+    }
+}
+
+pub(crate) fn should_skip_auto_install(updates_dir: &Path, target_version: &str) -> bool {
+    let marker = updates_dir.join("last_auto_attempt.txt");
+    std::fs::read_to_string(marker)
+        .map(|s| s.trim() == target_version.trim())
+        .unwrap_or(false)
+}
+
+pub(crate) fn record_auto_attempt(updates_dir: &Path, target_version: &str) {
+    if std::fs::create_dir_all(updates_dir).is_ok() {
+        let _ = std::fs::write(updates_dir.join("last_auto_attempt.txt"), target_version.trim());
+    }
+}
+
+pub(crate) fn clear_auto_attempt(updates_dir: &Path) {
+    let _ = std::fs::remove_file(updates_dir.join("last_auto_attempt.txt"));
+}
+
+#[cfg(windows)]
+fn cleanup_stale_old_exe() {
+    let Ok(raw_exe) = std::env::current_exe() else { return };
+    let exe = strip_verbatim_prefix(raw_exe);
+    let Some(parent) = exe.parent() else { return };
+    let Some(name) = exe.file_name().and_then(|n| n.to_str()) else { return };
+    let prefix = format!("{name}.old");
+    let Ok(entries) = std::fs::read_dir(parent) else { return };
+    let stale: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n == prefix || n.starts_with(&format!("{prefix}.")))
+        })
+        .collect();
+    if stale.is_empty() {
+        return;
+    }
+    for _ in 0..20 {
+        let mut all_gone = true;
+        for p in &stale {
+            if p.exists() && std::fs::remove_file(p).is_err() {
+                all_gone = false;
+            }
+        }
+        if all_gone {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
     }
 }
 
@@ -78,6 +149,7 @@ impl UpdaterState {
         if self.busy() {
             return;
         }
+        self.last_install_failed = false;
         self.status = UpdateStatus::Checking;
         let (tx, rx) = mpsc::channel();
         let ctx2 = ctx.clone();
@@ -93,6 +165,7 @@ impl UpdaterState {
         if self.rx_install.is_some() {
             return;
         }
+        self.last_install_failed = false;
         self.status = UpdateStatus::Downloading {
             version: info.version.clone(),
         };
@@ -110,6 +183,8 @@ impl UpdaterState {
         if !self.startup_checked {
             self.startup_checked = true;
             if std::env::var_os("FM27_SNAPSHOT").is_none() {
+                #[cfg(windows)]
+                std::thread::spawn(cleanup_stale_old_exe);
                 self.start_check(ctx);
             }
         }
@@ -121,10 +196,23 @@ impl UpdaterState {
                     let has_asset = info.asset.is_some();
                     self.status = UpdateStatus::Available(info.clone());
                     if auto_update && has_asset {
-                        self.start_install(ctx, info);
+                        let updates_dir = crate::data_dir().join("updates");
+                        if should_skip_auto_install(&updates_dir, &info.version) {
+                            append_update_log(
+                                &updates_dir,
+                                &format!(
+                                    "Skipping automatic update to v{} (previous attempt did not complete); manual install remains available.",
+                                    info.version
+                                ),
+                            );
+                        } else {
+                            record_auto_attempt(&updates_dir, &info.version);
+                            self.start_install(ctx, info);
+                        }
                     }
                 }
                 Ok(None) => {
+                    clear_auto_attempt(&crate::data_dir().join("updates"));
                     self.status = UpdateStatus::UpToDate;
                 }
                 Err(e) => {
@@ -150,6 +238,8 @@ impl UpdaterState {
                     self.status = UpdateStatus::InstalledManual { message };
                 }
                 Err(e) => {
+                    self.last_install_failed = true;
+                    append_update_log(&crate::data_dir().join("updates"), &format!("Install error: {e}"));
                     self.status = UpdateStatus::Error(e);
                 }
             }
@@ -529,6 +619,24 @@ fn download_and_install(info: &ReleaseInfo) -> Result<InstallOutcome, String> {
     }
 }
 
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) fn strip_verbatim_prefix(p: PathBuf) -> PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\")
+        && !rest.to_ascii_uppercase().starts_with(r"UNC\")
+    {
+        return PathBuf::from(rest);
+    }
+    p
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) fn old_exe_path(exe: &Path) -> PathBuf {
+    let mut os = exe.as_os_str().to_os_string();
+    os.push(".old");
+    PathBuf::from(os)
+}
+
 #[cfg(windows)]
 fn ps_escape(p: &Path) -> String {
     p.to_string_lossy().replace('\'', "''")
@@ -563,22 +671,297 @@ fn find_extracted_files(dir: &Path) -> (Option<PathBuf>, Option<PathBuf>) {
 }
 
 #[cfg(windows)]
-fn install_windows(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome, String> {
+pub(crate) fn extract_zip_windows(dl_path: &Path, staging: &Path, updates_dir: &Path) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    let current_exe = std::env::current_exe().map_err(|e| {
+    let _ = std::fs::remove_dir_all(staging);
+    std::fs::create_dir_all(staging).map_err(|e| {
+        t!(
+            format!("Tijdelijke map niet aangemaakt: {e}"),
+            format!("Could not create temp folder: {e}"),
+            format!("Geçici klasör oluşturulamadı: {e}")
+        )
+    })?;
+
+    match Command::new("tar.exe")
+        .arg("-xf")
+        .arg(dl_path)
+        .arg("-C")
+        .arg(staging)
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(Stdio::null())
+        .output()
+    {
+        Ok(out) if out.status.success() => return Ok(()),
+        Ok(out) => {
+            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            append_update_log(updates_dir, &format!("tar.exe extract failed ({:?}): {err}", out.status.code()));
+        }
+        Err(e) => {
+            append_update_log(updates_dir, &format!("tar.exe unavailable ({e}); falling back to Expand-Archive"));
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(staging);
+    std::fs::create_dir_all(staging).map_err(|e| {
+        t!(
+            format!("Tijdelijke map niet aangemaakt: {e}"),
+            format!("Could not create temp folder: {e}"),
+            format!("Geçici klasör oluşturulamadı: {e}")
+        )
+    })?;
+
+    let exp = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            "Expand-Archive -LiteralPath $env:FM27_ZIP -DestinationPath $env:FM27_DST -Force",
+        ])
+        .env("FM27_ZIP", dl_path)
+        .env("FM27_DST", staging)
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| {
+            t!(
+                format!("Kon PowerShell niet starten: {e}"),
+                format!("Could not start PowerShell: {e}"),
+                format!("PowerShell başlatılamadı: {e}")
+            )
+        })?;
+    if !exp.status.success() {
+        let err = String::from_utf8_lossy(&exp.stderr).trim().to_string();
+        append_update_log(updates_dir, &format!("Expand-Archive failed ({:?}): {err}", exp.status.code()));
+        return Err(t!(
+            "ZIP-archief kon niet worden uitgepakt.",
+            "Could not extract ZIP archive.",
+            "ZIP arşivi açılamadı."
+        )
+        .into());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn verify_windows_exe_min(path: &Path, min_size: u64) -> Result<u64, String> {
+    use std::io::Read;
+    let meta = std::fs::metadata(path).map_err(|e| {
+        t!(
+            format!("Kon bestand niet controleren: {e}"),
+            format!("Could not verify downloaded file: {e}"),
+            format!("Dosya doğrulanamadı: {e}")
+        )
+    })?;
+    if meta.len() < min_size {
+        return Err(t!(
+            format!("Gedownload bestand te klein ({} bytes).", meta.len()),
+            format!("Downloaded file smaller than expected ({} bytes).", meta.len()),
+            format!("İndirilen dosya beklenenden küçük ({} bayt).", meta.len())
+        ));
+    }
+    let mut hdr = [0u8; 2];
+    let mut f = std::fs::File::open(path).map_err(|e| {
+        t!(
+            format!("Kon bestand niet openen: {e}"),
+            format!("Could not open update file: {e}"),
+            format!("Güncelleme dosyası açılamadı: {e}")
+        )
+    })?;
+    if f.read_exact(&mut hdr).is_err() || &hdr != b"MZ" {
+        return Err(t!(
+            "Ongeldig EXE-bestand gedownload.",
+            "Downloaded EXE file is invalid.",
+            "İndirilen EXE dosyası geçersiz."
+        )
+        .into());
+    }
+    Ok(meta.len())
+}
+
+#[cfg(windows)]
+pub(crate) fn replace_running_exe_windows(current_exe: &Path, new_exe: &Path, min_size: u64) -> Result<PathBuf, String> {
+    let expected_len = verify_windows_exe_min(new_exe, min_size)?;
+
+    let mut old_exe = old_exe_path(current_exe);
+    if old_exe.exists() && std::fs::remove_file(&old_exe).is_err() {
+        let mut alt = current_exe.as_os_str().to_os_string();
+        alt.push(format!(".old.{}", std::process::id()));
+        old_exe = PathBuf::from(alt);
+    }
+
+    std::fs::rename(current_exe, &old_exe).map_err(|e| format!("rename failed: {e}"))?;
+
+    let mut copy_err: Option<String> = None;
+    for attempt in 0..10 {
+        match std::fs::copy(new_exe, current_exe) {
+            Ok(written) if written == expected_len && verify_windows_exe_min(current_exe, min_size).is_ok() => {
+                return Ok(old_exe);
+            }
+            Ok(written) => {
+                copy_err = Some(format!("incomplete copy ({written} != {expected_len} bytes)"));
+            }
+            Err(e) => {
+                copy_err = Some(e.to_string());
+            }
+        }
+        if attempt < 9 {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+    }
+
+    let _ = std::fs::remove_file(current_exe);
+    let _ = std::fs::rename(&old_exe, current_exe);
+    let reason = copy_err.unwrap_or_else(|| "unknown copy error".to_string());
+    Err(t!(
+        format!("Kon update niet kopiëren: {reason}"),
+        format!("Could not copy update executable: {reason}"),
+        format!("Güncelleme dosyası kopyalanamadı: {reason}")
+    ))
+}
+
+#[cfg(windows)]
+pub(crate) fn build_windows_fallback_ps1(
+    pid: u32,
+    src_exe: &Path,
+    current_exe: &Path,
+    src_dll: Option<&Path>,
+    staging: Option<&Path>,
+    dl_path: &Path,
+    log_path: &Path,
+) -> Vec<u8> {
+    let work_dir = current_exe.parent().unwrap_or_else(|| Path::new("."));
+    let dll_str = src_dll.map(ps_escape).unwrap_or_default();
+    let staging_str = staging.map(ps_escape).unwrap_or_default();
+    let script = format!(
+        "$ErrorActionPreference = 'Continue'\r\n\
+         $logPath = '{log}'\r\n\
+         function Write-Log($m) {{ try {{ Add-Content -LiteralPath $logPath -Value \"[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $m\" -Encoding UTF8 }} catch {{}} }}\r\n\
+         $pidWait = {pid}\r\n\
+         for ($i = 0; $i -lt 60; $i++) {{\r\n\
+           if (-not (Get-Process -Id $pidWait -ErrorAction SilentlyContinue)) {{ break }}\r\n\
+           Start-Sleep -Milliseconds 250\r\n\
+         }}\r\n\
+         Start-Sleep -Milliseconds 250\r\n\
+         try {{ Unblock-File -LiteralPath '{src}' -ErrorAction SilentlyContinue }} catch {{}}\r\n\
+         $copied = $false\r\n\
+         for ($i = 0; $i -lt 40; $i++) {{\r\n\
+           try {{\r\n\
+             Copy-Item -LiteralPath '{src}' -Destination '{dst}' -Force -ErrorAction Stop\r\n\
+             try {{ Unblock-File -LiteralPath '{dst}' -ErrorAction SilentlyContinue }} catch {{}}\r\n\
+             $copied = $true\r\n\
+             break\r\n\
+           }} catch {{\r\n\
+             if ($i -eq 39) {{ Write-Log \"Fallback Copy-Item failed: $($_.Exception.Message)\" }}\r\n\
+             Start-Sleep -Milliseconds 300\r\n\
+           }}\r\n\
+         }}\r\n\
+         $srcDll = '{dll}'\r\n\
+         if ($srcDll -ne '' -and (Test-Path -LiteralPath $srcDll)) {{\r\n\
+           $bridgeDir = Join-Path '{dir}' 'BepInEx\\plugins\\FM27Trainer.Bridge'\r\n\
+           if (Test-Path -LiteralPath $bridgeDir) {{\r\n\
+             try {{ Copy-Item -LiteralPath $srcDll -Destination (Join-Path $bridgeDir 'FM27Trainer.Bridge.dll') -Force -ErrorAction Stop }} catch {{ Write-Log \"DLL copy failed: $($_.Exception.Message)\" }}\r\n\
+           }}\r\n\
+         }}\r\n\
+         $stagingDir = '{stg}'\r\n\
+         if ($stagingDir -ne '' -and (Test-Path -LiteralPath $stagingDir)) {{\r\n\
+           Remove-Item -LiteralPath $stagingDir -Recurse -Force -ErrorAction SilentlyContinue\r\n\
+         }}\r\n\
+         if ($copied) {{\r\n\
+           Remove-Item -LiteralPath '{dl}' -Force -ErrorAction SilentlyContinue\r\n\
+         }}\r\n\
+         try {{\r\n\
+           Start-Process -FilePath '{dst}' -WorkingDirectory '{dir}' -WindowStyle Normal -ErrorAction Stop\r\n\
+         }} catch {{\r\n\
+           Write-Log \"Fallback Start-Process failed: $($_.Exception.Message)\"\r\n\
+         }}\r\n\
+         Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue\r\n",
+        log = ps_escape(log_path),
+        pid = pid,
+        src = ps_escape(src_exe),
+        dst = ps_escape(current_exe),
+        dir = ps_escape(work_dir),
+        dll = dll_str,
+        stg = staging_str,
+        dl = ps_escape(dl_path),
+    );
+    let mut out = Vec::with_capacity(3 + script.len());
+    out.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+    out.extend_from_slice(script.as_bytes());
+    out
+}
+
+#[cfg(windows)]
+fn spawn_windows_fallback_script(
+    pid: u32,
+    src_exe: &Path,
+    current_exe: &Path,
+    src_dll: Option<&Path>,
+    staging: Option<&Path>,
+    dl_path: &Path,
+    updates_dir: &Path,
+) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+
+    let ps1 = updates_dir.join("apply_update.ps1");
+    let log_path = updates_dir.join("update.log");
+    let bytes = build_windows_fallback_ps1(pid, src_exe, current_exe, src_dll, staging, dl_path, &log_path);
+    std::fs::write(&ps1, bytes).map_err(|e| {
+        t!(
+            format!("Updatescript niet opgeslagen: {e}"),
+            format!("Could not write updater script: {e}"),
+            format!("Güncelleme betiği yazılamadı: {e}")
+        )
+    })?;
+
+    let spawn_ps = |flags: u32| {
+        Command::new("powershell.exe")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File"])
+            .arg(&ps1)
+            .creation_flags(flags)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+    };
+
+    if spawn_ps(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB).is_err() {
+        spawn_ps(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP).map_err(|e| {
+            t!(
+                format!("Kon updater niet starten: {e}"),
+                format!("Could not launch updater: {e}"),
+                format!("Güncelleyici başlatılamadı: {e}")
+            )
+        })?;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn install_windows(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome, String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+    let raw_exe = std::env::current_exe().map_err(|e| {
         t!(
             format!("App-pad niet gevonden: {e}"),
             format!("Could not locate current executable: {e}"),
             format!("Uygulama yolu alınamadı: {e}")
         )
     })?;
-    if let Some(parent) = current_exe.parent() {
+    let current_exe = strip_verbatim_prefix(raw_exe);
+    let parent = current_exe.parent().unwrap_or_else(|| Path::new("."));
+    {
         let probe = parent.join(".fm27_update_probe");
         if std::fs::write(&probe, b"").is_ok() {
             let _ = std::fs::remove_file(&probe);
         } else {
+            append_update_log(updates_dir, &format!("Folder not writable: {}", parent.display()));
             let _ = Command::new("explorer.exe")
                 .arg(format!("/select,{}", dl_path.display()))
                 .spawn();
@@ -591,47 +974,17 @@ fn install_windows(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome,
             });
         }
     }
+
     let staging = updates_dir.join("staging");
     let lower = dl_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
+    let is_zip = lower.ends_with(".zip");
 
-    let (src_exe, src_dll) = if lower.ends_with(".zip") {
-        let _ = std::fs::remove_dir_all(&staging);
-        std::fs::create_dir_all(&staging).map_err(|e| {
-            t!(
-                format!("Tijdelijke map niet aangemaakt: {e}"),
-                format!("Could not create temp folder: {e}"),
-                format!("Geçici klasör oluşturulamadı: {e}")
-            )
-        })?;
-        let expand_cmd = format!(
-            "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
-            ps_escape(dl_path),
-            ps_escape(&staging)
-        );
-        let exp = Command::new("powershell.exe")
-            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &expand_cmd])
-            .creation_flags(CREATE_NO_WINDOW)
-            .stdin(Stdio::null())
-            .output()
-            .map_err(|e| {
-                t!(
-                    format!("Kon PowerShell niet starten: {e}"),
-                    format!("Could not start PowerShell: {e}"),
-                    format!("PowerShell başlatılamadı: {e}")
-                )
-            })?;
-        if !exp.status.success() {
-            return Err(t!(
-                "ZIP-archief kon niet worden uitgepakt.",
-                "Could not extract ZIP archive.",
-                "ZIP arşivi açılamadı."
-            )
-            .into());
-        }
+    let (src_exe, src_dll) = if is_zip {
+        extract_zip_windows(dl_path, &staging, updates_dir)?;
         let (exe_opt, dll_opt) = find_extracted_files(&staging);
         let exe = exe_opt.ok_or_else(|| {
             t!(
@@ -646,81 +999,85 @@ fn install_windows(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome,
         (dl_path.to_path_buf(), None)
     };
 
-    let pid = std::process::id();
-    let dll_str = src_dll.as_deref().map(ps_escape).unwrap_or_default();
-    let staging_str = if lower.ends_with(".zip") {
-        ps_escape(&staging)
-    } else {
-        String::new()
-    };
-
-    let ps1 = updates_dir.join("apply_update.ps1");
-    let script = format!(
-        "$ErrorActionPreference = 'SilentlyContinue'\r\n\
-         $pidWait = {pid}\r\n\
-         for ($i = 0; $i -lt 60; $i++) {{\r\n\
-           if (-not (Get-Process -Id $pidWait -ErrorAction SilentlyContinue)) {{ break }}\r\n\
-           Start-Sleep -Milliseconds 250\r\n\
-         }}\r\n\
-         Start-Sleep -Milliseconds 200\r\n\
-         $copied = $false\r\n\
-         for ($i = 0; $i -lt 15; $i++) {{\r\n\
-           try {{\r\n\
-             Copy-Item -LiteralPath '{src}' -Destination '{dst}' -Force -ErrorAction Stop\r\n\
-             $copied = $true\r\n\
-             break\r\n\
-           }} catch {{\r\n\
-             Start-Sleep -Milliseconds 300\r\n\
-           }}\r\n\
-         }}\r\n\
-         $srcDll = '{dll}'\r\n\
-         if ($srcDll -ne '' -and (Test-Path -LiteralPath $srcDll)) {{\r\n\
-           $bridgeDir = Join-Path (Split-Path -LiteralPath '{dst}') 'BepInEx\\plugins\\FM27Trainer.Bridge'\r\n\
-           if (Test-Path -LiteralPath $bridgeDir) {{\r\n\
-             Copy-Item -LiteralPath $srcDll -Destination (Join-Path $bridgeDir 'FM27Trainer.Bridge.dll') -Force\r\n\
-           }}\r\n\
-         }}\r\n\
-         $stagingDir = '{stg}'\r\n\
-         if ($stagingDir -ne '' -and (Test-Path -LiteralPath $stagingDir)) {{\r\n\
-           Remove-Item -LiteralPath $stagingDir -Recurse -Force\r\n\
-         }}\r\n\
-         if ($copied) {{\r\n\
-           Remove-Item -LiteralPath '{dl}' -Force\r\n\
-         }}\r\n\
-         Start-Process -FilePath '{dst}'\r\n\
-         Remove-Item -LiteralPath $PSCommandPath -Force\r\n",
-        pid = pid,
-        src = ps_escape(&src_exe),
-        dst = ps_escape(&current_exe),
-        dll = dll_str,
-        stg = staging_str,
-        dl = ps_escape(dl_path),
+    append_update_log(
+        updates_dir,
+        &format!("Applying Windows update from {} -> {}", src_exe.display(), current_exe.display()),
     );
-    std::fs::write(&ps1, script).map_err(|e| {
-        t!(
-            format!("Updatescript niet opgeslagen: {e}"),
-            format!("Could not write updater script: {e}"),
-            format!("Güncelleme betiği yazılamadı: {e}")
-        )
-    })?;
 
-    Command::new("powershell.exe")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File"])
-        .arg(&ps1)
-        .creation_flags(CREATE_NO_WINDOW)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| {
-            t!(
-                format!("Kon updater niet starten: {e}"),
-                format!("Could not launch updater: {e}"),
-                format!("Güncelleyici başlatılamadı: {e}")
-            )
-        })?;
+    match replace_running_exe_windows(&current_exe, &src_exe, 200_000) {
+        Ok(old_exe) => {
+            if let Some(ref dll) = src_dll
+                && dll.exists()
+            {
+                let bridge_dir = parent.join("BepInEx").join("plugins").join("FM27Trainer.Bridge");
+                if bridge_dir.exists() {
+                    let _ = std::fs::copy(dll, bridge_dir.join("FM27Trainer.Bridge.dll"));
+                }
+            }
+            if is_zip {
+                let _ = std::fs::remove_dir_all(&staging);
+            }
+            let _ = std::fs::remove_file(dl_path);
 
-    Ok(InstallOutcome::Restarting)
+            let mut child = match Command::new(&current_exe)
+                .current_dir(parent)
+                .creation_flags(CREATE_NEW_PROCESS_GROUP)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    append_update_log(updates_dir, &format!("Direct relaunch spawn failed: {e}"));
+                    let _ = std::fs::remove_file(&current_exe);
+                    let _ = std::fs::rename(&old_exe, &current_exe);
+                    return Err(t!(
+                        format!("Kon nieuwe versie niet starten: {e}"),
+                        format!("Could not launch new version: {e}"),
+                        format!("Yeni sürüm başlatılamadı: {e}")
+                    ));
+                }
+            };
+
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            if let Ok(Some(status)) = child.try_wait()
+                && !status.success()
+            {
+                append_update_log(updates_dir, &format!("New executable exited immediately: {status}"));
+                let _ = std::fs::remove_file(&current_exe);
+                let _ = std::fs::rename(&old_exe, &current_exe);
+                return Err(t!(
+                    format!("Nieuwe versie sloot direct af ({status})."),
+                    format!("New version exited immediately ({status})."),
+                    format!("Yeni sürüm hemen kapandı ({status}).")
+                ));
+            }
+
+            append_update_log(
+                updates_dir,
+                &format!("New executable launched (pid={}); closing old instance.", child.id()),
+            );
+            Ok(InstallOutcome::Restarting)
+        }
+        Err(err) if err.starts_with("rename failed:") && current_exe.exists() => {
+            append_update_log(updates_dir, &format!("In-place rename unavailable ({err}); using PowerShell fallback."));
+            spawn_windows_fallback_script(
+                std::process::id(),
+                &src_exe,
+                &current_exe,
+                src_dll.as_deref(),
+                is_zip.then_some(staging.as_path()),
+                dl_path,
+                updates_dir,
+            )?;
+            Ok(InstallOutcome::Restarting)
+        }
+        Err(err) => {
+            append_update_log(updates_dir, &format!("In-place replacement failed: {err}"));
+            Err(err)
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -745,16 +1102,24 @@ fn install_macos(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome, S
 
     if is_dmg {
         if let Some(target_app) = app_bundle {
-            if let Some(parent) = target_app.parent() {
+            if target_app.to_string_lossy().contains("/AppTranslocation/") {
+                append_update_log(
+                    updates_dir,
+                    &format!("App is running under AppTranslocation ({}); opening DMG manually.", target_app.display()),
+                );
+            } else if let Some(parent) = target_app.parent() {
                 let probe = parent.join(".fm27_update_probe");
                 if std::fs::write(&probe, b"").is_ok() {
                     let _ = std::fs::remove_file(&probe);
                     let mnt = updates_dir.join("dmg_mount");
                     let sh = updates_dir.join("apply_update.sh");
+                    let log_path = updates_dir.join("update.log");
                     let pid = std::process::id();
                     let script = format!(
                         "#!/bin/sh\n\
                          PID={pid}\n\
+                         LOG={log}\n\
+                         log() {{ printf '[%s] %s\\n' \"$(date '+%Y-%m-%d %H:%M:%S')\" \"$1\" >> \"$LOG\"; }}\n\
                          i=0\n\
                          while kill -0 $PID 2>/dev/null && [ $i -lt 60 ]; do\n\
                            sleep 0.25\n\
@@ -764,21 +1129,44 @@ fn install_macos(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome, S
                          MNT={mnt}\n\
                          DMG={dmg}\n\
                          TARGET={target}\n\
-                         rm -rf \"$MNT\"\n\
+                         NEW_APP=\"$TARGET.new\"\n\
+                         OLD_APP=\"$TARGET.old\"\n\
+                         rm -rf \"$MNT\" \"$NEW_APP\"\n\
                          mkdir -p \"$MNT\"\n\
+                         COPIED=0\n\
                          if hdiutil attach -nobrowse -quiet -mountpoint \"$MNT\" \"$DMG\"; then\n\
                            SRC_APP=$(find \"$MNT\" -maxdepth 1 -name '*.app' | head -n 1)\n\
-                           if [ -n \"$SRC_APP\" ]; then\n\
-                             rm -rf \"$TARGET\"\n\
-                             cp -R \"$SRC_APP\" \"$TARGET\"\n\
-                             xattr -cr \"$TARGET\" 2>/dev/null || true\n\
+                           if [ -n \"$SRC_APP\" ] && cp -R \"$SRC_APP\" \"$NEW_APP\"; then\n\
+                             rm -rf \"$OLD_APP\"\n\
+                             if [ ! -e \"$TARGET\" ] || mv \"$TARGET\" \"$OLD_APP\"; then\n\
+                               if mv \"$NEW_APP\" \"$TARGET\"; then\n\
+                                 rm -rf \"$OLD_APP\"\n\
+                                 xattr -cr \"$TARGET\" 2>/dev/null || true\n\
+                                 COPIED=1\n\
+                               else\n\
+                                 log \"Failed to move new app into place\"\n\
+                                 mv \"$OLD_APP\" \"$TARGET\" 2>/dev/null || true\n\
+                               fi\n\
+                             else\n\
+                               log \"Failed to back up existing app bundle\"\n\
+                               rm -rf \"$NEW_APP\"\n\
+                             fi\n\
+                           else\n\
+                             log \"Failed to copy app bundle from DMG\"\n\
+                             rm -rf \"$NEW_APP\"\n\
                            fi\n\
                            hdiutil detach -quiet \"$MNT\" 2>/dev/null || true\n\
+                         else\n\
+                           log \"hdiutil attach failed\"\n\
                          fi\n\
-                         rm -rf \"$MNT\" \"$DMG\"\n\
-                         open \"$TARGET\"\n\
+                         rm -rf \"$MNT\"\n\
+                         if [ $COPIED -eq 1 ]; then\n\
+                           rm -f \"$DMG\"\n\
+                         fi\n\
+                         open -n \"$TARGET\" || open \"$TARGET\"\n\
                          rm -f \"$0\"\n",
                         pid = pid,
+                        log = sh_escape(&log_path),
                         mnt = sh_escape(&mnt),
                         dmg = sh_escape(dl_path),
                         target = sh_escape(&target_app),
@@ -814,6 +1202,17 @@ fn install_macos(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome, S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn temp_test_dir(tag: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "fm27_updater_test_{tag}_{}_{}",
+            std::process::id(),
+            chrono::Local::now().timestamp_nanos_opt().unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
 
     #[test]
     fn parses_and_compares_semver_versions() {
@@ -864,5 +1263,134 @@ mod tests {
             pick_asset_for_platform(&legacy, true, false).map(|a| a.name),
             Some("Fm.27.Training.Assistant.zip".into())
         );
+    }
+
+    #[test]
+    fn anti_loop_attempt_marker_skips_same_version_only() {
+        let dir = temp_test_dir("antiloop");
+        assert!(!should_skip_auto_install(&dir, "1.4.3"));
+        record_auto_attempt(&dir, "1.4.3");
+        assert!(should_skip_auto_install(&dir, "1.4.3"));
+        assert!(!should_skip_auto_install(&dir, "1.4.4"));
+        clear_auto_attempt(&dir);
+        assert!(!should_skip_auto_install(&dir, "1.4.3"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn strip_verbatim_and_old_exe_path_work() {
+        assert_eq!(
+            strip_verbatim_prefix(PathBuf::from(r"\\?\C:\Games\FM27 Training Assistant.exe")),
+            PathBuf::from(r"C:\Games\FM27 Training Assistant.exe")
+        );
+        assert_eq!(
+            strip_verbatim_prefix(PathBuf::from(r"\\?\UNC\server\share\app.exe")),
+            PathBuf::from(r"\\?\UNC\server\share\app.exe")
+        );
+        assert_eq!(
+            old_exe_path(Path::new(r"C:\Games\FM27 Training Assistant.exe")),
+            PathBuf::from(r"C:\Games\FM27 Training Assistant.exe.old")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn extract_zip_handles_spaces_unicode_and_brackets() {
+        let dir = temp_test_dir("zip_unicode");
+        let sub = dir.join("Şükrü Ümit [v1]");
+        std::fs::create_dir_all(&sub).unwrap();
+        let src_dir = sub.join("payload");
+        let dll_dir = src_dir.join("BepInEx").join("plugins").join("FM27Trainer.Bridge");
+        std::fs::create_dir_all(&dll_dir).unwrap();
+        std::fs::write(src_dir.join("FM27 Training Assistant.exe"), b"MZ_FAKE_EXE").unwrap();
+        std::fs::write(dll_dir.join("FM27Trainer.Bridge.dll"), b"MZ_FAKE_DLL").unwrap();
+
+        let zip_path = sub.join("update [1.4.3].zip");
+        let status = Command::new("tar.exe")
+            .args(["-a", "-cf"])
+            .arg(&zip_path)
+            .arg("-C")
+            .arg(&src_dir)
+            .arg(".")
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let staging = sub.join("staging [out]");
+        extract_zip_windows(&zip_path, &staging, &sub).unwrap();
+        let (exe, dll) = find_extracted_files(&staging);
+        assert_eq!(
+            exe.as_deref().and_then(|p| p.file_name()).and_then(|n| n.to_str()),
+            Some("FM27 Training Assistant.exe")
+        );
+        assert_eq!(
+            dll.as_deref().and_then(|p| p.file_name()).and_then(|n| n.to_str()),
+            Some("FM27Trainer.Bridge.dll")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn replace_running_exe_swaps_locked_binary_and_rolls_back_on_bad_source() {
+        let dir = temp_test_dir("swap_running");
+        let current = dir.join("FM27 Training Assistant.exe");
+        let new_ok = dir.join("new_ok.exe");
+        let bad_src = dir.join("bad_src.exe");
+        let cmd_sys = Path::new(r"C:\Windows\System32\cmd.exe");
+
+        std::fs::copy(cmd_sys, &current).unwrap();
+        std::fs::copy(cmd_sys, &new_ok).unwrap();
+        std::fs::write(&bad_src, vec![b'X'; 4096]).unwrap();
+
+        // Corrupt source must fail before touching current
+        let err = replace_running_exe_windows(&current, &bad_src, 1024).unwrap_err();
+        assert!(!err.is_empty());
+        assert!(current.exists());
+        assert!(!old_exe_path(&current).exists());
+
+        // Spawn running binary and swap while running
+        let mut child = Command::new(&current)
+            .args(["/c", "ping -n 3 127.0.0.1 >nul"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        let old = replace_running_exe_windows(&current, &new_ok, 1024).unwrap();
+        assert!(old.exists());
+        assert!(current.exists());
+        assert_eq!(
+            std::fs::metadata(&current).unwrap().len(),
+            std::fs::metadata(&new_ok).unwrap().len()
+        );
+
+        let _ = child.wait();
+        let _ = std::fs::remove_file(&old);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn fallback_ps1_has_utf8_bom_and_normal_window() {
+        let dir = temp_test_dir("ps1_bom");
+        let bytes = build_windows_fallback_ps1(
+            1234,
+            &dir.join("src.exe"),
+            &dir.join("Şükrü").join("FM27 Training Assistant.exe"),
+            Some(&dir.join("FM27Trainer.Bridge.dll")),
+            Some(&dir.join("staging")),
+            &dir.join("dl.zip"),
+            &dir.join("update.log"),
+        );
+        assert!(bytes.starts_with(&[0xEF, 0xBB, 0xBF]));
+        let text = std::str::from_utf8(&bytes[3..]).unwrap();
+        assert!(text.contains("-WorkingDirectory"));
+        assert!(text.contains("-WindowStyle Normal"));
+        assert!(text.contains("update.log"));
+        assert!(text.contains("Şükrü"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

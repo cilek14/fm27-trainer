@@ -2197,9 +2197,10 @@ impl App {
         enum BannerKind {
             Available(updater::ReleaseInfo),
             Working(String),
+            Error(String),
         }
         let kind = match &self.updater.status {
-            UpdateStatus::Available(info) if !self.settings.auto_update => BannerKind::Available(info.clone()),
+            UpdateStatus::Available(info) => BannerKind::Available(info.clone()),
             UpdateStatus::Downloading { version } => BannerKind::Working(t!(
                 format!("Update v{version} wordt gedownload…"),
                 format!("Downloading update v{version}…"),
@@ -2210,12 +2211,15 @@ impl App {
                 format!("Applying update v{version}, restarting…"),
                 format!("v{version} yükleniyor, uygulama yeniden başlatılıyor…")
             )),
+            UpdateStatus::Error(err) if self.updater.last_install_failed => BannerKind::Error(err.clone()),
             _ => return,
         };
 
-        let col = matches!(kind, BannerKind::Available(_))
-            .then_some(theme::SUCCESS)
-            .unwrap_or(theme::INFO);
+        let col = match &kind {
+            BannerKind::Available(_) => theme::SUCCESS,
+            BannerKind::Working(_) => theme::INFO,
+            BannerKind::Error(_) => theme::WARNING,
+        };
         Frame::new()
             .fill(theme::tint(col, 0.12))
             .stroke(Stroke::new(1.0_f32, theme::tint(col, 0.42)))
@@ -2252,6 +2256,13 @@ impl App {
                     BannerKind::Working(msg) => {
                         ui.label(theme::ic(icon::ARROWS_CLOCKWISE).color(theme::INFO));
                         ui.label(RichText::new(msg).color(theme::TEXT));
+                    }
+                    BannerKind::Error(err) => {
+                        ui.label(theme::ic(icon::WARNING).color(theme::WARNING));
+                        ui.label(RichText::new(err).color(theme::TEXT));
+                        if theme::small_button(ui, "GitHub Releases", true).clicked() {
+                            open_path(std::path::Path::new(updater::RELEASES_PAGE));
+                        }
                     }
                 });
             });
