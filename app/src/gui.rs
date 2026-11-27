@@ -37,6 +37,8 @@ pub fn run() -> Result<()> {
             .with_inner_size(size)
             .with_min_inner_size([1040.0, 660.0])
             .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon/icon_256.png")).unwrap_or_default()),
+        vsync: !cfg!(windows),
+        persist_window: false,
         ..Default::default()
     };
     eframe::run_native(
@@ -328,7 +330,7 @@ enum SettingsSection {
     Folders,
 }
 
-type AnalysisResult = Result<(vision::Analysis, String), String>;
+type AnalysisResult = Result<(vision::Analysis, String, Option<NaiveDate>), String>;
 
 struct App {
     page: Page,
@@ -550,10 +552,18 @@ impl App {
                 let _ = std::process::Command::new("open").args(["-b", "com.SportsInteractive.FootballManager27"]).status();
                 std::thread::sleep(std::time::Duration::from_millis(1500));
             }
-            let res: AnalysisResult = match file {
+            let base = match file {
                 Some(p) => vision::analyze_file(&p).map(|(a, _)| (a, p.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default())).map_err(|e| format!("{e:#}")),
                 None => vision::analyze_screen().map(|(a, _)| (a, t!("FM27-scherm", "FM27 screen").to_string())).map_err(|e| format!("{e:#}")),
             };
+            let res: AnalysisResult = base.map(|(a, src)| {
+                let game_date = agent::request(json!({"cmd": "game_date"})).ok().and_then(|v| {
+                    let y = v.get("year").and_then(|x| x.as_i64())?;
+                    let d = v.get("doy").and_then(|x| x.as_u64())?;
+                    NaiveDate::from_yo_opt(y as i32, d as u32)
+                });
+                (a, src, game_date)
+            });
             let _ = tx.send(res);
             ctx2.request_repaint();
         });
@@ -571,16 +581,16 @@ impl App {
             let auto = std::mem::take(&mut self.auto_pending);
             match res {
                 // automatisch: alleen een volledige, zekere uitlezing telt, en alleen als er iets veranderd is
-                Ok((a, _)) if auto && (a.gauges.len() < 17 || a.components.len() < 4 || a.gauges.iter().any(|g| g.doubt)) => {
+                Ok((a, _, _)) if auto && (a.gauges.len() < 17 || a.components.len() < 4 || a.gauges.iter().any(|g| g.doubt)) => {
                     self.auto_note = t!("wacht op de Breakdown in FM", "waiting for the Breakdown in FM").to_string();
                 }
-                Ok((a, _)) if auto && same_values(&self.eff, &a.to_effectiveness("")) => {
+                Ok((a, _, _)) if auto && same_values(&self.eff, &a.to_effectiveness("")) => {
                     self.auto_note = t!(format!("geen verandering ({})", chrono::Local::now().format("%H:%M:%S")), format!("no change ({})", chrono::Local::now().format("%H:%M:%S"))).to_string();
                 }
                 Err(_) if auto => {
                     self.auto_note = t!("wacht op de Breakdown in FM", "waiting for the Breakdown in FM").to_string();
                 }
-                Ok((a, src)) => {
+                Ok((a, src, game_date)) => {
                     self.auto_fallback_file = false;
                     if auto {
                         self.auto_note = t!(format!("bijgewerkt ({})", chrono::Local::now().format("%H:%M:%S")), format!("updated ({})", chrono::Local::now().format("%H:%M:%S"))).to_string();
@@ -589,11 +599,8 @@ impl App {
                     let when = chrono::Local::now().format("%d-%m %H:%M");
                     self.eff = a.to_effectiveness(&format!("{src} · {when}"));
                     // spel-datum erbij, zodat de app weet hoe oud de meting in speltijd is
-                    if let Ok(v) = agent::request(json!({"cmd": "game_date"})) {
-                        let (y, d) = (v.get("year").and_then(|x| x.as_i64()), v.get("doy").and_then(|x| x.as_u64()));
-                        if let (Some(y), Some(d)) = (y, d) {
-                            self.eff.game_date = NaiveDate::from_yo_opt(y as i32, d as u32);
-                        }
+                    if let Some(gd) = game_date {
+                        self.eff.game_date = Some(gd);
                     }
                     let _ = crate::save_effectiveness(&self.eff);
                     let hkey = self.club_history_key();
@@ -666,12 +673,16 @@ impl App {
     // -------------------------------------------------------------------- shell
 
     fn apply_ui_scale(&mut self, ctx: &egui::Context) {
+        let minimized = ctx.input(|i| i.viewport().minimized == Some(true));
         let unzoomed_w = ctx.input(|i| {
             i.viewport()
                 .inner_rect
                 .map(|r| r.width())
                 .unwrap_or_else(|| i.screen_rect().width() * ctx.zoom_factor())
         });
+        if minimized || unzoomed_w < 100.0 {
+            return;
+        }
         let pref = self.settings.ui_scale;
         if self.applied_scale_pref != Some(pref) {
             let z = pref.factor(unzoomed_w);
@@ -2943,11 +2954,12 @@ impl eframe::App for App {
                     };
                     theme::centered_column(ui, max_w, |ui| {
                         // pagina komt zacht binnen: kort vervagen en een paar pixels omhoog schuiven
+                        let minimized = ctx.input(|i| i.viewport().minimized == Some(true));
                         if self.shown_page != Some(self.page) {
                             self.shown_page = Some(self.page);
                             theme::restart_enter(ctx);
                         }
-                        let t = theme::enter(ctx, 0.22);
+                        let t = if minimized { 1.0 } else { theme::enter(ctx, 0.22) };
                         ui.set_opacity(0.25 + 0.75 * t);
                         ui.add_space(8.0 * (1.0 - t));
                         self.render_global_strip(ui);
@@ -3041,7 +3053,10 @@ impl eframe::App for App {
                     });
                 });
             });
-        if self.analysis_rx.is_some() || self.live.busy() || self.updater.busy() {
+        let minimized = ctx.input(|i| i.viewport().minimized == Some(true));
+        if minimized {
+            ctx.request_repaint_after(std::time::Duration::from_secs(5));
+        } else if self.analysis_rx.is_some() || self.live.busy() || self.updater.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         } else if self.settings.auto_read {
             ctx.request_repaint_after(std::time::Duration::from_secs(1));
@@ -3058,9 +3073,21 @@ const DONATE_URL: &str = "https://buymeacoffee.com/cilek14";
 
 fn open_path(p: &std::path::Path) {
     #[cfg(target_os = "macos")]
-    let _ = std::process::Command::new("open").arg(p).status();
+    let _ = std::process::Command::new("open").arg(p).spawn();
     #[cfg(windows)]
-    let _ = std::process::Command::new("explorer").arg(p).status();
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let s = p.to_string_lossy();
+        if s.starts_with("http://") || s.starts_with("https://") {
+            let _ = std::process::Command::new("cmd")
+                .args(["/C", "start", "", &s])
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn();
+        } else {
+            let _ = std::process::Command::new("explorer.exe").arg(p).spawn();
+        }
+    }
 }
 
 fn money(v: i64) -> String {

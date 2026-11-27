@@ -623,11 +623,13 @@ impl LiveState {
         if !agent::LIVE_SUPPORTED {
             return;
         }
-        // verbinding bijhouden: elke 20 s (of meteen als er een socket is maar nog geen verbinding)
+        // verbinding bijhouden: elke 20 s (of om de 5 s zoeken als niet verbonden)
         let due = self.last_poll.is_none_or(|t| t.elapsed().as_secs() >= if self.connected { 20 } else { 5 });
-        if due && !self.busy() && agent::module_ready() {
+        if due && !self.busy() {
             self.last_poll = Some(Instant::now());
-            self.refresh(ctx, "", None);
+            if agent::module_ready() {
+                self.refresh(ctx, "", None);
+            }
         }
         // nieuwe effectiveness → komende weken opnieuw plannen
         // automatische modus: alle komende weken volgens plan houden. FM bouwt een week opnieuw op als

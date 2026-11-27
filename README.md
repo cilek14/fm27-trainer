@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/release-v1.4.0-10b981">
+  <img alt="Version" src="https://img.shields.io/badge/release-v1.4.1-10b981">
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B%20Universal-111111?logo=apple">
   <img alt="FM27" src="https://img.shields.io/badge/Football%20Manager-27-c8102e">
@@ -249,5 +249,5 @@ Technical notes: [docs/TECHNICAL.md](docs/TECHNICAL.md)
 ## Credits & License
 
 - License: [GNU General Public License v3.0 (GPL-3.0)](LICENSE)
-- Original upstream project: [SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer) by **Sem Hiel** (MIT).
+- Original upstream project: [SemHiel2003/fm27-trainer](https://github.com/SemHiel2003/fm27-trainer) by **Sem Hiel** — full notice in [LICENSE-UPSTREAM-MIT](LICENSE-UPSTREAM-MIT).
 - Research & layouts: FMSuperScout, FMLibreEditor, fm-lens, fmsave. Font: Inter (SIL OFL). Icons: Phosphor (MIT). See [THIRD_PARTY.md](THIRD_PARTY.md).
