@@ -13,6 +13,7 @@ mod i18n_it;
 mod i18n_tr;
 mod individual;
 mod labels;
+mod license;
 mod live;
 mod live_training;
 mod model;
@@ -49,19 +50,34 @@ fn fm_user_dir() -> PathBuf {
     }
 }
 
-fn effectiveness_file() -> PathBuf {
-    data_dir().join("effectiveness.json")
+pub(crate) fn effectiveness_file_for(team: Option<usize>) -> PathBuf {
+    match team {
+        None => data_dir().join("effectiveness.json"),
+        Some(i) => data_dir().join(format!("effectiveness_team_{i}.json")),
+    }
 }
 
-fn load_effectiveness() -> Option<Effectiveness> {
-    let s = std::fs::read_to_string(effectiveness_file()).ok()?;
+fn effectiveness_file() -> PathBuf {
+    effectiveness_file_for(None)
+}
+
+pub(crate) fn load_effectiveness_for(team: Option<usize>) -> Option<Effectiveness> {
+    let s = std::fs::read_to_string(effectiveness_file_for(team)).ok()?;
     serde_json::from_str(&s).ok()
 }
 
-fn save_effectiveness(e: &Effectiveness) -> Result<()> {
+fn load_effectiveness() -> Option<Effectiveness> {
+    load_effectiveness_for(None)
+}
+
+pub(crate) fn save_effectiveness_for(team: Option<usize>, e: &Effectiveness) -> Result<()> {
     std::fs::create_dir_all(data_dir())?;
-    std::fs::write(effectiveness_file(), serde_json::to_string_pretty(e)?)?;
+    std::fs::write(effectiveness_file_for(team), serde_json::to_string_pretty(e)?)?;
     Ok(())
+}
+
+fn save_effectiveness(e: &Effectiveness) -> Result<()> {
+    save_effectiveness_for(None, e)
 }
 
 fn print_analysis(a: &vision::Analysis) {

@@ -175,6 +175,7 @@ pub fn dispatch(req: &Value) -> Result<Value, String> {
         }
         "club" => game::club().map(|c| json!(c)),
         "squad" => game::squad().map(|s| json!(s)),
+        "training_squad" => game::training_squad().map(|s| json!(s)),
         "teams" => game::teams().map(|t| json!(t)),
         "select" => {
             let club = req.get("club").and_then(|v| v.as_u64()).map(|n| n as u32);

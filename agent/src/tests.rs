@@ -942,9 +942,11 @@ fn run_market(l: &'static Layout, m: &Market) {
     assert_eq!(t["teams"][1]["age_limit"], 21);
     let first_code = || call(json!({"cmd": "training_weeks"})).unwrap()["weeks"][0]["days"][0][0].clone();
     assert_eq!(first_code(), 300, "eerste elftal");
+    assert_eq!(call(json!({"cmd": "training_squad"})).unwrap().as_array().unwrap().len(), 4);
     let t = call(json!({"cmd": "select", "team": 1})).unwrap();
     assert_eq!(t["teams"][1]["selected"], true);
     assert_eq!(first_code(), 301, "kalender van het jeugdteam");
+    assert_eq!(call(json!({"cmd": "training_squad"})).unwrap().as_array().unwrap().len(), 1, "jeugdkadro wordt gelezen");
     assert_eq!(call(json!({"cmd": "squad"})).unwrap().as_array().unwrap().len(), 4, "de selectie blijft die van het eerste elftal");
     // schrijven gaat naar het gekozen team (week 2 ligt in de toekomst), en terug met undo
     let week2 = json!({"cmd": "set_week", "start": {"year": 2027, "doy": 81}, "days": vec![[4u16, 5, 1]; 7]});

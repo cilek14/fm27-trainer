@@ -119,6 +119,10 @@ pub struct LiveState {
     pub teams: Option<Value>,
     /// keuze van de gebruiker: (UID van de club van de manager, plek van het team voor de training)
     pub choice: (Option<u32>, Option<usize>),
+    /// Pro lisans aktifse altyapı takımları seçilebilir ve yazılabilir.
+    pub pro_unlocked: bool,
+    /// Altyapı takımlarında Akademi Gelişim Modu (gelişim seansları + genç oyuncular için çift yoğunluk).
+    pub youth_dev_mode: bool,
     tactics_rx: Option<mpsc::Receiver<Result<Value, String>>>,
     aux_rx: Option<mpsc::Receiver<(Aux, Result<Value, String>)>>,
     rx: Option<mpsc::Receiver<Snapshot>>,
@@ -157,6 +161,8 @@ impl Default for LiveState {
             tactics_error: String::new(),
             teams: None,
             choice: (None, None),
+            pro_unlocked: false,
+            youth_dev_mode: true,
             tactics_rx: None,
             aux_rx: None,
             rx: None,
@@ -164,6 +170,16 @@ impl Default for LiveState {
             last_auto: None,
             last_poll: None,
         }
+    }
+}
+
+impl LiveState {
+    pub fn effective_choice(&self) -> (Option<u32>, Option<usize>) {
+        (self.choice.0, if self.pro_unlocked { self.choice.1 } else { None })
+    }
+
+    pub fn is_youth_team_active(&self) -> bool {
+        self.pro_unlocked && self.choice.1.is_some()
     }
 }
 
@@ -280,6 +296,10 @@ impl LiveState {
 
     /// Een andere manager of een ander team: wat van het vorige team was, vervalt.
     pub fn choose(&mut self, ctx: &egui::Context, choice: (Option<u32>, Option<usize>)) {
+        if self.choice != choice {
+            self.squad.clear();
+            self.tactics_error.clear();
+        }
         self.choice = choice;
         self.training = None;
         self.fm_had.clear();
@@ -327,9 +347,18 @@ impl LiveState {
         (cnt > 0).then(|| sum / cnt as f32)
     }
 
-    /// Kadro kondisyonu eşiğin altındaysa yük profilini otomatik `Light` (Daha fazla dinlenme) yapar.
+    /// Kadro kondisyonu eşiğin altındaysa yük profilini otomatik `Light` (Daha fazla dinlenme) yapar;
+    /// altyapıda Akademi Gelişim Modu açıksa oyuncu gelişimine öncelik verir.
     pub fn effective_planner(&self, settings: &PlannerSettings) -> PlannerSettings {
         let mut s = settings.clone();
+        if self.is_youth_team_active() && self.youth_dev_mode {
+            if s.auto_dev_above > 0.0 {
+                s.auto_dev_above = s.auto_dev_above.min(72.0);
+            }
+            if s.camp_mode == crate::planner::CampMode::Auto {
+                s.camp_mode = crate::planner::CampMode::PlayerDevelopment;
+            }
+        }
         if s.auto_light_below > 0.0 {
             if let Some(avg) = self.avg_condition() {
                 if avg < s.auto_light_below {
@@ -349,7 +378,7 @@ impl LiveState {
         let ctx2 = ctx.clone();
         let label = label.to_string();
         let allow = self.allow_untested;
-        let choice = self.choice;
+        let choice = self.effective_choice();
         // een testopname (FM27_SNAPSHOT) mag nooit iets in FM veranderen
         let keep = self.keep_understanding && std::env::var_os("FM27_SNAPSHOT").is_none();
         std::thread::spawn(move || {
@@ -377,7 +406,9 @@ impl LiveState {
                 }
             }
             if snap.club.is_some() {
-                if let Ok(Value::Array(a)) = agent::request(json!({"cmd": "squad"})) {
+                if let Ok(Value::Array(a)) = agent::request(json!({"cmd": "training_squad"}))
+                    .or_else(|_| agent::request(json!({"cmd": "squad"})))
+                {
                     snap.squad = Some(a);
                 }
                 // op 100 % houden: de module schrijft alleen wat gezakt is (op een niet-geteste build
@@ -447,7 +478,7 @@ impl LiveState {
         let _ = only_new;
         let skip: HashSet<NaiveDate> = HashSet::new();
         let ctx2 = ctx.clone();
-        let choice = self.choice;
+        let choice = self.effective_choice();
         std::thread::spawn(move || {
             // de keuze kan net veranderd zijn: nooit in de kalender van het vorige team schrijven
             let _ = select(choice);

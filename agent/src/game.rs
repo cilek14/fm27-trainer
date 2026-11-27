@@ -705,6 +705,10 @@ fn training_team(c: &Chain) -> u64 {
     with_state(|s| s.chosen_team).and_then(|i| club_teams(c.club).get(i).copied()).filter(|t| mem::u64_at(t + TEAM_CLUB) == Some(c.club)).unwrap_or(c.team)
 }
 
+pub(crate) fn is_youth_selected() -> bool {
+    chain().map(|c| training_team(&c) != c.team).unwrap_or(false)
+}
+
 #[derive(Serialize)]
 pub struct ManagerInfo {
     pub club_uid: u32,
@@ -901,9 +905,10 @@ fn player_shift(p: u64, class: Option<&str>) -> u64 {
     if class.is_some_and(|c| c.contains("PLAYER_AND_NON_PLAYER")) { coach } else { 0 }
 }
 
-fn read_player(p: u64, team: u64, today: Option<FmDate>) -> Option<PlayerInfo> {
+fn read_player_for_teams(p: u64, allowed_teams: &[u64], today: Option<FmDate>) -> Option<PlayerInfo> {
     let l = layout();
-    if mem::u64_at(p + l.p_team)? != team {
+    let p_team = mem::u64_at(p + l.p_team)?;
+    if !allowed_teams.contains(&p_team) {
         return None;
     }
     let class = rtti::class_name(p);
@@ -1004,6 +1009,10 @@ fn absence_list(p: u64) -> Option<(u64, Vec<u64>)> {
     pointer_list(injury_record(p)? + ABSENCES, 32)
 }
 
+fn read_player(p: u64, team: u64, today: Option<FmDate>) -> Option<PlayerInfo> {
+    read_player_for_teams(p, &[team], today)
+}
+
 /// De spelers van een team (alleen wie zelf naar dat team wijst), op naam.
 pub(crate) fn squad_of(team: u64) -> Result<Vec<PlayerInfo>, String> {
     let (_, players) = pointer_list(team + TEAM_PLAYERS, 200).ok_or("spelerslijst van het team niet leesbaar / team's player list not readable")?;
@@ -1015,6 +1024,29 @@ pub(crate) fn squad_of(team: u64) -> Result<Vec<PlayerInfo>, String> {
 
 pub fn squad() -> Result<Vec<PlayerInfo>, String> {
     squad_of(chain()?.team)
+}
+
+/// Seçili antrenman takımının (As Takım veya U18/U19/U21/B) kadrosunu döner.
+pub fn training_squad() -> Result<Vec<PlayerInfo>, String> {
+    let c = chain()?;
+    let team = training_team(&c);
+    if team == c.team {
+        return squad_of(c.team);
+    }
+    let (_, players) = pointer_list(team + TEAM_PLAYERS, 250).ok_or("spelerslijst van het team niet leesbaar / team's player list not readable")?;
+    let today = date_via_static().or_else(|| date_via_team(team));
+    let mut allowed = club_teams(c.club);
+    if !allowed.contains(&team) {
+        allowed.push(team);
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut out: Vec<PlayerInfo> = players
+        .into_iter()
+        .filter_map(|p| read_player_for_teams(p, &allowed, today))
+        .filter(|info| seen.insert(info.uid))
+        .collect();
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
 }
 
 fn select(uids: &Option<Vec<u32>>) -> Result<Vec<PlayerInfo>, String> {

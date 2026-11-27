@@ -1118,8 +1118,13 @@ pub fn build_squad_recommendations(
             continue;
         }
 
+        let youth_boost = live.is_youth_team_active()
+            && live.youth_dev_mode
+            && profile == IntensityProfile::Balanced
+            && age.is_some_and(|a| a <= 21);
+        let eff_profile = if youth_boost { IntensityProfile::Development } else { profile };
         let (recommended, rest_match_warning, reason) =
-            recommend_intensity(age, condition, sharpness, injured, week_matches, profile);
+            recommend_intensity(age, condition, sharpness, injured, week_matches, eff_profile);
         rows.push(IntensityRecommendation {
             runtime_id,
             name,

@@ -201,18 +201,9 @@ fn player(p: &PlayerInfo) -> Option<Player> {
     })
 }
 
-pub fn tactics() -> Result<Tactics, String> {
-    let squad = game::squad()?;
-    let lay = game::layout();
-    let by_person: HashMap<u32, u32> = squad.iter().filter_map(|p| Some((mem::u32_at(p.addr + lay.p_identity + p.shift + 8)?, p.uid))).collect();
-    let img = mem::game_plugin().ok_or("game_plugin niet geladen")?;
-    let vts = rtti::vtables_of(&img, &rtti::decorated("simatch", "PREPARED_TACTICS_CREATOR_ARRAY"));
-    if vts.is_empty() {
-        return Err("opstellingen niet gevonden / selections not found".into());
-    }
-    // de opstelling van de club: de kopie met de meeste eigen spelers in de basiself
+fn find_best_selection(vts: &[u64], person_map: &HashMap<u32, u32>) -> Option<(u64, Vec<u32>, Vec<u64>)> {
     let mut best: Option<(usize, u64, Vec<u32>, Vec<u64>)> = None;
-    for obj in rtti::instances(&vts, 4_000) {
+    for obj in rtti::instances(vts, 4_000) {
         let Some(h) = mem::read_bytes(obj + SEL_LIST, 16) else { continue };
         let (begin, end) = (u64::from_le_bytes(h[..8].try_into().unwrap()), u64::from_le_bytes(h[8..].try_into().unwrap()));
         if !mem::is_ptr(begin) || end < begin + 8 || end > begin + 24 || (end - begin) % 8 != 0 {
@@ -223,7 +214,7 @@ pub fn tactics() -> Result<Tactics, String> {
         // van de club als de meeste gevulde plekken van de basiself eigen spelers zijn (een
         // selectie van een nationaal team niet), zoals bij verkopen
         let filled = ids[..SLOTS].iter().filter(|id| **id != EMPTY_SLOT).count();
-        let mine = ids[..SLOTS].iter().filter(|id| by_person.contains_key(id)).count();
+        let mine = ids[..SLOTS].iter().filter(|id| person_map.contains_key(id)).count();
         if mine == 0 || 2 * mine <= filled || best.as_ref().is_some_and(|b| b.0 >= mine) {
             continue;
         }
@@ -231,9 +222,63 @@ pub fn tactics() -> Result<Tactics, String> {
         let blocks: Vec<u64> = lb.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().unwrap())).collect();
         best = Some((mine, obj, ids, blocks));
     }
-    let (_, obj, ids, blocks) = best.ok_or("geen opstelling van je club gevonden: open in FM het tactiekscherm en kies een basiself / no selection of your club found: open the tactics screen in FM and pick a starting eleven")?;
+    best.map(|(_, obj, ids, blocks)| (obj, ids, blocks))
+}
+
+pub fn tactics() -> Result<Tactics, String> {
+    let squad = game::training_squad()?;
+    let lay = game::layout();
+    let by_person: HashMap<u32, u32> = squad.iter().filter_map(|p| Some((mem::u32_at(p.addr + lay.p_identity + p.shift + 8)?, p.uid))).collect();
+    let youth = game::is_youth_selected();
+    let img = mem::game_plugin().ok_or("game_plugin niet geladen")?;
+    let vts = rtti::vtables_of(&img, &rtti::decorated("simatch", "PREPARED_TACTICS_CREATOR_ARRAY"));
+    if vts.is_empty() {
+        if youth {
+            return Ok(Tactics {
+                current: 0,
+                tactics: Vec::new(),
+                players: squad.iter().filter_map(player).collect(),
+                bench: Vec::new(),
+            });
+        }
+        return Err("opstellingen niet gevonden / selections not found".into());
+    }
+    // de opstelling van de club: de kopie met de meeste eigen spelers in de basiself
+    let own_best = find_best_selection(&vts, &by_person);
+    let (obj, ids, blocks, from_club_fallback) = match own_best {
+        Some((o, i, b)) => (o, i, b, false),
+        None if youth => {
+            let club_squad = game::squad().unwrap_or_default();
+            let club_by_person: HashMap<u32, u32> = club_squad
+                .iter()
+                .filter_map(|p| Some((mem::u32_at(p.addr + lay.p_identity + p.shift + 8)?, p.uid)))
+                .collect();
+            match find_best_selection(&vts, &club_by_person) {
+                Some((o, i, b)) => (o, i, b, true),
+                None => {
+                    return Ok(Tactics {
+                        current: 0,
+                        tactics: Vec::new(),
+                        players: squad.iter().filter_map(player).collect(),
+                        bench: Vec::new(),
+                    });
+                }
+            }
+        }
+        None => {
+            return Err("geen opstelling van je club gevonden: open in FM het tactiekscherm en kies een basiself / no selection of your club found: open the tactics screen in FM and pick a starting eleven".into());
+        }
+    };
     let tactics: Vec<Tactic> = blocks.iter().enumerate().filter(|(_, b)| mem::is_ptr(**b)).filter_map(|(i, b)| read_tactic(i, *b, &ids, &by_person)).collect();
     if tactics.is_empty() {
+        if youth {
+            return Ok(Tactics {
+                current: 0,
+                tactics: Vec::new(),
+                players: squad.iter().filter_map(player).collect(),
+                bench: Vec::new(),
+            });
+        }
         return Err("tactiek niet leesbaar / tactic not readable".into());
     }
     let cur = mem::read_bytes(obj + SEL_CURRENT, 1).map(|b| b[0] as usize).unwrap_or(0);
@@ -242,6 +287,10 @@ pub fn tactics() -> Result<Tactics, String> {
         current,
         tactics,
         players: squad.iter().filter_map(player).collect(),
-        bench: ids[SLOTS..].iter().filter(|id| **id != EMPTY_SLOT).filter_map(|id| by_person.get(id)).copied().collect(),
+        bench: if from_club_fallback {
+            Vec::new()
+        } else {
+            ids[SLOTS..].iter().filter(|id| **id != EMPTY_SLOT).filter_map(|id| by_person.get(id)).copied().collect()
+        },
     })
 }

@@ -260,7 +260,7 @@ fn team_average(players: &[PlayerUnderstanding]) -> [u32; 8] {
 
 /// Tactisch begrip van de selectie.
 pub fn understanding() -> Result<Understanding, String> {
-    let (loaded, without_record) = load(game::squad()?)?;
+    let (loaded, without_record) = load(game::training_squad()?)?;
     let common = common_keys(&loaded);
     let keys: [u8; AREAS] = std::array::from_fn(|a| common[a].first().map(|(k, _)| *k).unwrap_or(10));
     let players = describe(&loaded, &keys);
@@ -284,7 +284,7 @@ pub struct Maximised {
 /// Zet het tactisch begrip van de (gekozen) spelers op het maximum, zoals FM's editor-actie.
 /// Met `dry_run` wordt alleen geteld wat er zou veranderen.
 pub fn maximise(uids: &Option<Vec<u32>>, dry_run: bool) -> Result<Maximised, String> {
-    let (all, without_record) = load(game::squad()?)?;
+    let (all, without_record) = load(game::training_squad()?)?;
     // de instelling die de meeste spelers kennen is die van de getrainde tactiek: die krijgt ook wie
     // hem nog niet kent (de andere items gaan toch al naar het maximum)
     let common = common_keys(&all);
