@@ -520,27 +520,6 @@ pub fn nav_tab(ui: &mut Ui, icon_s: &str, label: &str, selected: bool) -> Respon
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-/// Item in de zijbalk.
-#[allow(dead_code)]
-pub fn nav_item(ui: &mut Ui, icon_s: &str, label: &str, selected: bool) -> Response {
-    let size = vec2(ui.available_width(), 38.0);
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    let sel = ui.ctx().animate_bool_with_time(resp.id.with("s"), selected, 0.2);
-    let hov = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered() && !selected, QUICK);
-    let p = ui.painter();
-    let fill = mix(mix(SIDEBAR, SURFACE2, hov), ACCENT_SOFT, sel);
-    p.rect_filled(rect, CornerRadius::same(10), fill);
-    if sel > 0.01 {
-        let h = 18.0 * sel;
-        let bar = egui::Rect::from_center_size(rect.left_center() + vec2(1.5, 0.0), vec2(3.0, h));
-        p.rect_filled(bar, CornerRadius::same(2), ACCENT);
-    }
-    let col = mix(mix(TEXT_DIM, TEXT, hov), Color32::WHITE, sel);
-    p.text(rect.left_center() + vec2(16.0, 0.0), egui::Align2::LEFT_CENTER, icon_s, FontId::new(18.0, icons()), mix(col, ACCENT_HI, sel));
-    p.text(rect.left_center() + vec2(46.0, 0.0), egui::Align2::LEFT_CENTER, label, FontId::new(14.0, medium()), col);
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
-}
-
 /// Gesegmenteerde keuze (bv. NL | EN, Week | Seizoen). Zelf getekend op een vaste maat, zodat
 /// hij in elke omringende layout (ook rechts-naar-links) hetzelfde uitziet.
 pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &str)]) -> bool {
@@ -573,63 +552,6 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
         x += w + gap;
     }
     changed
-}
-
-/// Mevcut genişliğe tam oturan kompakt segment seçici (ör. yan menüdeki `TR | EN | NL`).
-#[allow(dead_code)]
-pub fn segmented_full<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &str, &str)]) -> bool {
-    let n = options.len().max(1);
-    let total = ui.available_width().max(90.0);
-    let h = 30.0;
-    let gap = 2.0;
-    let seg_w = ((total - 6.0 - gap * (n - 1) as f32) / n as f32).max(20.0);
-    let font = FontId::new(12.5, medium());
-    let (rect, _) = ui.allocate_exact_size(vec2(total, h), Sense::hover());
-    let p = ui.painter().clone();
-    p.rect_filled(rect, CornerRadius::same(9), SURFACE2);
-    let mut x = rect.left() + 3.0;
-    let mut changed = false;
-    for (v, label, tip) in options {
-        let r = egui::Rect::from_min_size(egui::pos2(x, rect.top() + 3.0), vec2(seg_w, h - 6.0));
-        let resp = ui
-            .interact(r, ui.id().with(("segmented_full", *label)), Sense::click())
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_hover_text(*tip);
-        let sel = *value == *v;
-        if sel {
-            p.rect_filled(r, CornerRadius::same(7), ACCENT);
-        } else if resp.hovered() {
-            p.rect_filled(r, CornerRadius::same(7), HOVER);
-        }
-        p.text(
-            r.center(),
-            egui::Align2::CENTER_CENTER,
-            *label,
-            font.clone(),
-            if sel { Color32::WHITE } else { TEXT_DIM },
-        );
-        if resp.clicked() && !sel {
-            *value = *v;
-            changed = true;
-        }
-        x += seg_w + gap;
-    }
-    changed
-}
-
-/// Sessie als gekleurde chip.
-#[allow(dead_code)]
-pub fn session_chip(ui: &mut Ui, text: &str, color: Color32, highlight: bool) -> Response {
-    Frame::new()
-        .fill(tint(color, if highlight { 0.30 } else { 0.14 }))
-        .stroke(if highlight { Stroke::new(1.0_f32, color) } else { Stroke::NONE })
-        .corner_radius(CornerRadius::same(6))
-        .inner_margin(Margin::symmetric(6, 2))
-        .show(ui, |ui| {
-            ui.set_max_width(ui.available_width());
-            ui.add(egui::Label::new(RichText::new(text).font(FontId::new(11.5, medium())).color(TEXT)).truncate())
-        })
-        .response
 }
 
 /// Nötr zeminli, solda 3 px kategori şeritli, 12 px metinli, 24 px yüksekliğinde seans çipi.
@@ -669,35 +591,6 @@ pub fn status_dot(ui: &mut Ui, color: Color32) {
     let (r, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
     ui.painter().circle_filled(r.center(), 5.0, mix(SURFACE, color, 0.28));
     ui.painter().circle_filled(r.center(), 3.2, color);
-}
-
-/// Rij met naam, waarde en een dunne balk (voor de factors).
-#[allow(dead_code)]
-pub fn metric_row(ui: &mut Ui, name: &str, value: f32, color: Color32) {
-    metric_row_delta(ui, name, value, color, None);
-}
-
-#[allow(dead_code)]
-pub fn metric_row_delta(ui: &mut Ui, name: &str, value: f32, color: Color32, delta: Option<f32>) {
-    let w = ui.available_width();
-    let d_opt = delta.filter(|x| x.abs() >= 1.0);
-    let reserve = if d_opt.is_some() { 68.0 } else { 44.0 };
-    ui.horizontal(|ui| {
-        ui.allocate_ui_with_layout(vec2((w - reserve).max(40.0), 18.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            ui.add(egui::Label::new(RichText::new(name).size(13.0).color(TEXT_DIM)).truncate()).on_hover_text(name);
-        });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let Some(d) = d_opt {
-                let up = d > 0.0;
-                let dc = if up { SUCCESS } else { DANGER };
-                let txt = if up { format!("▲+{:.0}", d) } else { format!("▼{:.0}", d) };
-                ui.label(RichText::new(txt).font(FontId::new(11.0, semibold())).color(dc));
-            }
-            ui.label(RichText::new(format!("{value:.0}")).font(FontId::new(13.5, semibold())).color(color));
-        });
-    });
-    progress(ui, value, 5.0, color);
-    ui.add_space(4.0);
 }
 
 /// Ringless 2x2 component summary card for Team Analysis (icon, label, big score, band, delta).
@@ -806,13 +699,4 @@ pub fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
     let x = egui::lerp((rect.left() + 13.0)..=(rect.right() - 13.0), t);
     p.circle_filled(egui::pos2(x, rect.center().y), 10.0, Color32::WHITE);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
-}
-
-/// Kleine statistiek: label boven, waarde eronder.
-#[allow(dead_code)]
-pub fn mini_stat(ui: &mut Ui, label: &str, value: &str) {
-    ui.vertical(|ui| {
-        ui.label(caps(label));
-        ui.label(RichText::new(value).font(FontId::new(17.0, semibold())).color(TEXT));
-    });
 }

@@ -598,23 +598,34 @@ impl App {
                 ui.painter().hline(edge.x_range(), edge.bottom() - 0.5, Stroke::new(1.0_f32, theme::BORDER));
 
                 ui.horizontal_centered(|ui| {
-                    theme::brand_logo(ui, 34.0);
+                    let compact = ui.available_width() < 1180.0;
+                    theme::brand_logo(ui, if compact { 30.0 } else { 34.0 });
                     ui.add_space(4.0);
                     ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing = vec2(5.0, 1.0);
-                        ui.add_space(3.0);
+                        ui.spacing_mut().item_spacing = vec2(4.0, 1.0);
+                        ui.add_space(if compact { 6.0 } else { 3.0 });
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("FM27 Training").font(egui::FontId::new(13.5, theme::bold())).color(theme::TEXT));
-                            ui.label(RichText::new("Assistant").font(egui::FontId::new(13.0, theme::semibold())).color(theme::ACCENT_HI));
+                            ui.label(
+                                RichText::new(if compact { "FM27" } else { "FM27 Training" })
+                                    .font(egui::FontId::new(if compact { 13.0 } else { 13.5 }, theme::bold()))
+                                    .color(theme::TEXT),
+                            );
+                            ui.label(
+                                RichText::new("Assistant")
+                                    .font(egui::FontId::new(if compact { 12.5 } else { 13.0 }, theme::semibold()))
+                                    .color(theme::ACCENT_HI),
+                            );
                         });
-                        ui.label(
-                            RichText::new(format!("v{} · Pitch Telemetry", env!("CARGO_PKG_VERSION")))
-                                .size(10.5)
-                                .color(theme::TEXT_FAINT),
-                        );
+                        if !compact {
+                            ui.label(
+                                RichText::new(format!("v{} · Pitch Telemetry", env!("CARGO_PKG_VERSION")))
+                                    .size(10.5)
+                                    .color(theme::TEXT_FAINT),
+                            );
+                        }
                     });
 
-                    ui.add_space(12.0);
+                    ui.add_space(if compact { 6.0 } else { 12.0 });
                     let items = [
                         (Page::Home, icon::HOUSE, t!("Deze week", "This week", "Bu hafta")),
                         (Page::Overview, icon::GAUGE, t!("Teamanalyse", "Team analysis", "Takım analizi")),
@@ -627,7 +638,9 @@ impl App {
                         if theme::nav_tab(ui, ic, label, self.page == p).clicked() {
                             self.page = p;
                         }
-                        ui.add_space(2.0);
+                        if !compact {
+                            ui.add_space(2.0);
+                        }
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -651,12 +664,12 @@ impl App {
                         } else {
                             (theme::TEXT_FAINT, t!("Niet verbonden", "Not connected").to_string())
                         };
-                        let hhmm = self.last_read_hhmm().map(str::to_string);
+                        let hhmm = if compact { None } else { self.last_read_hhmm().map(str::to_string) };
                         let resp = Frame::new()
                             .fill(theme::SURFACE)
                             .stroke(Stroke::new(1.0_f32, theme::BORDER))
                             .corner_radius(CornerRadius::same(16))
-                            .inner_margin(Margin::symmetric(10, 5))
+                            .inner_margin(Margin::symmetric(if compact { 8 } else { 10 }, 5))
                             .show(ui, |ui| {
                                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                                     ui.set_height(20.0);
@@ -781,9 +794,9 @@ impl App {
                     "Canlı bağlantı bu sistemde kullanılamıyor; okuma ve planlama özellikleri yine çalışır."
                 )));
             }
-            ui.columns(3, |cols| {
+            let draw_step1 = |ui: &mut Ui, trigger_start: &mut bool, trigger_reconnect: &mut bool| {
                 step_card_status(
-                    &mut cols[0],
+                    ui,
                     1,
                     step1_done,
                     icon::PLAY,
@@ -814,17 +827,19 @@ impl App {
                                     t!("Start FM met module", "Start FM with module", "FM27'yi modülle başlat")
                                 };
                                 if theme::small_button(ui, start_lbl, !busy).clicked() {
-                                    trigger_start = true;
+                                    *trigger_start = true;
                                 }
                                 if theme::small_button(ui, t!("Opnieuw verbinden", "Reconnect", "Yeniden bağlan"), !busy).clicked() {
-                                    trigger_reconnect = true;
+                                    *trigger_reconnect = true;
                                 }
                             });
                         }
                     },
                 );
+            };
+            let draw_step2 = |ui: &mut Ui| {
                 step_card_status(
-                    &mut cols[1],
+                    ui,
                     2,
                     step2_done,
                     icon::FOLDER_OPEN,
@@ -840,8 +855,10 @@ impl App {
                         );
                     },
                 );
+            };
+            let draw_step3 = |ui: &mut Ui, trigger_refresh: &mut bool| {
                 step_card_status(
-                    &mut cols[2],
+                    ui,
                     3,
                     step3_done,
                     icon::GAUGE,
@@ -858,12 +875,25 @@ impl App {
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
                             if theme::small_button(ui, t!("Gegevens vernieuwen", "Refresh data", "Verileri güncelle"), !busy).clicked() {
-                                trigger_refresh = true;
+                                *trigger_refresh = true;
                             }
                         });
                     },
                 );
-            });
+            };
+            if ui.available_width() >= 900.0 {
+                ui.columns(3, |cols| {
+                    draw_step1(&mut cols[0], &mut trigger_start, &mut trigger_reconnect);
+                    draw_step2(&mut cols[1]);
+                    draw_step3(&mut cols[2], &mut trigger_refresh);
+                });
+            } else {
+                draw_step1(ui, &mut trigger_start, &mut trigger_reconnect);
+                ui.add_space(8.0);
+                draw_step2(ui);
+                ui.add_space(8.0);
+                draw_step3(ui, &mut trigger_refresh);
+            }
             ui.add_space(6.0);
             ui.label(theme::faint(t!(
                 "Alleen training: de app past uitsluitend het trainingsschema aan, zonder cheats.",
@@ -1831,11 +1861,14 @@ impl App {
             ui.add_space(8.0);
         }
 
-        ui.columns(3, |c| {
-            theme::stat_tile(&mut c[0], icon::STRATEGY, t!("Elftal nu", "Current eleven"), &format!("{avg:.0}"), t!("gemiddelde geschiktheid", "average fit"), theme::rgb(level_color(avg)), Some(avg));
-            let gain = best_avg - avg;
+        let gain = best_avg - avg;
+        let (wname, wval) = weakest
+            .map(|(i, f)| (format!("{} · {}", places[i].line.label(places[i].side), places[i].uid.and_then(|u| by_uid.get(&u)).map(|p| p.name.as_str()).unwrap_or("?")), f))
+            .unwrap_or((t!("geen elftal gekozen", "no eleven picked").to_string(), 0.0));
+        let draw_tiles = |ui0: &mut Ui, ui1: &mut Ui, ui2: &mut Ui| {
+            theme::stat_tile(ui0, icon::STRATEGY, t!("Elftal nu", "Current eleven"), &format!("{avg:.0}"), t!("gemiddelde geschiktheid", "average fit"), theme::rgb(level_color(avg)), Some(avg));
             theme::stat_tile(
-                &mut c[1],
+                ui1,
                 icon::USERS_THREE,
                 t!("Beste elf", "Best eleven"),
                 &format!("{best_avg:.0}"),
@@ -1843,11 +1876,29 @@ impl App {
                 theme::rgb(level_color(best_avg)),
                 Some(best_avg),
             );
-            let (wname, wval) = weakest
-                .map(|(i, f)| (format!("{} · {}", places[i].line.label(places[i].side), places[i].uid.and_then(|u| by_uid.get(&u)).map(|p| p.name.as_str()).unwrap_or("?")), f))
-                .unwrap_or((t!("geen elftal gekozen", "no eleven picked").to_string(), 0.0));
-            theme::stat_tile(&mut c[2], icon::WARNING, t!("Zwakste plek", "Weakest place"), &format!("{wval:.0}"), &wname, theme::rgb(level_color(wval)), Some(wval));
-        });
+            theme::stat_tile(ui2, icon::WARNING, t!("Zwakste plek", "Weakest place"), &format!("{wval:.0}"), &wname, theme::rgb(level_color(wval)), Some(wval));
+        };
+        if ui.available_width() >= 820.0 {
+            ui.columns(3, |c| {
+                let (c0, rest) = c.split_at_mut(1);
+                let (c1, c2) = rest.split_at_mut(1);
+                draw_tiles(&mut c0[0], &mut c1[0], &mut c2[0]);
+            });
+        } else {
+            theme::stat_tile(ui, icon::STRATEGY, t!("Elftal nu", "Current eleven"), &format!("{avg:.0}"), t!("gemiddelde geschiktheid", "average fit"), theme::rgb(level_color(avg)), Some(avg));
+            ui.add_space(8.0);
+            theme::stat_tile(
+                ui,
+                icon::USERS_THREE,
+                t!("Beste elf", "Best eleven"),
+                &format!("{best_avg:.0}"),
+                &if gain >= 0.5 { t!(format!("+{gain:.1} te winnen"), format!("+{gain:.1} to gain")) } else { t!("je elftal is al het beste".to_string(), "your eleven is already the best".to_string()) },
+                theme::rgb(level_color(best_avg)),
+                Some(best_avg),
+            );
+            ui.add_space(8.0);
+            theme::stat_tile(ui, icon::WARNING, t!("Zwakste plek", "Weakest place"), &format!("{wval:.0}"), &wname, theme::rgb(level_color(wval)), Some(wval));
+        }
         ui.add_space(14.0);
 
         // de elf plekken
@@ -2219,8 +2270,8 @@ impl App {
         let mut dirty = false;
         self.update_card(ui, &ctx, &mut dirty);
         ui.add_space(14.0);
-        ui.columns(2, |cols| {
-            theme::card(&mut cols[0], |ui| {
+        let draw_general = |ui: &mut Ui, settings: &mut Settings, dirty: &mut bool| {
+            theme::card(ui, |ui| {
                 ui.label(theme::h2(t!("Algemeen", "General")));
                 ui.add_space(6.0);
                 let lang_name = |l: Lang| match l {
@@ -2231,10 +2282,10 @@ impl App {
                     Lang::It => "Italiano",
                     Lang::Es => "Español",
                 };
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(theme::ic(icon::TRANSLATE).color(theme::ACCENT));
                     ui.label(t!("Taal", "Language"));
-                    let mut lang = self.settings.lang;
+                    let mut lang = settings.lang;
                     egui::ComboBox::from_id_salt("settings_lang")
                         .width(170.0)
                         .selected_text(lang_name(lang))
@@ -2243,43 +2294,45 @@ impl App {
                                 ui.selectable_value(&mut lang, l, lang_name(l));
                             }
                         });
-                    if lang != self.settings.lang {
-                        self.settings.lang = lang;
+                    if lang != settings.lang {
+                        settings.lang = lang;
                         i18n::set(lang);
-                        dirty = true;
+                        *dirty = true;
                     }
                 });
                 ui.add_space(6.0);
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(theme::ic(icon::COINS).color(theme::ACCENT));
                     ui.label(t!("Koers € per £", "Rate € per £"));
-                    dirty |= ui.add(egui::DragValue::new(&mut self.settings.rate).range(0.5..=2.0).speed(0.01).fixed_decimals(2)).changed();
+                    *dirty |= ui.add(egui::DragValue::new(&mut settings.rate).range(0.5..=2.0).speed(0.01).fixed_decimals(2)).changed();
                 });
-                dirty |= ui.checkbox(&mut self.settings.capture_delay, t!("FM eerst naar voren halen bij uitlezen", "Bring FM to front before reading")).changed();
+                *dirty |= ui.checkbox(&mut settings.capture_delay, t!("FM eerst naar voren halen bij uitlezen", "Bring FM to front before reading")).changed();
                 ui.add_space(4.0);
                 ui.add(
                     egui::Label::new(theme::dim(t!(
-                        "Hilesiz antrenman sürümü: yalnızca antrenman takvimi yazılır, tüm editör/hile özellikleri kaldırılmıştır.",
+                        "Alleen training: uitsluitend de trainingskalender wordt geschreven; alle editor- en cheatfuncties zijn verwijderd.",
                         "Training-only build: only the training calendar is written; all editor/cheat tools are removed.",
                         "Saf hilesiz antrenman sürümü: yalnızca antrenman takvimi yazılır, tüm editör/hile araçları kaldırılmıştır."
                     )))
                     .wrap(),
                 );
             });
-            theme::card(&mut cols[1], |ui| {
+        };
+        let draw_plan = |ui: &mut Ui, settings: &mut Settings, live: &LiveState, dirty: &mut bool| {
+            theme::card(ui, |ui| {
                 ui.label(theme::h2(t!("Planinstellingen", "Plan settings", "Plan ayarları")));
                 ui.add_space(6.0);
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(t!(
                         "Team Bonding onder Relaties (%)",
                         "Team Bonding below Relationships (%)",
                         "Takım Kaynaşması eşiği (İlişkiler %)"
                     ));
-                    dirty |= ui.add(egui::Slider::new(&mut self.settings.planner.bonding_below, 0.0..=100.0).fixed_decimals(0)).changed();
+                    *dirty |= ui.add(egui::Slider::new(&mut settings.planner.bonding_below, 0.0..=100.0).fixed_decimals(0)).changed();
                 });
-                dirty |= ui
+                *dirty |= ui
                     .checkbox(
-                        &mut self.settings.planner.sunday_team_bonding,
+                        &mut settings.planner.sunday_team_bonding,
                         t!(
                             "Verplaats één Team Bonding naar zondag (rustdag)",
                             "Move one Team Bonding to Sunday rest day",
@@ -2287,48 +2340,48 @@ impl App {
                         ),
                     )
                     .changed();
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(t!("Standaardsituaties elke (weken, 0 = uit)", "Set pieces every (weeks, 0 = off)"));
-                    dirty |= ui.add(egui::DragValue::new(&mut self.settings.planner.set_pieces_every).range(0..=8)).changed();
+                    *dirty |= ui.add(egui::DragValue::new(&mut settings.planner.set_pieces_every).range(0..=8)).changed();
                 });
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(t!("Doelen bijstellen elke (weken)", "Re-target every (weeks)"));
-                    dirty |= ui.add(egui::DragValue::new(&mut self.settings.planner.replan_every_weeks).range(1..=8)).changed();
+                    *dirty |= ui.add(egui::DragValue::new(&mut settings.planner.replan_every_weeks).range(1..=8)).changed();
                 });
                 ui.add_space(6.0);
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(t!("Tactiekstijl", "Tactic style", "Taktik tarzı"));
                     egui::ComboBox::from_id_salt("settings_tactic_mode")
-                        .selected_text(self.settings.planner.tactic_mode.label())
+                        .selected_text(settings.planner.tactic_mode.label())
                         .show_ui(ui, |ui| {
                             for m in planner::TacticMode::ALL {
-                                dirty |= ui.selectable_value(&mut self.settings.planner.tactic_mode, m, m.label()).changed();
+                                *dirty |= ui.selectable_value(&mut settings.planner.tactic_mode, m, m.label()).changed();
                             }
                         });
                 });
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(t!("Speciaal kamp", "Special camp", "Özel kamp modu"));
                     egui::ComboBox::from_id_salt("settings_camp_mode")
-                        .selected_text(self.settings.planner.camp_mode.label())
+                        .selected_text(settings.planner.camp_mode.label())
                         .show_ui(ui, |ui| {
                             for c in planner::CampMode::ALL {
-                                dirty |= ui.selectable_value(&mut self.settings.planner.camp_mode, c, c.label()).changed();
+                                *dirty |= ui.selectable_value(&mut settings.planner.camp_mode, c, c.label()).changed();
                             }
                         });
                 });
-                ui.add(egui::Label::new(theme::dim(self.settings.planner.camp_mode.description())).wrap());
+                ui.add(egui::Label::new(theme::dim(settings.planner.camp_mode.description())).wrap());
                 ui.add_space(6.0);
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(t!("Rust", "Rest"));
                     use planner::Load;
-                    dirty |= theme::segmented(
+                    *dirty |= theme::segmented(
                         ui,
-                        &mut self.settings.planner.load,
+                        &mut settings.planner.load,
                         &[(Load::Light, t!("Meer rust", "More rest")), (Load::Balanced, t!("Gebalanceerd", "Balanced")), (Load::Intense, t!("Minder rust", "Less rest"))],
                     );
                 });
                 ui.add(
-                    egui::Label::new(theme::dim(match self.settings.planner.load {
+                    egui::Label::new(theme::dim(match settings.planner.load {
                         planner::Load::Light => t!(
                             "Elke trainingsdag en de dag voor een wedstrijd eindigt met Rest.",
                             "Every training day and the day before a match ends with Rest."
@@ -2342,16 +2395,16 @@ impl App {
                     .wrap(),
                 );
                 ui.add_space(6.0);
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(t!(
                         "Automatisch 'Meer rust' onder conditie (%)",
                         "Auto 'More rest' below condition (%)",
                         "Kondisyon şu seviyenin altındaysa (%)"
                     ));
-                    dirty |= ui.add(egui::Slider::new(&mut self.settings.planner.auto_light_below, 0.0..=95.0).fixed_decimals(0)).changed();
+                    *dirty |= ui.add(egui::Slider::new(&mut settings.planner.auto_light_below, 0.0..=95.0).fixed_decimals(0)).changed();
                 });
-                if let Some(avg) = self.live.avg_condition() {
-                    let active = self.settings.planner.auto_light_below > 0.0 && avg < self.settings.planner.auto_light_below;
+                if let Some(avg) = live.avg_condition() {
+                    let active = settings.planner.auto_light_below > 0.0 && avg < settings.planner.auto_light_below;
                     let note = if active {
                         t!(
                             format!("Selectieconditie {avg:.0}% → 'Meer rust' automatisch actief."),
@@ -2368,9 +2421,9 @@ impl App {
                     ui.label(theme::faint(note));
                 }
                 ui.add_space(6.0);
-                dirty |= ui
+                *dirty |= ui
                     .checkbox(
-                        &mut self.settings.planner.auto_light_congested,
+                        &mut settings.planner.auto_light_congested,
                         t!(
                             "Automatisch 'Meer rust' bij 2+ wedstrijden in een week",
                             "Auto 'More rest' in weeks with 2+ matches",
@@ -2379,13 +2432,13 @@ impl App {
                     )
                     .changed();
                 ui.add_space(6.0);
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(t!(
                         "Automatisch ontwikkelmodus boven tactisch begrip (%)",
                         "Auto development mode above tactical understanding (%)",
                         "Otomatik Gelişim modu eşiği (%)"
                     ));
-                    dirty |= ui.add(egui::Slider::new(&mut self.settings.planner.auto_dev_above, 0.0..=100.0).fixed_decimals(0)).changed();
+                    *dirty |= ui.add(egui::Slider::new(&mut settings.planner.auto_dev_above, 0.0..=100.0).fixed_decimals(0)).changed();
                 });
                 ui.add(
                     egui::Label::new(theme::dim(t!(
@@ -2396,8 +2449,8 @@ impl App {
                     .wrap(),
                 );
                 ui.add_space(6.0);
-                dirty |= ui
-                    .checkbox(&mut self.settings.planner.no_tactical, t!("Geen tactische sessies", "No tactical sessions"))
+                *dirty |= ui
+                    .checkbox(&mut settings.planner.no_tactical, t!("Geen tactische sessies", "No tactical sessions"))
                     .changed();
                 ui.add(
                     egui::Label::new(theme::dim(t!(
@@ -2407,7 +2460,18 @@ impl App {
                     .wrap(),
                 );
             });
-        });
+        };
+        if ui.available_width() >= 1120.0 {
+            ui.columns(2, |cols| {
+                let (c0, c1) = cols.split_at_mut(1);
+                draw_general(&mut c0[0], &mut self.settings, &mut dirty);
+                draw_plan(&mut c1[0], &mut self.settings, &self.live, &mut dirty);
+            });
+        } else {
+            draw_general(ui, &mut self.settings, &mut dirty);
+            ui.add_space(12.0);
+            draw_plan(ui, &mut self.settings, &self.live, &mut dirty);
+        }
         ui.add_space(14.0);
         if agent::LIVE_SUPPORTED {
             theme::card(ui, |ui| {
@@ -2923,7 +2987,15 @@ fn plan_grid(ui: &mut Ui, p: &WeekPlan) {
         for (i, d) in p.days.iter().enumerate() {
             let ui = &mut cols[i];
             ui.label(theme::col_header(i18n::weekday_short(i)));
-            ui.label(theme::faint(format!("{} · {}", i18n::date_short(d.date), d.role.label())));
+            let sub = format!("{} · {}", i18n::date_short(d.date), d.role.label());
+            ui.allocate_ui_with_layout(
+                vec2(ui.available_width(), 32.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.set_min_height(32.0);
+                    ui.add(egui::Label::new(theme::faint(sub)).wrap());
+                },
+            );
             ui.add_space(3.0);
             for s in &d.slots {
                 chip(ui, s, false, false);

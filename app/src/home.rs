@@ -398,33 +398,50 @@ pub fn render(
             )));
         });
     } else {
-        ui.columns(4, |cols| {
-            for (i, c) in Component::ALL.iter().enumerate() {
-                let v = eff.component(*c);
-                let col = theme::rgb(level_color(v));
-                let ic = [icon::TARGET, icon::SOCCER_BALL, icon::USERS_THREE, icon::EYE][i];
-                let d_opt = diff.map(|d| d.components[i]).filter(|x| x.abs() >= 1.0);
-                theme::card_accent(&mut cols[i], col, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(theme::ic(ic).size(15.0).color(col));
-                        ui.add(egui::Label::new(theme::caps(c.display_label())).truncate());
-                    });
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(format!("{v:.0}")).font(FontId::new(28.0, theme::bold())).color(theme::TEXT));
-                        ui.label(RichText::new(level_name(v)).size(12.5).color(col));
-                        if let Some(d) = d_opt {
-                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                let up = d > 0.0;
-                                let dc = if up { theme::SUCCESS } else { theme::DANGER };
-                                let txt = if up { format!("▲+{d:.0}") } else { format!("▼{d:.0}") };
-                                ui.label(RichText::new(txt).font(FontId::new(12.0, theme::semibold())).color(dc));
-                            });
-                        }
-                    });
+        let draw_comp = |col_ui: &mut Ui, i: usize, c: Component| {
+            let v = eff.component(c);
+            let col = theme::rgb(level_color(v));
+            let ic = [icon::TARGET, icon::SOCCER_BALL, icon::USERS_THREE, icon::EYE][i];
+            let d_opt = diff.map(|d| d.components[i]).filter(|x| x.abs() >= 1.0);
+            theme::card_accent(col_ui, col, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(theme::ic(ic).size(15.0).color(col));
+                    ui.add(egui::Label::new(theme::caps(c.display_label())).truncate());
                 });
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("{v:.0}")).font(FontId::new(28.0, theme::bold())).color(theme::TEXT));
+                    ui.label(RichText::new(level_name(v)).size(12.5).color(col));
+                    if let Some(d) = d_opt {
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let up = d > 0.0;
+                            let dc = if up { theme::SUCCESS } else { theme::DANGER };
+                            let txt = if up { format!("▲+{d:.0}") } else { format!("▼{d:.0}") };
+                            ui.label(RichText::new(txt).font(FontId::new(12.0, theme::semibold())).color(dc));
+                        });
+                    }
+                });
+            });
+        };
+        if ui.available_width() >= 880.0 {
+            ui.columns(4, |cols| {
+                for (i, c) in Component::ALL.iter().enumerate() {
+                    draw_comp(&mut cols[i], i, *c);
+                }
+            });
+        } else {
+            for row in 0..2 {
+                ui.columns(2, |cols| {
+                    for (col_idx, col_ui) in cols.iter_mut().enumerate() {
+                        let i = row * 2 + col_idx;
+                        draw_comp(col_ui, i, Component::ALL[i]);
+                    }
+                });
+                if row == 0 {
+                    ui.add_space(8.0);
+                }
             }
-        });
+        }
     }
     ui.add_space(14.0);
 
@@ -443,11 +460,12 @@ pub fn render(
             )));
         } else {
             let days_ref = week.as_ref().map(|w| &w.days);
+            let label_w = (ui.available_width() * 0.30).clamp(180.0, 270.0);
             for (f, v) in eff.weakest().into_iter().take(3) {
                 let col = theme::rgb(level_color(v));
                 let action_txt = plan_action_for_factor(f, days_ref);
                 ui.horizontal(|ui| {
-                    ui.allocate_ui_with_layout(vec2(230.0, 22.0), Layout::left_to_right(Align::Center), |ui| {
+                    ui.allocate_ui_with_layout(vec2(label_w, 22.0), Layout::left_to_right(Align::Center), |ui| {
                         ui.add(egui::Label::new(theme::label_strong(f.display_label())).truncate());
                     });
                     ui.allocate_ui_with_layout(vec2(52.0, 22.0), Layout::right_to_left(Align::Center), |ui| {
