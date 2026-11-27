@@ -638,11 +638,6 @@ pub(crate) fn old_exe_path(exe: &Path) -> PathBuf {
 }
 
 #[cfg(windows)]
-fn ps_escape(p: &Path) -> String {
-    p.to_string_lossy().replace('\'', "''")
-}
-
-#[cfg(windows)]
 fn find_extracted_files(dir: &Path) -> (Option<PathBuf>, Option<PathBuf>) {
     let mut best_exe: Option<(u8, PathBuf)> = None;
     let mut best_dll: Option<PathBuf> = None;
@@ -684,7 +679,7 @@ pub(crate) fn extract_zip_windows(dl_path: &Path, staging: &Path, updates_dir: &
         )
     })?;
 
-    match Command::new("tar.exe")
+    let out = Command::new("tar.exe")
         .arg("-xf")
         .arg(dl_path)
         .arg("-C")
@@ -692,49 +687,18 @@ pub(crate) fn extract_zip_windows(dl_path: &Path, staging: &Path, updates_dir: &
         .creation_flags(CREATE_NO_WINDOW)
         .stdin(Stdio::null())
         .output()
-    {
-        Ok(out) if out.status.success() => return Ok(()),
-        Ok(out) => {
-            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            append_update_log(updates_dir, &format!("tar.exe extract failed ({:?}): {err}", out.status.code()));
-        }
-        Err(e) => {
-            append_update_log(updates_dir, &format!("tar.exe unavailable ({e}); falling back to Expand-Archive"));
-        }
-    }
-
-    let _ = std::fs::remove_dir_all(staging);
-    std::fs::create_dir_all(staging).map_err(|e| {
-        t!(
-            format!("Tijdelijke map niet aangemaakt: {e}"),
-            format!("Could not create temp folder: {e}"),
-            format!("Geçici klasör oluşturulamadı: {e}")
-        )
-    })?;
-
-    let exp = Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-WindowStyle",
-            "Hidden",
-            "-Command",
-            "Expand-Archive -LiteralPath $env:FM27_ZIP -DestinationPath $env:FM27_DST -Force",
-        ])
-        .env("FM27_ZIP", dl_path)
-        .env("FM27_DST", staging)
-        .creation_flags(CREATE_NO_WINDOW)
-        .stdin(Stdio::null())
-        .output()
         .map_err(|e| {
+            append_update_log(updates_dir, &format!("tar.exe failed to start: {e}"));
             t!(
-                format!("Kon PowerShell niet starten: {e}"),
-                format!("Could not start PowerShell: {e}"),
-                format!("PowerShell başlatılamadı: {e}")
+                "ZIP-archief kon niet worden uitgepakt.",
+                "Could not extract ZIP archive.",
+                "ZIP arşivi açılamadı."
             )
+            .to_string()
         })?;
-    if !exp.status.success() {
-        let err = String::from_utf8_lossy(&exp.stderr).trim().to_string();
-        append_update_log(updates_dir, &format!("Expand-Archive failed ({:?}): {err}", exp.status.code()));
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        append_update_log(updates_dir, &format!("tar.exe extract failed ({:?}): {err}", out.status.code()));
         return Err(t!(
             "ZIP-archief kon niet worden uitgepakt.",
             "Could not extract ZIP archive.",
@@ -820,126 +784,6 @@ pub(crate) fn replace_running_exe_windows(current_exe: &Path, new_exe: &Path, mi
         format!("Could not copy update executable: {reason}"),
         format!("Güncelleme dosyası kopyalanamadı: {reason}")
     ))
-}
-
-#[cfg(windows)]
-pub(crate) fn build_windows_fallback_ps1(
-    pid: u32,
-    src_exe: &Path,
-    current_exe: &Path,
-    src_dll: Option<&Path>,
-    staging: Option<&Path>,
-    dl_path: &Path,
-    log_path: &Path,
-) -> Vec<u8> {
-    let work_dir = current_exe.parent().unwrap_or_else(|| Path::new("."));
-    let dll_str = src_dll.map(ps_escape).unwrap_or_default();
-    let staging_str = staging.map(ps_escape).unwrap_or_default();
-    let script = format!(
-        "$ErrorActionPreference = 'Continue'\r\n\
-         $logPath = '{log}'\r\n\
-         function Write-Log($m) {{ try {{ Add-Content -LiteralPath $logPath -Value \"[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $m\" -Encoding UTF8 }} catch {{}} }}\r\n\
-         $pidWait = {pid}\r\n\
-         for ($i = 0; $i -lt 60; $i++) {{\r\n\
-           if (-not (Get-Process -Id $pidWait -ErrorAction SilentlyContinue)) {{ break }}\r\n\
-           Start-Sleep -Milliseconds 250\r\n\
-         }}\r\n\
-         Start-Sleep -Milliseconds 250\r\n\
-         try {{ Unblock-File -LiteralPath '{src}' -ErrorAction SilentlyContinue }} catch {{}}\r\n\
-         $copied = $false\r\n\
-         for ($i = 0; $i -lt 40; $i++) {{\r\n\
-           try {{\r\n\
-             Copy-Item -LiteralPath '{src}' -Destination '{dst}' -Force -ErrorAction Stop\r\n\
-             try {{ Unblock-File -LiteralPath '{dst}' -ErrorAction SilentlyContinue }} catch {{}}\r\n\
-             $copied = $true\r\n\
-             break\r\n\
-           }} catch {{\r\n\
-             if ($i -eq 39) {{ Write-Log \"Fallback Copy-Item failed: $($_.Exception.Message)\" }}\r\n\
-             Start-Sleep -Milliseconds 300\r\n\
-           }}\r\n\
-         }}\r\n\
-         $srcDll = '{dll}'\r\n\
-         if ($srcDll -ne '' -and (Test-Path -LiteralPath $srcDll)) {{\r\n\
-           $bridgeDir = Join-Path '{dir}' 'BepInEx\\plugins\\FM27Trainer.Bridge'\r\n\
-           if (Test-Path -LiteralPath $bridgeDir) {{\r\n\
-             try {{ Copy-Item -LiteralPath $srcDll -Destination (Join-Path $bridgeDir 'FM27Trainer.Bridge.dll') -Force -ErrorAction Stop }} catch {{ Write-Log \"DLL copy failed: $($_.Exception.Message)\" }}\r\n\
-           }}\r\n\
-         }}\r\n\
-         $stagingDir = '{stg}'\r\n\
-         if ($stagingDir -ne '' -and (Test-Path -LiteralPath $stagingDir)) {{\r\n\
-           Remove-Item -LiteralPath $stagingDir -Recurse -Force -ErrorAction SilentlyContinue\r\n\
-         }}\r\n\
-         if ($copied) {{\r\n\
-           Remove-Item -LiteralPath '{dl}' -Force -ErrorAction SilentlyContinue\r\n\
-         }}\r\n\
-         try {{\r\n\
-           Start-Process -FilePath '{dst}' -WorkingDirectory '{dir}' -WindowStyle Normal -ErrorAction Stop\r\n\
-         }} catch {{\r\n\
-           Write-Log \"Fallback Start-Process failed: $($_.Exception.Message)\"\r\n\
-         }}\r\n\
-         Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue\r\n",
-        log = ps_escape(log_path),
-        pid = pid,
-        src = ps_escape(src_exe),
-        dst = ps_escape(current_exe),
-        dir = ps_escape(work_dir),
-        dll = dll_str,
-        stg = staging_str,
-        dl = ps_escape(dl_path),
-    );
-    let mut out = Vec::with_capacity(3 + script.len());
-    out.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
-    out.extend_from_slice(script.as_bytes());
-    out
-}
-
-#[cfg(windows)]
-fn spawn_windows_fallback_script(
-    pid: u32,
-    src_exe: &Path,
-    current_exe: &Path,
-    src_dll: Option<&Path>,
-    staging: Option<&Path>,
-    dl_path: &Path,
-    updates_dir: &Path,
-) -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
-
-    let ps1 = updates_dir.join("apply_update.ps1");
-    let log_path = updates_dir.join("update.log");
-    let bytes = build_windows_fallback_ps1(pid, src_exe, current_exe, src_dll, staging, dl_path, &log_path);
-    std::fs::write(&ps1, bytes).map_err(|e| {
-        t!(
-            format!("Updatescript niet opgeslagen: {e}"),
-            format!("Could not write updater script: {e}"),
-            format!("Güncelleme betiği yazılamadı: {e}")
-        )
-    })?;
-
-    let spawn_ps = |flags: u32| {
-        Command::new("powershell.exe")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File"])
-            .arg(&ps1)
-            .creation_flags(flags)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-    };
-
-    if spawn_ps(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB).is_err() {
-        spawn_ps(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP).map_err(|e| {
-            t!(
-                format!("Kon updater niet starten: {e}"),
-                format!("Could not launch updater: {e}"),
-                format!("Güncelleyici başlatılamadı: {e}")
-            )
-        })?;
-    }
-    Ok(())
 }
 
 #[cfg(windows)]
@@ -1061,17 +905,17 @@ fn install_windows(dl_path: &Path, updates_dir: &Path) -> Result<InstallOutcome,
             Ok(InstallOutcome::Restarting)
         }
         Err(err) if err.starts_with("rename failed:") && current_exe.exists() => {
-            append_update_log(updates_dir, &format!("In-place rename unavailable ({err}); using PowerShell fallback."));
-            spawn_windows_fallback_script(
-                std::process::id(),
-                &src_exe,
-                &current_exe,
-                src_dll.as_deref(),
-                is_zip.then_some(staging.as_path()),
-                dl_path,
-                updates_dir,
-            )?;
-            Ok(InstallOutcome::Restarting)
+            append_update_log(updates_dir, &format!("In-place rename unavailable ({err}); opening downloaded package."));
+            let _ = Command::new("explorer.exe")
+                .arg(format!("/select,{}", dl_path.display()))
+                .spawn();
+            Ok(InstallOutcome::Manual {
+                message: t!(
+                    format!("Update gedownload en geopend: {}", dl_path.display()),
+                    format!("Update downloaded and opened: {}", dl_path.display()),
+                    format!("Güncelleme indirildi ve açıldı: {}", dl_path.display())
+                ),
+            })
         }
         Err(err) => {
             append_update_log(updates_dir, &format!("In-place replacement failed: {err}"));
@@ -1369,28 +1213,6 @@ mod tests {
 
         let _ = child.wait();
         let _ = std::fs::remove_file(&old);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn fallback_ps1_has_utf8_bom_and_normal_window() {
-        let dir = temp_test_dir("ps1_bom");
-        let bytes = build_windows_fallback_ps1(
-            1234,
-            &dir.join("src.exe"),
-            &dir.join("Şükrü").join("FM27 Training Assistant.exe"),
-            Some(&dir.join("FM27Trainer.Bridge.dll")),
-            Some(&dir.join("staging")),
-            &dir.join("dl.zip"),
-            &dir.join("update.log"),
-        );
-        assert!(bytes.starts_with(&[0xEF, 0xBB, 0xBF]));
-        let text = std::str::from_utf8(&bytes[3..]).unwrap();
-        assert!(text.contains("-WorkingDirectory"));
-        assert!(text.contains("-WindowStyle Normal"));
-        assert!(text.contains("update.log"));
-        assert!(text.contains("Şükrü"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

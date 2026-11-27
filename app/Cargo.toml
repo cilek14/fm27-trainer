@@ -1,6 +1,6 @@
 [package]
 name = "fm27-trainer"
-version = "1.4.2"
+version = "1.4.3"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/cilek14/fm27-trainer"

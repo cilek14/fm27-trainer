@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/release-v1.4.2-10b981">
+  <img alt="Version" src="https://img.shields.io/badge/release-v1.4.3-10b981">
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B%20Universal-111111?logo=apple">
   <img alt="FM27" src="https://img.shields.io/badge/Football%20Manager-27-c8102e">
