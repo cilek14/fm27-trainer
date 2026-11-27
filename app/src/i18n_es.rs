@@ -388,6 +388,41 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Reverted after FM assistant changed this day" => "Restaurado tras cambio del segundo entrenador de FM",
         "Week settings" => "Ajustes de semana",
         "Weekly and season training schedule, synced with FM's calendar." => "Planificación semanal y de temporada sincronizada con el calendario de FM.",
+        "Above this tactical understanding · 0 = off" => "Por encima de esta comprensión táctica · 0 = apagado",
+        "Active in weeks with 2+ matches" => "Activo en semanas con 2+ partidos",
+        "Advanced thresholds" => "Umbrales avanzados",
+        "Allow writes on untested FM build" => "Permitir cambios en versión FM no probada",
+        "Auto" => "Automático",
+        "Auto development threshold" => "Umbral de desarrollo auto",
+        "Auto extra rest in busy weeks" => "Descanso extra auto en semanas cargadas",
+        "Auto rest threshold" => "Umbral de descanso auto",
+        "Auto-scales on wide screens · Ctrl + / − / 0" => "Escala auto en pantallas anchas · Ctrl + / − / 0",
+        "Automatic updates" => "Actualizaciones automáticas",
+        "Back up your save first. Applies to this session only." => "Haz copia de seguridad primero. Solo para esta sesión.",
+        "Checks GitHub Releases on launch" => "Comprueba GitHub Releases al iniciar",
+        "Checks GitHub Releases on launch, downloads the latest package and restarts automatically" => "Comprueba GitHub Releases al iniciar, descarga el último paquete y reinicia",
+        "Contains settings.json and recent diagnostic files" => "Contiene settings.json y archivos de diagnóstico",
+        "Every N weeks · 0 = off" => "Cada N semanas · 0 = apagado",
+        "Export folder" => "Carpeta de exportación",
+        "FM connection" => "Conexión con FM",
+        "Folders" => "Carpetas",
+        "Goal re-target frequency" => "Frecuencia de reevaluación",
+        "Live connection is not available on this operating system." => "La conexión en vivo no está disponible en este sistema.",
+        "Move Team Bonding to Sunday" => "Mover Cohesión al domingo",
+        "Moves one Team Bonding session to Sunday's rest day" => "Mueve una sesión de Cohesión al descanso del domingo",
+        "Open folder" => "Abrir carpeta",
+        "Open settings" => "Abrir ajustes",
+        "Plan settings:" => "Ajustes del plan:",
+        "Re-evaluates priority factors every N weeks" => "Reevalúa prioridades cada N semanas",
+        "Reset to defaults" => "Restablecer valores",
+        "Scheduled below this relationship %" => "Programado por debajo de este % de relación",
+        "Set piece frequency" => "Frecuencia de balón parado",
+        "Settings & app folder" => "Carpeta de ajustes y app",
+        "Tactical slots switch to player development" => "Los huecos tácticos pasan a desarrollo",
+        "Team Bonding threshold" => "Umbral de Cohesión",
+        "UI scale" => "Escala de interfaz",
+        "Updates" => "Actualizaciones",
+        "When squad condition drops below · 0 = off" => "Cuando la condición baje de · 0 = apagado",
         "unconvincing" => "poco convincente",
         "very low" => "muy bajo",
         "waiting for the Breakdown in FM" => "esperando datos de FM",
@@ -647,6 +682,15 @@ pub fn translate_dynamic(en: String) -> String {
     }
     if let Some((last, n)) = en.strip_prefix("Checks every 8s and restores FM changes. Last check: ").and_then(|r| r.split_once(" · Restored: ")) {
         return format!("Comprueba cada 8s y restaura los cambios de FM. Último: {last} · Restaurados: {n}");
+    }
+    if let Some((b, c, d, sp, r)) = en
+        .strip_prefix("Bonding ")
+        .and_then(|rest| rest.split_once(" · Condition "))
+        .and_then(|(b, t)| t.split_once(" · Dev ").map(|(c, t)| (b, c, t)))
+        .and_then(|(b, c, t)| t.split_once(" · Set pieces ").map(|(d, t)| (b, c, d, t)))
+        .and_then(|(b, c, d, t)| t.split_once(" · Re-target ").map(|(sp, r)| (b, c, d, sp, r)))
+    {
+        return format!("Cohesión {b} · Condición {c} · Des. {d} · Balón parado {sp} · Reeval. {r}");
     }
     if let Some(rest) = en.strip_prefix("The capture of the FM window has almost no text (") {
         if let Some(n) = rest.split_once(" lines).").map(|x| x.0) {

@@ -27,6 +27,9 @@ pub const WARNING: Color32 = Color32::from_rgb(245, 158, 11);
 pub const DANGER: Color32 = Color32::from_rgb(244, 63, 94);
 pub const INFO: Color32 = Color32::from_rgb(56, 189, 248);
 
+pub const CONTENT_MAX: f32 = 1400.0;
+pub const SETTINGS_MAX: f32 = 960.0;
+
 /// Mengt twee kleuren (t = 0: a, t = 1: b).
 pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     let m = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t.clamp(0.0, 1.0)).round() as u8;
@@ -699,4 +702,123 @@ pub fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
     let x = egui::lerp((rect.left() + 13.0)..=(rect.right() - 13.0), t);
     p.circle_filled(egui::pos2(x, rect.center().y), 10.0, Color32::WHITE);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Yatayda ortalanmış maksimum genişlikli içerik sütunu (geniş ekranlarda sola yaslanmayı önler).
+pub fn centered_column(ui: &mut Ui, max_w: f32, add: impl FnOnce(&mut Ui)) {
+    let avail = ui.available_width().max(1.0);
+    let w = avail.min(max_w);
+    let pad = ((avail - w) * 0.5).max(0.0);
+    let saved_gap = ui.spacing().item_spacing.x;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        if pad > 0.5 {
+            ui.add_space(pad);
+        }
+        ui.allocate_ui_with_layout(
+            vec2(w, 0.0),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = saved_gap;
+                ui.set_min_width(w);
+                ui.set_max_width(w);
+                add(ui);
+            },
+        );
+    });
+}
+
+/// İçeriği kadar yer kaplayan sıkı bağlantı durumu hapı.
+pub fn status_pill(ui: &mut Ui, dot_color: Color32, text: &str, suffix: Option<&str>) -> Response {
+    let font_main = FontId::new(12.5, FontFamily::Proportional);
+    let font_sub = FontId::new(11.5, FontFamily::Proportional);
+    let main_galley = ui.fonts(|f| f.layout_no_wrap(text.to_owned(), font_main, TEXT));
+    let suf_text = suffix.map(|s| format!(" · {s}"));
+    let suf_galley = suf_text.as_ref().map(|s| ui.fonts(|f| f.layout_no_wrap(s.clone(), font_sub, TEXT_FAINT)));
+    let max_text_w = 190.0_f32;
+    let main_w = main_galley.size().x.min(max_text_w);
+    let suf_w = suf_galley.as_ref().map_or(0.0, |g| g.size().x);
+    let total_w = 12.0 + 10.0 + 6.0 + main_w + suf_w + 12.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(total_w, 28.0), Sense::hover());
+    if ui.is_rect_visible(rect) {
+        let p = ui.painter();
+        p.rect_filled(rect, CornerRadius::same(14), SURFACE);
+        p.rect_stroke(rect, CornerRadius::same(14), Stroke::new(1.0_f32, BORDER), egui::StrokeKind::Inside);
+        let dot_c = egui::pos2(rect.left() + 15.0, rect.center().y);
+        p.circle_filled(dot_c, 5.0, mix(SURFACE, dot_color, 0.28));
+        p.circle_filled(dot_c, 3.2, dot_color);
+        let text_x = rect.left() + 26.0;
+        let main_y = rect.center().y - main_galley.size().y * 0.5;
+        p.galley(egui::pos2(text_x, main_y), main_galley, TEXT);
+        if let Some(sg) = suf_galley {
+            let suf_y = rect.center().y - sg.size().y * 0.5;
+            p.galley(egui::pos2(text_x + main_w, suf_y), sg, TEXT_FAINT);
+        }
+    }
+    resp
+}
+
+/// Ayarlar sayfası ortak satırı: solda etiket + tek satırlık yardım metni, sağda kontrol ve altta ayırıcı çizgi.
+#[allow(dead_code)]
+pub fn setting_row(ui: &mut Ui, label: &str, help: Option<&str>, control: impl FnOnce(&mut Ui)) {
+    setting_row_tip(ui, label, help, None, true, control);
+}
+
+pub fn setting_row_tip(
+    ui: &mut Ui,
+    label: &str,
+    help: Option<&str>,
+    tip: Option<&str>,
+    divider: bool,
+    control: impl FnOnce(&mut Ui),
+) {
+    let w = ui.available_width().max(260.0);
+    let gap = 16.0;
+    let right_w = (w * 0.34).clamp(160.0, 240.0);
+    let left_w = (w - right_w - gap).max(120.0);
+    let saved_gap = ui.spacing().item_spacing.x;
+
+    ui.add_space(6.0);
+    ui.allocate_ui_with_layout(
+        vec2(w, 0.0),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.set_max_width(w);
+            ui.allocate_ui_with_layout(
+                vec2(left_w, 0.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = saved_gap;
+                    ui.set_min_width(left_w);
+                    ui.set_max_width(left_w);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new(label).font(FontId::new(13.0, medium())).color(TEXT));
+                        if let Some(t) = tip {
+                            ui.label(ic(icon::INFO).color(TEXT_FAINT).size(13.5)).on_hover_text(t);
+                        }
+                    });
+                    if let Some(h) = help {
+                        ui.add(egui::Label::new(RichText::new(h).size(12.0).color(TEXT_DIM)).wrap());
+                    }
+                },
+            );
+            ui.add_space(gap);
+            ui.allocate_ui_with_layout(
+                vec2(right_w, 0.0),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = saved_gap;
+                    ui.set_min_width(right_w);
+                    ui.set_max_width(right_w);
+                    control(ui);
+                },
+            );
+        },
+    );
+    ui.add_space(6.0);
+    if divider {
+        let (sep_rect, _) = ui.allocate_exact_size(vec2(w, 1.0), Sense::hover());
+        ui.painter().hline(sep_rect.x_range(), sep_rect.center().y, Stroke::new(1.0_f32, mix(SURFACE, BORDER, 0.75)));
+    }
 }

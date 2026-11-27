@@ -388,6 +388,41 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Reverted after FM assistant changed this day" => "Rétabli après modification par l'adjoint FM",
         "Week settings" => "Réglages semaine",
         "Weekly and season training schedule, synced with FM's calendar." => "Programme hebdomadaire et saisonnier synchronisé avec le calendrier de FM.",
+        "Above this tactical understanding · 0 = off" => "Au-dessus de cette compréhension tactique · 0 = arrêt",
+        "Active in weeks with 2+ matches" => "Actif lors des semaines à 2+ matchs",
+        "Advanced thresholds" => "Seuils avancés",
+        "Allow writes on untested FM build" => "Autoriser l'écriture sur version FM non testée",
+        "Auto" => "Automatique",
+        "Auto development threshold" => "Seuil de développement auto",
+        "Auto extra rest in busy weeks" => "Repos auto en semaine chargée",
+        "Auto rest threshold" => "Seuil de repos auto",
+        "Auto-scales on wide screens · Ctrl + / − / 0" => "Mise à l'échelle auto sur grands écrans · Ctrl + / − / 0",
+        "Automatic updates" => "Mises à jour automatiques",
+        "Back up your save first. Applies to this session only." => "Sauvegardez votre partie d'abord. Valable pour cette session uniquement.",
+        "Checks GitHub Releases on launch" => "Vérifie GitHub Releases au lancement",
+        "Checks GitHub Releases on launch, downloads the latest package and restarts automatically" => "Vérifie GitHub Releases au lancement, télécharge le dernier paquet et redémarre automatiquement",
+        "Contains settings.json and recent diagnostic files" => "Contient settings.json et les fichiers de diagnostic récents",
+        "Every N weeks · 0 = off" => "Toutes les N semaines · 0 = arrêt",
+        "Export folder" => "Dossier d'export",
+        "FM connection" => "Connexion FM",
+        "Folders" => "Dossiers",
+        "Goal re-target frequency" => "Fréquence de réévaluation",
+        "Live connection is not available on this operating system." => "La connexion en direct n'est pas disponible sur ce système.",
+        "Move Team Bonding to Sunday" => "Déplacer Cohésion au dimanche",
+        "Moves one Team Bonding session to Sunday's rest day" => "Déplace une séance de Cohésion d'équipe au dimanche",
+        "Open folder" => "Ouvrir le dossier",
+        "Open settings" => "Ouvrir les réglages",
+        "Plan settings:" => "Paramètres du plan :",
+        "Re-evaluates priority factors every N weeks" => "Réévalue les priorités toutes les N semaines",
+        "Reset to defaults" => "Réinitialiser par défaut",
+        "Scheduled below this relationship %" => "Planifié sous ce % de relations",
+        "Set piece frequency" => "Fréquence coups de pied arrêtés",
+        "Settings & app folder" => "Dossier réglages et app",
+        "Tactical slots switch to player development" => "Les créneaux tactiques passent au développement",
+        "Team Bonding threshold" => "Seuil Cohésion d'équipe",
+        "UI scale" => "Échelle d'interface",
+        "Updates" => "Mises à jour",
+        "When squad condition drops below · 0 = off" => "Si la condition chute sous · 0 = arrêt",
         "unconvincing" => "peu convaincant",
         "very low" => "très faible",
         "waiting for the Breakdown in FM" => "en attente des données de FM",
@@ -647,6 +682,15 @@ pub fn translate_dynamic(en: String) -> String {
     }
     if let Some((last, n)) = en.strip_prefix("Checks every 8s and restores FM changes. Last check: ").and_then(|r| r.split_once(" · Restored: ")) {
         return format!("Vérifie toutes les 8s et rétablit les modifications de FM. Dernier : {last} · Rétablis : {n}");
+    }
+    if let Some((b, c, d, sp, r)) = en
+        .strip_prefix("Bonding ")
+        .and_then(|rest| rest.split_once(" · Condition "))
+        .and_then(|(b, t)| t.split_once(" · Dev ").map(|(c, t)| (b, c, t)))
+        .and_then(|(b, c, t)| t.split_once(" · Set pieces ").map(|(d, t)| (b, c, d, t)))
+        .and_then(|(b, c, d, t)| t.split_once(" · Re-target ").map(|(sp, r)| (b, c, d, sp, r)))
+    {
+        return format!("Cohésion {b} · Condition {c} · Dév. {d} · CPA {sp} · Rééval. {r}");
     }
     if let Some(rest) = en.strip_prefix("The capture of the FM window has almost no text (") {
         if let Some(n) = rest.split_once(" lines).").map(|x| x.0) {

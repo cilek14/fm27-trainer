@@ -12,6 +12,7 @@ Bu dosya arayüz yenilemesinin tek kaynağıdır. Her fazda önce bu dosyayı ok
 | 4 | Takım analizi ve Oyuncular tablosu | tamamlandı |
 | 5 | Takvim | tamamlandı |
 | 6 | Cila ve kontrol | tamamlandı |
+| 7 | Ayarlar ve geniş ekran | tamamlandı |
 
 ## Neden değişiyor (mevcut arayüzün sorunları)
 
