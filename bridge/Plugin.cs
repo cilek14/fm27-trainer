@@ -17,7 +17,7 @@ using SI.Interop;
 
 namespace FM27Trainer.Bridge;
 
-[BepInPlugin("com.fm27trainer.bridge", "FM27 Training Assistant Bridge", "0.8.0")]
+[BepInPlugin("com.fm27trainer.bridge", "FM27 Training Assistant Bridge", "0.9.0")]
 public sealed class Plugin : BasePlugin
 {
     internal static ManualLogSource LogSource = null!;
@@ -52,7 +52,7 @@ public sealed class Plugin : BasePlugin
         Directory.CreateDirectory(OutDir);
         _harmony = new Harmony("com.fm27trainer.bridge");
         _harmony.PatchAll(typeof(InteropChannelPatches));
-        Log.LogInfo("FM27 Training Assistant Bridge 0.8.0 loaded. Watching TacticalEffectiveness + Players + Intensity/Focus/Role Events.");
+        Log.LogInfo("FM27 Training Assistant Bridge 0.9.0 loaded. Watching TacticalEffectiveness + Players + Intensity/Focus/Role Events.");
     }
 }
 
@@ -60,6 +60,7 @@ internal enum ChannelKind
 {
     TacticalEffectiveness,
     PlayerIntensity,
+    PlayerActiveFocus,
     FocusOptions,
     PosRoleOptions,
     OopRoleOptions,
@@ -133,6 +134,7 @@ internal static class InteropChannelPatches
 
     private static readonly ConcurrentDictionary<int, ChannelInfo> Tracked = new();
     private static readonly ConcurrentDictionary<uint, int> CurrentIntensities = new();
+    private static readonly ConcurrentDictionary<uint, int> CurrentFocuses = new();
     private static readonly ConcurrentDictionary<int, string> FocusOptions = new();
     private static readonly ConcurrentDictionary<string, PosRoleOption> PosRoleOptions = new();
     private static readonly ConcurrentDictionary<long, string> OopRoleOptions = new();
@@ -171,20 +173,35 @@ internal static class InteropChannelPatches
                 return;
             }
 
-            if (propName.IndexOf("AdditionalFocus", StringComparison.OrdinalIgnoreCase) >= 0
-                || propName.IndexOf("IndividualTrainingType", StringComparison.OrdinalIgnoreCase) >= 0)
+            bool isFocusProp = propName.IndexOf("TrainingFocus", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("AdditionalFocus", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("FocusOption", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("FocusList", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("IndividualTrainingType", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isListProp = propName.IndexOf("Possible", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("Available", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("List", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("Options", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("Types", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (isFocusProp)
             {
-                Tracked[key.GetHashCode()] = new ChannelInfo(ChannelKind.FocusOptions, DescribeSource(source), propName, playerRuntimeId);
+                var kind = (playerRuntimeId != 0 && !isListProp) ? ChannelKind.PlayerActiveFocus : ChannelKind.FocusOptions;
+                Tracked[key.GetHashCode()] = new ChannelInfo(kind, DescribeSource(source), propName, playerRuntimeId);
                 return;
             }
 
-            if (propName.IndexOf("OOPTrainingRole", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (propName.IndexOf("OOPTrainingRole", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("OOPRole", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("OutOfPossessionTraining", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("OutOfPossessionRole", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 Tracked[key.GetHashCode()] = new ChannelInfo(ChannelKind.OopRoleOptions, DescribeSource(source), propName, playerRuntimeId);
                 return;
             }
 
             if (propName.IndexOf("TrainingPosition", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("TrainingRole", StringComparison.OrdinalIgnoreCase) >= 0
                 || propName.IndexOf("PossibleIndividualTrainingTypes", StringComparison.OrdinalIgnoreCase) >= 0
                 || propName.IndexOf("IndividualTrainingPositionList", StringComparison.OrdinalIgnoreCase) >= 0)
             {
@@ -321,6 +338,7 @@ internal static class InteropChannelPatches
                 try
                 {
                     ApplyFocusItem(subsystem, mgrVal, item);
+                    CurrentFocuses[item.runtime_id] = item.option_id;
                     applied++;
                 }
                 catch (Exception ex)
@@ -495,6 +513,23 @@ internal static class InteropChannelPatches
                 return;
             }
 
+            if (info.Kind == ChannelKind.PlayerActiveFocus)
+            {
+                var added = HarvestOptionsRecursive(value, 0, HarvestFocusOptionsFromRecord);
+                var focused = false;
+                if (info.RuntimeId != 0 && TryExtractInt(value, out var fid) && fid is >= 0 and <= 100)
+                {
+                    if (!CurrentFocuses.TryGetValue(info.RuntimeId, out var prev) || prev != fid)
+                    {
+                        CurrentFocuses[info.RuntimeId] = fid;
+                        focused = true;
+                    }
+                }
+                if ((added || focused) && _lastEntryKey != null && _lastTacticalDump != null)
+                    WriteLatest(_lastEntryKey, _lastTacticalDump);
+                return;
+            }
+
             if (info.Kind == ChannelKind.FocusOptions)
             {
                 if (HarvestOptionsRecursive(value, 0, HarvestFocusOptionsFromRecord) && _lastEntryKey != null && _lastTacticalDump != null)
@@ -642,7 +677,7 @@ internal static class InteropChannelPatches
 
     private static bool HarvestOptionsRecursive(TypedValue? tv, int depth, Func<Record, int, bool> visitRecord)
     {
-        if (tv == null || tv.IsNull || depth > 4) return false;
+        if (tv == null || tv.IsNull || depth > 8) return false;
         var added = false;
         try
         {
@@ -656,7 +691,7 @@ internal static class InteropChannelPatches
             var items = TryEnumerateItems(tv);
             if (items != null)
             {
-                var limit = Math.Min(items.Count, 120);
+                var limit = Math.Min(items.Count, 250);
                 for (var i = 0; i < limit; i++)
                 {
                     var cur = items[i];
@@ -1007,6 +1042,10 @@ internal static class InteropChannelPatches
                 foreach (var kv in CurrentIntensities)
                     intensities[kv.Key.ToString()] = kv.Value;
 
+                var focuses = new Dictionary<string, int>();
+                foreach (var kv in CurrentFocuses)
+                    focuses[kv.Key.ToString()] = kv.Value;
+
                 var focusOpts = new Dictionary<string, string>();
                 foreach (var kv in FocusOptions)
                     focusOpts[kv.Key.ToString()] = kv.Value;
@@ -1021,6 +1060,7 @@ internal static class InteropChannelPatches
                     ["updated_utc"] = System.DateTime.UtcNow.ToString("O"),
                     ["session_ready"] = _sessionId != 0,
                     ["current_intensities"] = intensities,
+                    ["current_focuses"] = focuses,
                     ["focus_options"] = focusOpts,
                     ["pos_role_options"] = posRoleOpts,
                     ["oop_role_options"] = oopRoleOpts,

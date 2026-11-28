@@ -121,10 +121,12 @@ pub enum AdditionalFocus {
     AgilityAndBalance,
     Aerial,
     BallControl,
+    BallRetention,
     Passing,
     Shooting,
     FinalThird,
     DefensivePositioning,
+    Tackling,
     GkShotStopping,
     GkHandling,
     GkDistribution,
@@ -139,10 +141,12 @@ impl AdditionalFocus {
             Self::AgilityAndBalance => t!("Wendbaarheid & Balans", "Agility and Balance", "Çeviklik ve Denge"),
             Self::Aerial => t!("Luchtduels", "Aerial", "Hava Topları"),
             Self::BallControl => t!("Balcontrole", "Ball Control", "Top Kontrolü"),
+            Self::BallRetention => t!("Balbezit houden", "Ball Retention", "Topu Saklama"),
             Self::Passing => t!("Passen", "Passing", "Pas"),
             Self::Shooting => t!("Afwerken", "Shooting", "Şut"),
             Self::FinalThird => t!("Laatste fase", "Final Third", "Üçüncü Bölge"),
             Self::DefensivePositioning => t!("Verdedigende positionering", "Defensive Positioning", "Savunma Pozisyonu"),
+            Self::Tackling => t!("Tackelen", "Tackling", "Müdahale"),
             Self::GkShotStopping => t!("Schoten tegenhouden", "Goalkeeper Shot Stopping", "Kaleci Şut Kurtarma"),
             Self::GkHandling => t!("Klemvastheid", "Goalkeeper Handling", "Kaleci Elle Kontrol"),
             Self::GkDistribution => t!("Spelhervatting keeper", "Goalkeeper Distribution", "Kaleci Oyuna Sokma"),
@@ -157,13 +161,15 @@ impl AdditionalFocus {
             Self::AgilityAndBalance => &["agility", "balance"],
             Self::Aerial => &["jumping_reach", "heading"],
             Self::BallControl => &["first_touch", "technique", "dribbling"],
+            Self::BallRetention => &["first_touch", "composure", "passing", "balance"],
             Self::Passing => &["passing", "vision", "decisions"],
             Self::Shooting => &["finishing", "composure", "long_shots"],
             Self::FinalThird => &["off_the_ball", "decisions", "technique"],
-            Self::DefensivePositioning => &["positioning", "marking", "tackling", "concentration"],
+            Self::DefensivePositioning => &["positioning", "marking", "concentration"],
+            Self::Tackling => &["tackling", "anticipation", "aggression"],
             Self::GkShotStopping => &["reflexes", "one_on_ones"],
             Self::GkHandling => &["handling", "aerial_reach", "command_of_area"],
-            Self::GkDistribution => &["kicking", "throwing", "passing"],
+            Self::GkDistribution => &["kicking", "passing", "throwing"],
         }
     }
 
@@ -176,28 +182,106 @@ impl AdditionalFocus {
 
     /// FM27'nin canlı `focus_options` sözlüğünden eşleşen `(option_id, name)` çiftini bulur.
     pub fn match_option_id(self, options: &HashMap<i32, String>) -> Option<(i32, String)> {
-        let keywords: &[&str] = match self {
-            Self::Quickness => &["quickness", "çabukluk", "snelheid", "sprint", "schnelligkeit", "antritt"],
-            Self::Endurance => &["endurance", "dayanıklılık", "uithouding", "ausdauer"],
-            Self::Strength => &["strength", "güç", "kuvvet", "kracht", "stärke", "kraft"],
-            Self::AgilityAndBalance => &["agility", "çeviklik", "denge", "wendbaarheid", "beweglichkeit", "balance"],
-            Self::Aerial => &["aerial", "hava top", "kafa", "lucht", "kopfball"],
-            Self::BallControl => &["ball control", "top kontrol", "balcontrole", "ballkontrolle"],
-            Self::Passing => &["passing", "pas", "passen", "passspiel"],
-            Self::Shooting => &["shooting", "şut", "bitiricilik", "afwerken", "abschluss", "torschuss"],
-            Self::FinalThird => &["final third", "üçüncü bölge", "hücum alan", "laatste fase", "letztes drittel"],
-            Self::DefensivePositioning => &["defensive position", "savunma pozisyon", "verdedig", "stellungsspiel"],
-            Self::GkShotStopping => &["shot stopping", "şut kurtar", "paraden", "reaktion"],
-            Self::GkHandling => &["handling", "elle kontrol", "klemvast", "fangsicherheit"],
-            Self::GkDistribution => &["distribution", "oyuna sok", "dagitim", "dağıtım", "spieleröffnung", "abwürfe"],
+        let keyword_matches = |low: &str, kw: &str| -> bool {
+            if kw.chars().count() <= 4 {
+                low.split(|c: char| !c.is_alphabetic()).any(|w| w == kw)
+            } else {
+                low.match_indices(kw).any(|(idx, _)| {
+                    low[..idx].chars().next_back().is_none_or(|c| !c.is_alphabetic())
+                })
+            }
         };
+        let keywords: &[&str] = match self {
+            Self::Quickness => &[
+                "quickness", "çabukluk", "sürat", "hız", "snelheid", "sprint",
+                "schnelligkeit", "antritt", "vivacité", "vitesse", "rapidità", "velocidad", "rapidez",
+            ],
+            Self::Endurance => &[
+                "endurance", "dayanıklılık", "uithouding", "ausdauer",
+                "résistance", "resistenza", "resistencia",
+            ],
+            Self::Strength => &[
+                "strength", "güç", "kuvvet", "kracht", "stärke", "kraft",
+                "force", "forza", "fuerza",
+            ],
+            Self::AgilityAndBalance => &[
+                "agility", "çeviklik ve denge", "çeviklik", "wendbaarheid",
+                "beweglichkeit", "agilité", "agilità", "agilidad",
+            ],
+            Self::Aerial => &[
+                "aerial", "hava top", "hava hakimiyet", "kafa", "lucht",
+                "kopfball", "jeu aérien", "aérien", "gioco aereo", "aereo", "juego aéreo", "aéreo",
+            ],
+            Self::BallControl => &[
+                "ball control", "top kontrol", "balcontrole", "ballkontrolle",
+                "contrôle de balle", "controllo palla", "controllo di palla", "control de balón",
+            ],
+            Self::BallRetention => &[
+                "ball retention", "topu saklama", "top saklama", "balbezit",
+                "ballbehauptung", "conservation", "mantenimento", "retención",
+            ],
+            Self::Passing => &[
+                "passing", "pas", "passen", "passspiel", "passes",
+                "jeu de passes", "passaggi", "pases",
+            ],
+            Self::Shooting => &[
+                "shooting", "şut", "bitiricilik", "afwerken", "schieten",
+                "abschluss", "torschuss", "finition", "tirs", "tiro",
+                "finalizzazione", "definición", "remate",
+            ],
+            Self::FinalThird => &[
+                "final third", "üçüncü bölge", "son bölge", "hücum alan",
+                "laatste fase", "letztes drittel", "dernier tiers", "ultimo terzo", "último tercio",
+            ],
+            Self::DefensivePositioning => &[
+                "defensive position", "defansif pozisyon", "savunma pozisyon", "pozisyon alma",
+                "verdedigende pos", "stellungsspiel", "placement défensif",
+                "posizionamento difensivo", "colocación defensiva",
+            ],
+            Self::Tackling => &[
+                "tackling", "müdahale", "top kapma", "tackelen",
+                "zweikampf", "tacles", "contrasti", "entradas",
+            ],
+            Self::GkShotStopping => &[
+                "shot stopping", "şut kurtar", "schoten tegenhouden",
+                "paraden", "arrêts", "parate", "paradas",
+            ],
+            Self::GkHandling => &[
+                "handling", "elle kontrol", "top tutma", "klemvast",
+                "fangsicherheit", "prise de balle", "presa", "blocaje",
+            ],
+            Self::GkDistribution => &[
+                "distribution", "oyuna sok", "top dağıtım", "dağıtım", "dagitim",
+                "spelhervatting", "uittrappen", "spieleröffnung", "abwürfe",
+                "relance", "distribuzione", "rilanci", "distribución",
+            ],
+        };
+        let is_gk_focus = matches!(
+            self,
+            Self::GkShotStopping | Self::GkHandling | Self::GkDistribution
+        );
         let mut best: Option<(i32, String)> = None;
         for (&id, raw_name) in options {
             let low = raw_name.to_lowercase();
-            if keywords.iter().any(|kw| low.contains(kw)) {
-                if self == Self::Passing && (low.contains("shot") || low.contains("gk")) {
-                    continue;
-                }
+            let is_gk_opt = [
+                "gk", "goalkeeper", "kaleci", "keeper", "torwart", "gardien", "portiere", "portero",
+            ]
+            .iter()
+            .any(|g| keyword_matches(&low, g));
+            if !is_gk_focus && is_gk_opt {
+                continue;
+            }
+            if self == Self::Shooting
+                && ["stopping", "kurtar", "tegenhouden", "paraden", "arrêts", "parate", "paradas"]
+                    .iter()
+                    .any(|x| low.contains(x))
+            {
+                continue;
+            }
+            if self == Self::Passing && low.contains("shot") {
+                continue;
+            }
+            if keywords.iter().any(|kw| keyword_matches(&low, kw)) {
                 if best.as_ref().is_none_or(|(bid, _)| id < *bid) {
                     best = Some((id, raw_name.clone()));
                 }
@@ -231,6 +315,8 @@ fn attr_label(key: &str) -> &'static str {
         "positioning" => t!("Positie kiezen (verd.)", "Positioning", "Pozisyon Alma"),
         "marking" => t!("Mandekking", "Marking", "Markaj"),
         "tackling" => t!("Tackelen", "Tackling", "Top Kapma"),
+        "anticipation" => t!("Anticipatie", "Anticipation", "Öngörü"),
+        "aggression" => t!("Agressie", "Aggression", "Agresiflik"),
         "concentration" => t!("Concentratie", "Concentration", "Konsantrasyon"),
         "reflexes" => t!("Reflexen", "Reflexes", "Refleks"),
         "one_on_ones" => t!("Eén-op-één", "One on Ones", "Birebir"),
@@ -328,6 +414,7 @@ pub struct RoleTrainingProposal {
 pub struct ParsedBepInEx {
     pub bottlenecks: Vec<PlayerBottleneck>,
     pub intensities: HashMap<u32, IntensityLevel>,
+    pub current_focuses: HashMap<u32, i32>,
     pub focus_options: HashMap<i32, String>,
     pub pos_role_options: Vec<PosRoleOption>,
     pub oop_role_options: HashMap<i64, String>,
@@ -366,6 +453,7 @@ pub struct UnifiedPlayerRow {
     pub focus_rec: Option<AdditionalFocus>,
     pub focus_weak_attrs: Option<String>,
     pub focus_reason: Option<String>,
+    pub focus_active: bool,
 }
 
 impl UnifiedPlayerRow {
@@ -383,11 +471,12 @@ impl UnifiedPlayerRow {
         if self.runtime_id == 0 {
             return false;
         }
-        let has_int = self.intensity_rec.is_some();
-        let has_foc = self
-            .focus_rec
-            .and_then(|f| f.match_option_id(focus_options))
-            .is_some();
+        let has_int = !self.injured && self.intensity_rec.is_some();
+        let has_foc = !self.injured
+            && self
+                .focus_rec
+                .and_then(|f| f.match_option_id(focus_options))
+                .is_some();
         has_int || has_foc
     }
 
@@ -396,12 +485,13 @@ impl UnifiedPlayerRow {
         focus_options: &HashMap<i32, String>,
         applied_focuses: &HashMap<u32, AdditionalFocus>,
     ) -> bool {
-        if self.runtime_id == 0 {
+        if self.runtime_id == 0 || self.injured {
             return false;
         }
         let int_diff = matches!(self.intensity_rec, Some(lvl) if self.intensity_cur != Some(lvl));
         let foc_diff = self.focus_rec.is_some_and(|fc| {
             fc.match_option_id(focus_options).is_some()
+                && !self.focus_active
                 && self.uid.is_none_or(|u| applied_focuses.get(&u) != Some(&fc))
         });
         int_diff || foc_diff
@@ -412,6 +502,7 @@ pub struct IndividualState {
     pub profile: IntensityProfile,
     pub bottlenecks: Vec<PlayerBottleneck>,
     pub current_intensities: HashMap<u32, IntensityLevel>,
+    pub current_focuses: HashMap<u32, i32>,
     pub focus_options: HashMap<i32, String>,
     pub pos_role_options: Vec<PosRoleOption>,
     pub oop_role_options: HashMap<i64, String>,
@@ -441,6 +532,7 @@ impl Default for IndividualState {
             profile: IntensityProfile::default(),
             bottlenecks: Vec::new(),
             current_intensities: HashMap::new(),
+            current_focuses: HashMap::new(),
             focus_options: HashMap::new(),
             pos_role_options: Vec::new(),
             oop_role_options: HashMap::new(),
@@ -552,6 +644,17 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
         }
     }
 
+    let mut current_focuses = HashMap::new();
+    if let Some(cf) = root.get("current_focuses").and_then(|v| v.as_object()) {
+        for (k, v) in cf {
+            if let (Ok(rid), Some(fid)) = (k.parse::<u32>(), v.as_i64()) {
+                if (0..=100).contains(&fid) {
+                    current_focuses.insert(rid, fid as i32);
+                }
+            }
+        }
+    }
+
     let mut focus_options = HashMap::new();
     if let Some(fo) = root.get("focus_options").and_then(|v| v.as_object()) {
         for (k, v) in fo {
@@ -595,6 +698,7 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
         return ParsedBepInEx {
             bottlenecks: out,
             intensities,
+            current_focuses,
             focus_options,
             pos_role_options,
             oop_role_options,
@@ -610,6 +714,7 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
         return ParsedBepInEx {
             bottlenecks: out,
             intensities,
+            current_focuses,
             focus_options,
             pos_role_options,
             oop_role_options,
@@ -621,6 +726,7 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
         return ParsedBepInEx {
             bottlenecks: out,
             intensities,
+            current_focuses,
             focus_options,
             pos_role_options,
             oop_role_options,
@@ -750,6 +856,7 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
     ParsedBepInEx {
         bottlenecks: out,
         intensities,
+        current_focuses,
         focus_options,
         pos_role_options,
         oop_role_options,
@@ -757,7 +864,14 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
     }
 }
 
-/// Sakatlık önleyici akıllı bireysel yoğunluk algoritması (%100 meşru FM yoğunluk seviyeleri + profil desteği).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct IntensityContext {
+    pub is_gk: bool,
+    pub heavy_team_week: bool,
+    pub post_match_day: bool,
+}
+
+/// Sakatlık önleyici akıllı bireysel yoğunluk algoritması (%100 meşru FM yoğunluk seviyeleri + profil + bağlam desteği).
 pub fn recommend_intensity(
     age: Option<u8>,
     condition_pct: f32,
@@ -765,6 +879,26 @@ pub fn recommend_intensity(
     injured: bool,
     week_matches: usize,
     profile: IntensityProfile,
+) -> (IntensityLevel, bool, String) {
+    recommend_intensity_with_ctx(
+        age,
+        condition_pct,
+        sharpness_pct,
+        injured,
+        week_matches,
+        profile,
+        IntensityContext::default(),
+    )
+}
+
+pub fn recommend_intensity_with_ctx(
+    age: Option<u8>,
+    condition_pct: f32,
+    _sharpness_pct: f32,
+    injured: bool,
+    week_matches: usize,
+    profile: IntensityProfile,
+    ctx: IntensityContext,
 ) -> (IntensityLevel, bool, String) {
     if injured {
         return (
@@ -779,11 +913,13 @@ pub fn recommend_intensity(
         );
     }
 
-    let (crit_cond, half_cond, vet_cond, double_cond, double_young_age) = match profile {
+    let (base_crit, base_half, vet_cond, double_cond, double_young_age) = match profile {
         IntensityProfile::Protective => (74.0, 84.0, 91.0, 95.0, 21),
         IntensityProfile::Balanced => (70.0, 80.0, 88.0, 92.0, 23),
         IntensityProfile::Development => (66.0, 75.0, 84.0, 88.0, 25),
     };
+    let crit_cond = if ctx.post_match_day { base_crit - 6.0 } else { base_crit };
+    let half_cond = if ctx.post_match_day { base_half - 8.0 } else { base_half };
     let vet_age = profile.veteran_age();
 
     if condition_pct < crit_cond {
@@ -812,7 +948,8 @@ pub fn recommend_intensity(
 
     if age.is_some_and(|a| a >= vet_age) {
         let a = age.unwrap_or(vet_age);
-        if week_matches >= 2 || condition_pct < vet_cond {
+        let eff_vet = if ctx.post_match_day { vet_cond - 6.0 } else { vet_cond };
+        if week_matches >= 2 || condition_pct < eff_vet {
             return (
                 IntensityLevel::Half,
                 false,
@@ -835,11 +972,12 @@ pub fn recommend_intensity(
     }
 
     if week_matches >= 2 {
-        let congested_half = match profile {
+        let base_congested = match profile {
             IntensityProfile::Protective => 89.0,
             IntensityProfile::Balanced => 85.0,
             IntensityProfile::Development => 80.0,
         };
+        let congested_half = if ctx.post_match_day { base_congested - 6.0 } else { base_congested };
         if condition_pct < congested_half {
             return (
                 IntensityLevel::Half,
@@ -848,21 +986,6 @@ pub fn recommend_intensity(
                     format!("{week_matches} wedstrijden deze week + conditie {condition_pct:.0}% → overbelasting voorkomen."),
                     format!("{week_matches} matches this week + condition {condition_pct:.0}% → prevent overload."),
                     format!("Bu hafta {week_matches} maç + kondisyon %{condition_pct:.0} → aşırı yüklenme koruması.")
-                ),
-            );
-        }
-        if profile != IntensityProfile::Protective
-            && condition_pct >= 93.0
-            && sharpness_pct < 72.0
-            && age.is_none_or(|a| a < 30)
-        {
-            return (
-                IntensityLevel::Double,
-                false,
-                t!(
-                    format!("Wisselspeler: conditie {condition_pct:.0}%, scherpte {sharpness_pct:.0}% → scherpte opbouwen."),
-                    format!("Rotation player: condition {condition_pct:.0}%, sharpness {sharpness_pct:.0}% → build sharpness."),
-                    format!("Rotasyon oyuncusu: kondisyon %{condition_pct:.0}, keskinlik %{sharpness_pct:.0} → maç ritmi kazanımı.")
                 ),
             );
         }
@@ -877,26 +1000,49 @@ pub fn recommend_intensity(
         );
     }
 
+    if ctx.post_match_day && condition_pct < base_half {
+        return (
+            IntensityLevel::Normal,
+            false,
+            t!(
+                "Hersteldag na wedstrijd → gebalanceerde intensiteit behouden.",
+                "Post-match recovery window → keeping balanced intensity.",
+                "Maç ertesi toparlanma süreci → dengeli yoğunluk korundu."
+            )
+            .to_string(),
+        );
+    }
+
     // 0 veya 1 maçlı hafta
     let allow_double_1_match = profile != IntensityProfile::Protective || week_matches == 0;
     let young = age.is_some_and(|a| a <= double_young_age);
     let under_vet = age.is_none_or(|a| a < vet_age);
-    if allow_double_1_match
-        && condition_pct >= double_cond
-        && under_vet
-        && (young || sharpness_pct < 80.0 || week_matches == 0 || profile == IntensityProfile::Development)
-    {
+    let can_double_role = if ctx.is_gk {
+        young && (week_matches == 0 || profile == IntensityProfile::Development)
+    } else {
+        young
+            || (week_matches == 0 && age.is_none_or(|a| a <= 27))
+            || (profile == IntensityProfile::Development && age.is_none_or(|a| a <= 27))
+    };
+
+    if allow_double_1_match && condition_pct >= double_cond && under_vet && can_double_role {
+        if ctx.heavy_team_week {
+            return (
+                IntensityLevel::Normal,
+                false,
+                t!(
+                    "Zware teamconditie deze week → Normaal voorkomt overbelasting.",
+                    "Heavy team conditioning this week → Normal prevents overload.",
+                    "Bu hafta ağır takım kondisyonu var → aşırı yüklenmeyi önlemek için Normal Yoğunluk."
+                )
+                .to_string(),
+            );
+        }
         let detail = if young {
             t!(
                 format!("Jong talent ({}j) & fris ({condition_pct:.0}%) → maximale ontwikkeling.", age.unwrap_or(20)),
                 format!("Young prospect ({}y) & fresh ({condition_pct:.0}%) → max development.", age.unwrap_or(20)),
                 format!("Genç oyuncu ({} yaş) & diri (%{condition_pct:.0}) → maksimum gelişim.", age.unwrap_or(20))
-            )
-        } else if sharpness_pct < 80.0 {
-            t!(
-                format!("Fris ({condition_pct:.0}%), lage scherpte ({sharpness_pct:.0}%) → ritme verhogen."),
-                format!("Fresh ({condition_pct:.0}%), low sharpness ({sharpness_pct:.0}%) → boost sharpness."),
-                format!("Kondisyon yüksek (%{condition_pct:.0}), keskinlik düşük (%{sharpness_pct:.0}) → form yüklemesi.")
             )
         } else {
             t!(
@@ -920,14 +1066,15 @@ pub fn recommend_intensity(
 }
 
 /// Oyuncunun kendi doğal mevkisindeki kilit eksik özelliklere göre Ek Odak (Additional Focus) önerir.
-/// Hiçbir oyuncuyu taktikteki uygun olmayan bir role zorlamaz.
+/// Hiçbir oyuncuyu taktikteki uygun olmayan bir role zorlamaz. Sakat veya 32+ veteran oyunculara
+/// ve tüm temel özellikleri zaten yüksek olan yıldızlara ekstra yük bindirmemek için `None` döner.
 pub fn recommend_additional_focus(
     player: &TacticPlayer,
     runtime_id: u32,
     age: Option<u8>,
     injured: bool,
 ) -> Option<FocusRecommendation> {
-    if player.positions.len() < 15 || player.attributes.is_empty() {
+    if player.positions.len() < 15 || player.attributes.is_empty() || injured || age.is_some_and(|a| a >= 32) {
         return None;
     }
 
@@ -951,9 +1098,11 @@ pub fn recommend_additional_focus(
             "STP",
             &[
                 AdditionalFocus::DefensivePositioning,
+                AdditionalFocus::Tackling,
                 AdditionalFocus::Aerial,
                 AdditionalFocus::Strength,
                 AdditionalFocus::Quickness,
+                AdditionalFocus::BallRetention,
                 AdditionalFocus::Passing,
             ],
         ),
@@ -963,6 +1112,7 @@ pub fn recommend_additional_focus(
                 AdditionalFocus::Endurance,
                 AdditionalFocus::Quickness,
                 AdditionalFocus::DefensivePositioning,
+                AdditionalFocus::Tackling,
                 AdditionalFocus::Passing,
                 AdditionalFocus::AgilityAndBalance,
             ],
@@ -971,11 +1121,12 @@ pub fn recommend_additional_focus(
             "OS",
             &[
                 AdditionalFocus::Passing,
+                AdditionalFocus::BallRetention,
                 AdditionalFocus::BallControl,
-                AdditionalFocus::Endurance,
+                AdditionalFocus::Tackling,
                 AdditionalFocus::DefensivePositioning,
+                AdditionalFocus::Endurance,
                 AdditionalFocus::FinalThird,
-                AdditionalFocus::Quickness,
             ],
         ),
         9..=11 => (
@@ -986,6 +1137,7 @@ pub fn recommend_additional_focus(
                 AdditionalFocus::BallControl,
                 AdditionalFocus::Passing,
                 AdditionalFocus::Shooting,
+                AdditionalFocus::BallRetention,
                 AdditionalFocus::AgilityAndBalance,
             ],
         ),
@@ -1002,13 +1154,8 @@ pub fn recommend_additional_focus(
         ),
     };
 
-    let avoid_physical = injured || age.is_some_and(|a| a >= 32);
-
-    let mut scored: Vec<(AdditionalFocus, f32, String)> = Vec::new();
+    let mut scored: Vec<(AdditionalFocus, f32, f32, f32, String)> = Vec::new();
     for &focus in candidates {
-        if avoid_physical && focus.is_physical() {
-            continue;
-        }
         let keys = focus.attr_keys();
         let mut pairs: Vec<(&str, u8)> = keys
             .iter()
@@ -1018,6 +1165,19 @@ pub fn recommend_additional_focus(
             continue;
         }
         let avg = pairs.iter().map(|(_, v)| *v as f32).sum::<f32>() / pairs.len() as f32;
+        let mut w_sum = 0.0_f32;
+        let mut w_tot = 0.0_f32;
+        for (i, &k) in keys.iter().enumerate() {
+            if let Some(v) = player.attributes.get(k) {
+                let w = if i == 0 { 2.0 } else { 1.0 };
+                w_sum += *v as f32 * w;
+                w_tot += w;
+            }
+        }
+        let weighted_avg = if w_tot > 0.0 { w_sum / w_tot } else { avg };
+        let min_val = pairs.iter().map(|(_, v)| *v).min().unwrap_or(20) as f32;
+        let eff_score = 0.75 * weighted_avg + 0.25 * min_val;
+
         pairs.sort_by_key(|(_, v)| *v);
         let weak_attrs = pairs
             .iter()
@@ -1025,54 +1185,20 @@ pub fn recommend_additional_focus(
             .map(|(k, v)| format!("{} {v}", attr_label(k)))
             .collect::<Vec<_>>()
             .join(", ");
-        scored.push((focus, avg, weak_attrs));
-    }
-
-    if scored.is_empty() {
-        // Fallback eğer tüm adaylar fiziksel olsaydı
-        for &focus in candidates {
-            let keys = focus.attr_keys();
-            let mut pairs: Vec<(&str, u8)> = keys
-                .iter()
-                .filter_map(|k| player.attributes.get(*k).map(|v| (*k, *v)))
-                .collect();
-            if pairs.is_empty() {
-                continue;
-            }
-            let avg = pairs.iter().map(|(_, v)| *v as f32).sum::<f32>() / pairs.len() as f32;
-            pairs.sort_by_key(|(_, v)| *v);
-            let weak_attrs = pairs
-                .iter()
-                .take(2)
-                .map(|(k, v)| format!("{} {v}", attr_label(k)))
-                .collect::<Vec<_>>()
-                .join(", ");
-            scored.push((focus, avg, weak_attrs));
-        }
+        scored.push((focus, eff_score, avg, min_val, weak_attrs));
     }
 
     scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-    let (focus, avg_score, weak_attrs) = scored.into_iter().next()?;
+    let (focus, eff_score, avg_score, min_val, weak_attrs) = scored.into_iter().next()?;
+    if eff_score >= 14.5 && min_val >= 14.0 {
+        return None;
+    }
 
-    let reason = if injured {
-        t!(
-            format!("Geblesseerd → lichte technische/tactische focus ({weak_attrs})."),
-            format!("Injured → low-strain technical/tactical focus ({weak_attrs})."),
-            format!("Sakatlık dönüşü → fiziksel yük bindirmeyen teknik/pozisyonel odak ({weak_attrs}).")
-        )
-    } else if age.is_some_and(|a| a >= 32) {
-        t!(
-            format!("32+ → spierbesparende focus op {weak_attrs}."),
-            format!("32+ → low-strain focus on {weak_attrs}."),
-            format!("Veteran → kas yormadan {weak_attrs} desteği.")
-        )
-    } else {
-        t!(
-            format!("Laagste kernpunten op {natural_pos}: {weak_attrs} (gem. {avg_score:.1})."),
-            format!("Lowest core attributes for {natural_pos}: {weak_attrs} (avg {avg_score:.1})."),
-            format!("Doğal {natural_pos} mevkisindeki en zayıf kilit grup: {weak_attrs} (ort. {avg_score:.1}).")
-        )
-    };
+    let reason = t!(
+        format!("Laagste kernpunten op {natural_pos}: {weak_attrs} (gem. {avg_score:.1})."),
+        format!("Lowest core attributes for {natural_pos}: {weak_attrs} (avg {avg_score:.1})."),
+        format!("Doğal {natural_pos} mevkisindeki en zayıf kilit grup: {weak_attrs} (ort. {avg_score:.1}).")
+    );
 
     Some(FocusRecommendation {
         uid: player.uid,
@@ -1092,19 +1218,55 @@ pub fn build_squad_recommendations(
     profile: IntensityProfile,
 ) -> (Vec<IntensityRecommendation>, usize) {
     let today = live.training.as_ref().and_then(|o| o.today);
-    let week_matches = live
-        .training
-        .as_ref()
-        .and_then(|o| {
-            o.weeks
+    let active_w = live.training.as_ref().and_then(|o| {
+        o.weeks
+            .iter()
+            .find(|w| today.is_none_or(|t| w.start + chrono::Duration::days(6) >= t))
+            .or_else(|| o.weeks.first())
+    });
+    let week_matches = active_w.map(|w| w.matches).unwrap_or(1);
+    let heavy_team_week = active_w.is_some_and(|w| {
+        !w.rest
+            && w.planned
                 .iter()
-                .find(|w| today.is_none_or(|t| w.start + chrono::Duration::days(6) >= t))
-                .map(|w| w.matches)
+                .flat_map(|d| d.iter())
+                .filter(|&&c| c == 303 || c == 304)
+                .count()
+                >= 2
+    });
+    let post_match_day = today.is_some_and(|t| {
+        live.training.as_ref().is_some_and(|o| {
+            o.weeks.iter().any(|w| {
+                (0..7).any(|d| {
+                    let dt = w.start + chrono::Duration::days(d as i64);
+                    (dt == t || dt == t - chrono::Duration::days(1))
+                        && (w.current[d].contains(&500) || w.planned[d].contains(&500))
+                })
+            })
         })
-        .unwrap_or(1);
+    });
+    let gk_uids: HashSet<u32> = live
+        .tactics
+        .as_ref()
+        .map(|td| {
+            td.players
+                .iter()
+                .filter(|tp| {
+                    tp.positions
+                        .iter()
+                        .enumerate()
+                        .max_by_key(|&(_, v)| *v)
+                        .map(|(i, _)| i)
+                        == Some(0)
+                })
+                .map(|tp| tp.uid)
+                .collect()
+        })
+        .unwrap_or_default();
 
     let mut rows = Vec::with_capacity(live.squad.len());
     for p in &live.squad {
+        let uid = p.get("uid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let runtime_id = p.get("runtime_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("?").to_string();
         let age = p.get("age").and_then(|v| v.as_u64()).map(|a| a as u8);
@@ -1123,8 +1285,13 @@ pub fn build_squad_recommendations(
             && profile == IntensityProfile::Balanced
             && age.is_some_and(|a| a <= 21);
         let eff_profile = if youth_boost { IntensityProfile::Development } else { profile };
+        let ctx = IntensityContext {
+            is_gk: gk_uids.contains(&uid),
+            heavy_team_week,
+            post_match_day,
+        };
         let (recommended, rest_match_warning, reason) =
-            recommend_intensity(age, condition, sharpness, injured, week_matches, eff_profile);
+            recommend_intensity_with_ctx(age, condition, sharpness, injured, week_matches, eff_profile, ctx);
         rows.push(IntensityRecommendation {
             runtime_id,
             name,
@@ -1223,6 +1390,29 @@ fn best_position_index_for_place(player: &TacticPlayer, place: &tactics::Place) 
         .unwrap_or_else(|| candidates.first().copied().unwrap_or(0))
 }
 
+/// Bellekteki `Player.positions` dizisindeki indeksi (0..15) FM27 olayındaki gerçek pozisyon bitmask'ine çevirir.
+pub fn fm_position_mask(pos_idx: usize) -> Option<i32> {
+    let bit = match pos_idx {
+        0 => 0,   // GK  -> 1
+        1 => 1,   // SW  -> 2
+        2 => 2,   // DL  -> 4
+        4 => 3,   // DR  -> 8
+        3 => 4,   // DC  -> 16
+        13 => 5,  // WBL -> 32
+        14 => 6,  // WBR -> 64
+        5 => 7,   // DM  -> 128
+        6 => 8,   // ML  -> 256
+        8 => 9,   // MR  -> 512
+        7 => 10,  // MC  -> 1024
+        9 => 11,  // AML -> 2048
+        11 => 12, // AMR -> 4096
+        10 => 13, // AMC -> 8192
+        12 => 14, // ST  -> 16384
+        _ => return None,
+    };
+    Some(1i32 << bit)
+}
+
 fn match_pos_role_option(
     opts: &[PosRoleOption],
     ip_bit: Option<u8>,
@@ -1230,11 +1420,20 @@ fn match_pos_role_option(
     pos_idx: usize,
 ) -> Option<PosRoleOption> {
     let bit = ip_bit? as i64;
-    let pos_matches = |pid: i32| pid == pos_idx as i32 || (pos_idx < 31 && pid == (1i32 << pos_idx));
-    // 1. Kesin rol ID/mask + pozisyon eşleşmesi
+    let want_mask = fm_position_mask(pos_idx);
+    let uses_bitmask = opts.iter().any(|o| o.pos_id >= 16);
+    let pos_matches = |pid: i32| {
+        if uses_bitmask {
+            want_mask == Some(pid)
+        } else {
+            pid == pos_idx as i32 || want_mask == Some(pid)
+        }
+    };
+    let role_matches = |rid: i64| rid > 0 && (rid == bit || (bit < 62 && rid == (1i64 << bit)));
+    // 1. Kesin rol ID/mask + pozisyon eşleşmesi ("Oynadığı Mevki" role_id==0 hariç)
     if let Some(m) = opts
         .iter()
-        .find(|o| pos_matches(o.pos_id) && (o.role_id == bit || (bit < 62 && o.role_id == (1i64 << bit))))
+        .find(|o| pos_matches(o.pos_id) && role_matches(o.role_id))
     {
         return Some(m.clone());
     }
@@ -1243,15 +1442,16 @@ fn match_pos_role_option(
         let low = ip_name.to_lowercase();
         if let Some(m) = opts
             .iter()
-            .find(|o| pos_matches(o.pos_id) && o.name.to_lowercase().contains(&low))
+            .find(|o| pos_matches(o.pos_id) && o.role_id > 0 && o.name.to_lowercase().contains(&low))
         {
             return Some(m.clone());
         }
     }
-    // 3. Yalnız rol ID eşleşmesi
-    opts.iter()
-        .find(|o| o.role_id == bit || (bit < 62 && o.role_id == (1i64 << bit)))
-        .cloned()
+    // 3. Yalnız Kaleci (tek mevki) için pozisyonsuz fallback
+    if pos_idx == 0 {
+        return opts.iter().find(|o| role_matches(o.role_id)).cloned();
+    }
+    None
 }
 
 fn match_oop_role_option(opts: &HashMap<i64, String>, oop_bit: Option<u8>, oop_name: &str) -> Option<(i64, String)> {
@@ -1436,6 +1636,7 @@ pub fn build_unified_player_rows(
             focus_rec: None,
             focus_weak_attrs: None,
             focus_reason: None,
+            focus_active: false,
         });
     }
 
@@ -1453,10 +1654,16 @@ pub fn build_unified_player_rows(
                 row.runtime_id = f.runtime_id;
                 by_rid.insert(f.runtime_id, idx);
             }
+            let active_by_applied = state.applied_focuses.get(&f.uid) == Some(&f.focus);
+            let active_by_live = f
+                .focus
+                .match_option_id(&state.focus_options)
+                .is_some_and(|(oid, _)| state.current_focuses.get(&row.runtime_id) == Some(&oid));
             row.position = Some(f.natural_pos);
             row.focus_rec = Some(f.focus);
             row.focus_weak_attrs = Some(f.weak_attrs);
             row.focus_reason = Some(f.reason);
+            row.focus_active = active_by_applied || active_by_live;
         } else {
             let idx = rows.len();
             if f.runtime_id != 0 {
@@ -1465,6 +1672,11 @@ pub fn build_unified_player_rows(
             if !norm.is_empty() {
                 by_name.entry(norm).or_insert(idx);
             }
+            let active_by_applied = state.applied_focuses.get(&f.uid) == Some(&f.focus);
+            let active_by_live = f
+                .focus
+                .match_option_id(&state.focus_options)
+                .is_some_and(|(oid, _)| state.current_focuses.get(&f.runtime_id) == Some(&oid));
             rows.push(UnifiedPlayerRow {
                 key: f.runtime_id,
                 uid: Some(f.uid),
@@ -1484,6 +1696,7 @@ pub fn build_unified_player_rows(
                 focus_rec: Some(f.focus),
                 focus_weak_attrs: Some(f.weak_attrs),
                 focus_reason: Some(f.reason),
+                focus_active: active_by_applied || active_by_live,
             });
         }
     }
@@ -1531,6 +1744,7 @@ pub fn build_unified_player_rows(
                 focus_rec: None,
                 focus_weak_attrs: None,
                 focus_reason: None,
+                focus_active: false,
             });
         }
     }
@@ -1695,7 +1909,7 @@ impl IndividualState {
         let (rows, _) = build_squad_recommendations(live, &self.current_intensities, self.profile);
         let diff: Vec<(u32, IntensityLevel)> = rows
             .iter()
-            .filter(|r| r.runtime_id != 0 && r.current != Some(r.recommended))
+            .filter(|r| !r.injured && r.runtime_id != 0 && r.current != Some(r.recommended))
             .map(|r| (r.runtime_id, r.recommended))
             .collect();
         self.last_auto_apply = Some(std::time::Instant::now());
@@ -2082,7 +2296,7 @@ pub fn render_page(
                             let resp = ui
                                 .horizontal(|ui| {
                                     theme::pill(ui, fc.label(), theme::INFO);
-                                    if r.uid.is_some_and(|u| state.applied_focuses.get(&u) == Some(&fc)) {
+                                    if r.focus_active {
                                         ui.label(theme::ic(icon::CHECK_CIRCLE).color(theme::SUCCESS).size(13.0))
                                             .on_hover_text(t!("✓ Gezet", "✓ Set", "✓ Seçildi"));
                                     }
@@ -2107,7 +2321,7 @@ pub fn render_page(
         let mut foc_applied: Vec<(u32, AdditionalFocus)> = Vec::new();
 
         for r in &rows {
-            if !state.selected_players.contains(&r.key) || r.runtime_id == 0 {
+            if !state.selected_players.contains(&r.key) || r.runtime_id == 0 || r.injured {
                 continue;
             }
             if let Some(lvl) = r.intensity_rec {
@@ -2127,6 +2341,9 @@ pub fn render_page(
             Ok(n) => {
                 for (rid, lvl) in &int_batch {
                     state.current_intensities.insert(*rid, *lvl);
+                }
+                for (rid, opt_id, _) in &foc_batch {
+                    state.current_focuses.insert(*rid, *opt_id);
                 }
                 for (uid, fc) in &foc_applied {
                     state.applied_focuses.insert(*uid, *fc);
@@ -2444,8 +2661,8 @@ mod tests {
         assert_eq!(rec_gk.natural_pos, "KL");
         assert_eq!(rec_gk.focus, AdditionalFocus::GkDistribution);
 
-        // Stoper fiziksel olarak zayıf ama sakat -> fiziksel odak yerine Savunma Pozisyonu / Hava / Pas seçer
-        let dc_injured = mk_player(
+        // Sakat oyuncu ve 32+ veteran oyuncuya ekstra odak yükü verilmez (None)
+        let dc = mk_player(
             2,
             3,
             &[
@@ -2454,21 +2671,35 @@ mod tests {
                 ("jumping_reach", 15), ("heading", 15), ("passing", 13), ("vision", 13), ("decisions", 13),
             ],
         );
-        let rec_dc = recommend_additional_focus(&dc_injured, 2, Some(27), true).unwrap();
-        assert_eq!(rec_dc.focus, AdditionalFocus::DefensivePositioning);
-        assert!(!rec_dc.focus.is_physical());
+        assert!(recommend_additional_focus(&dc, 2, Some(27), true).is_none());
+        assert!(recommend_additional_focus(&dc, 2, Some(33), false).is_none());
 
-        // Sağlıklı genç forvet: bitiricilik düşük -> Şut
+        // Tüm özellikleri yüksek (16+) yıldıza gereksiz Ek Odak önerilmez
+        let star = mk_player(
+            4,
+            12,
+            &[
+                ("finishing", 16), ("composure", 16), ("long_shots", 16),
+                ("off_the_ball", 16), ("decisions", 16), ("technique", 16),
+                ("acceleration", 16), ("pace", 16),
+                ("first_touch", 16), ("dribbling", 16),
+                ("jumping_reach", 16), ("heading", 16),
+                ("strength", 16), ("balance", 16),
+            ],
+        );
+        assert!(recommend_additional_focus(&star, 4, Some(24), false).is_none());
+
+        // Santrforda birincil özellik (finishing=8) belirgin zayıfsa, yan özellikler 16 olsa bile Şut seçilir
         let st = mk_player(
             3,
             12,
             &[
-                ("finishing", 9), ("composure", 9), ("long_shots", 8),
-                ("acceleration", 16), ("pace", 16),
-                ("off_the_ball", 15), ("decisions", 14), ("technique", 14),
+                ("finishing", 8), ("composure", 16), ("long_shots", 16),
+                ("acceleration", 15), ("pace", 15),
+                ("off_the_ball", 14), ("decisions", 14), ("technique", 14),
                 ("first_touch", 14), ("dribbling", 14),
-                ("jumping_reach", 13), ("heading", 13),
-                ("strength", 13), ("balance", 13),
+                ("jumping_reach", 14), ("heading", 14),
+                ("strength", 14), ("balance", 14),
             ],
         );
         let rec_st = recommend_additional_focus(&st, 3, Some(20), false).unwrap();
@@ -2481,13 +2712,98 @@ mod tests {
         let mut opts = HashMap::new();
         opts.insert(1, "Çabukluk".to_string());
         opts.insert(2, "Endurance".to_string());
-        opts.insert(3, "Savunma Pozisyonu".to_string());
+        opts.insert(19, "Defansif Pozisyon Alma".to_string());
         opts.insert(4, "Ball Control".to_string());
+        opts.insert(15, "Topu Saklama".to_string());
+        opts.insert(26, "Müdahale".to_string());
+        opts.insert(30, "Kaleci Şut Kurtarma".to_string());
+        opts.insert(40, "Aanpassen aan rol".to_string());
 
         assert_eq!(AdditionalFocus::Quickness.match_option_id(&opts).map(|x| x.0), Some(1));
         assert_eq!(AdditionalFocus::Endurance.match_option_id(&opts).map(|x| x.0), Some(2));
-        assert_eq!(AdditionalFocus::DefensivePositioning.match_option_id(&opts).map(|x| x.0), Some(3));
+        assert_eq!(AdditionalFocus::DefensivePositioning.match_option_id(&opts).map(|x| x.0), Some(19));
         assert_eq!(AdditionalFocus::BallControl.match_option_id(&opts).map(|x| x.0), Some(4));
+        assert_eq!(AdditionalFocus::BallRetention.match_option_id(&opts).map(|x| x.0), Some(15));
+        assert_eq!(AdditionalFocus::Tackling.match_option_id(&opts).map(|x| x.0), Some(26));
+        assert_eq!(AdditionalFocus::GkShotStopping.match_option_id(&opts).map(|x| x.0), Some(30));
+        // "Kaleci Şut Kurtarma" saha içi Şut odağıyla eşleşmemeli; "Aanpassen" içinde "pas" geçse de Pas'la eşleşmemeli
+        assert_eq!(AdditionalFocus::Shooting.match_option_id(&opts), None);
+        assert_eq!(AdditionalFocus::Passing.match_option_id(&opts), None);
+
+        let mut intl = HashMap::new();
+        intl.insert(7, "Jeu de passes".to_string());
+        intl.insert(8, "Posizionamento difensivo".to_string());
+        intl.insert(9, "Definición".to_string());
+        assert_eq!(AdditionalFocus::Passing.match_option_id(&intl).map(|x| x.0), Some(7));
+        assert_eq!(AdditionalFocus::DefensivePositioning.match_option_id(&intl).map(|x| x.0), Some(8));
+        assert_eq!(AdditionalFocus::Shooting.match_option_id(&intl).map(|x| x.0), Some(9));
+    }
+
+    #[test]
+    fn pos_role_bitmask_maps_exact_fm27_positions_without_cross_flank_collision() {
+        assert_eq!(fm_position_mask(0), Some(1));
+        assert_eq!(fm_position_mask(3), Some(16));
+        assert_eq!(fm_position_mask(5), Some(128));
+        assert_eq!(fm_position_mask(7), Some(1024));
+        assert_eq!(fm_position_mask(9), Some(2048));
+        assert_eq!(fm_position_mask(11), Some(4096));
+        assert_eq!(fm_position_mask(12), Some(16384));
+
+        let opts = vec![
+            PosRoleOption { role_id: 0, pos_id: 16, name: "D (M) - Oynadığı Mevki".into() },
+            PosRoleOption { role_id: 2, pos_id: 16, name: "Stoper".into() },
+            PosRoleOption { role_id: 16, pos_id: 128, name: "Box-to-Box (DOS)".into() },
+            PosRoleOption { role_id: 16, pos_id: 1024, name: "İki Yönlü Orta Saha".into() },
+            PosRoleOption { role_id: 128, pos_id: 2048, name: "Kanat Oyuncusu (Sol)".into() },
+        ];
+        // MC (idx=7, bit=1024): DM (128) yerine gerçek MC (1024) ile eşleşmeli
+        let mc_fit = match_pos_role_option(&opts, Some(16), "Box-to-Box Midfielder", 7).unwrap();
+        assert_eq!(mc_fit.pos_id, 1024);
+        // AMR (idx=11, bit=4096): AML (2048) seçimine asla düşmemeli
+        assert!(match_pos_role_option(&opts, Some(7), "Winger", 11).is_none());
+        // DC (idx=3, bit=16): role_id=0 ("Oynadığı Mevki") seçilmemeli
+        let dc_fit = match_pos_role_option(&opts, Some(1), "Centre-Back", 3).unwrap();
+        assert_eq!(dc_fit.role_id, 2);
+    }
+
+    #[test]
+    fn intensity_context_guards_heavy_team_week_goalkeeper_and_post_match() {
+        // Ağır takım haftasında Çift Yoğunluk yerine Normal önerilir
+        let (lvl, _, _) = recommend_intensity_with_ctx(
+            Some(20),
+            96.0,
+            60.0,
+            false,
+            0,
+            IntensityProfile::Balanced,
+            IntensityContext { is_gk: false, heavy_team_week: true, post_match_day: false },
+        );
+        assert_eq!(lvl, IntensityLevel::Normal);
+
+        // Yedek kaleci (28 yaş) düşük keskinlikte ve sıkışık haftada asla Çift olmaz
+        let (gk_lvl, _, _) = recommend_intensity_with_ctx(
+            Some(28),
+            98.0,
+            40.0,
+            false,
+            2,
+            IntensityProfile::Development,
+            IntensityContext { is_gk: true, heavy_team_week: false, post_match_day: false },
+        );
+        assert_eq!(gk_lvl, IntensityLevel::Normal);
+
+        // Maç ertesi gün %76 kondisyonla gereksiz Yarı Yoğunluğa çekilmez (Normal kalır)
+        let (pm_lvl, warn, _) = recommend_intensity_with_ctx(
+            Some(24),
+            76.0,
+            85.0,
+            false,
+            1,
+            IntensityProfile::Balanced,
+            IntensityContext { is_gk: false, heavy_team_week: false, post_match_day: true },
+        );
+        assert_eq!(pm_lvl, IntensityLevel::Normal);
+        assert!(!warn);
     }
 
     #[test]

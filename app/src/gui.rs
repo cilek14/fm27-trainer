@@ -1240,6 +1240,9 @@ impl App {
                 for (rid, lvl) in parsed.intensities {
                     self.individual.current_intensities.insert(rid, lvl);
                 }
+                for (rid, fid) in parsed.current_focuses {
+                    self.individual.current_focuses.insert(rid, fid);
+                }
                 for (id, name) in parsed.focus_options {
                     self.individual.focus_options.insert(id, name);
                 }

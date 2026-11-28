@@ -517,6 +517,12 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Save & apply" => "Speichern & anwenden",
         "Cancel" => "Abbrechen",
         "Pre-season & fitness camp" => "Vorbereitung & Konditionslager",
+        "Ball Retention" => "Ballhalten",
+        "Heavy team conditioning this week → Normal prevents overload." => "Schweres Team-Konditionstraining diese Woche → Normal verhindert Überlastung.",
+        "Post-match recovery window → keeping balanced intensity." => "Erholungsfenster nach dem Spiel → ausgewogene Intensität beibehalten.",
+        "Rehab · do not overload" => "Reha · nicht überlasten",
+        "Aggression" => "Aggressivität",
+        "Anticipation" => "Antizipation",
         _ => en,
     }
 }

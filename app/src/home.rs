@@ -188,8 +188,13 @@ fn build_attention_players(live: &LiveState, individual: &IndividualState) -> Ve
                 runtime_id: r.runtime_id,
                 name: r.name.clone(),
                 issue: t!("Geblesseerd", "Injured", "Sakat").to_string(),
-                suggestion: r.recommended.label().to_string(),
-                intensity_action: Some(r.recommended),
+                suggestion: t!(
+                    "Revalidatie · niet belasten",
+                    "Rehab · do not overload",
+                    "Rehabilitasyon · ek yük vermeyin"
+                )
+                .to_string(),
+                intensity_action: None,
                 severity: 3,
                 sort_cond: r.condition,
             });
@@ -203,7 +208,7 @@ fn build_attention_players(live: &LiveState, individual: &IndividualState) -> Ve
                     format!("Düşük kondisyon (%{:.0})", r.condition)
                 ),
                 suggestion: r.recommended.label().to_string(),
-                intensity_action: Some(r.recommended),
+                intensity_action: (r.current != Some(r.recommended)).then_some(r.recommended),
                 severity: 2,
                 sort_cond: r.condition,
             });
@@ -218,7 +223,7 @@ fn build_attention_players(live: &LiveState, individual: &IndividualState) -> Ve
                     format!("{age} yaş · yoğun fikstür")
                 ),
                 suggestion: r.recommended.label().to_string(),
-                intensity_action: Some(r.recommended),
+                intensity_action: (r.current != Some(r.recommended)).then_some(r.recommended),
                 severity: 2,
                 sort_cond: r.condition,
             });
@@ -232,10 +237,6 @@ fn build_attention_players(live: &LiveState, individual: &IndividualState) -> Ve
         if b.runtime_id != 0 && seen_rids.contains(&b.runtime_id) && out.iter().any(|x| x.runtime_id == b.runtime_id) {
             continue;
         }
-        let rec_act = recs
-            .iter()
-            .find(|r| r.runtime_id != 0 && r.runtime_id == b.runtime_id)
-            .map(|r| r.recommended);
         out.push(AttentionPlayer {
             runtime_id: b.runtime_id,
             name: b.name.clone(),
@@ -245,7 +246,7 @@ fn build_attention_players(live: &LiveState, individual: &IndividualState) -> Ve
                 format!("Taktik darboğaz ({:.0})", b.overall)
             ),
             suggestion: b.weakest_label.to_string(),
-            intensity_action: rec_act,
+            intensity_action: None,
             severity: 1,
             sort_cond: b.overall,
         });
