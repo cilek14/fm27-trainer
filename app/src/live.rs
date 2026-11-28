@@ -119,8 +119,6 @@ pub struct LiveState {
     pub teams: Option<Value>,
     /// keuze van de gebruiker: (UID van de club van de manager, plek van het team voor de training)
     pub choice: (Option<u32>, Option<usize>),
-    /// Pro lisans aktifse altyapı takımları seçilebilir ve yazılabilir.
-    pub pro_unlocked: bool,
     /// Altyapı takımlarında Akademi Gelişim Modu (gelişim seansları + genç oyuncular için çift yoğunluk).
     pub youth_dev_mode: bool,
     tactics_rx: Option<mpsc::Receiver<Result<Value, String>>>,
@@ -161,7 +159,6 @@ impl Default for LiveState {
             tactics_error: String::new(),
             teams: None,
             choice: (None, None),
-            pro_unlocked: false,
             youth_dev_mode: true,
             tactics_rx: None,
             aux_rx: None,
@@ -175,11 +172,11 @@ impl Default for LiveState {
 
 impl LiveState {
     pub fn effective_choice(&self) -> (Option<u32>, Option<usize>) {
-        (self.choice.0, if self.pro_unlocked { self.choice.1 } else { None })
+        self.choice
     }
 
     pub fn is_youth_team_active(&self) -> bool {
-        self.pro_unlocked && self.choice.1.is_some()
+        self.choice.1.is_some()
     }
 }
 

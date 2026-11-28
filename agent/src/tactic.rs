@@ -31,8 +31,8 @@ const BLOCK: usize = 0x800;
 const STYLE: usize = 0x100;
 const SLOT: usize = 0x48;
 const SLOTS: usize = 11;
-/// de bits die elk masker naast de rol heeft
-const CLASS_BITS: u64 = 0b111 << 21;
+/// de bits die elk masker naast de rol heeft (bits 21..=23, 25..=26, 34: Defend/Support/Attack/Stopper/Covering/Float)
+const CLASS_BITS: u64 = (0b111 << 21) | (0b11 << 25) | (1 << 34);
 
 /// Attributen: (naam, plek op de Mac). Op Windows ligt alles 8 verder (`Layout.p_positions`).
 pub const ATTRIBUTES: [(&str, u64); 47] = [
@@ -132,7 +132,7 @@ pub struct Tactics {
     pub bench: Vec<u32>,
 }
 
-/// Het bit dat de rol noemt: het enige bit buiten 21–23. Iets anders is geen rolmasker.
+/// Het bit dat de rol noemt: het enige bit buiten de görev (duty) bits (21–23, 25–26, 34). Iets anders is geen rolmasker.
 pub fn role_bit(mask: u64) -> Option<u8> {
     let role = mask & !CLASS_BITS;
     (role.count_ones() == 1 && (mask & CLASS_BITS).count_ones() == 1).then(|| role.trailing_zeros() as u8)

@@ -25,12 +25,12 @@ fn main() {
         res.set_icon("assets/icon/app.ico");
         res.set("ProductName", "FM27 Training Assistant");
         res.set("FileDescription", "FM27 Training Assistant");
-        res.set("CompanyName", "FM27 Training Assistant");
+        res.set("CompanyName", "FM27 Training Assistant (Open Source)");
         res.set("OriginalFilename", "FM27 Training Assistant.exe");
         res.set("InternalName", "fm27-trainer");
         res.set(
             "LegalCopyright",
-            "Copyright (c) 2026 cilek14. Upstream portions (c) 2026 Sem Hiel (MIT).",
+            "Copyright (c) 2026 FM27 Training Assistant Contributors (GPL-3.0)",
         );
         res.set_manifest(&manifest);
         if let Err(e) = res.compile() {

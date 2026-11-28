@@ -16,7 +16,7 @@
   <img alt="FM27" src="https://img.shields.io/badge/Football%20Manager-27-c8102e">
   <img alt="BepInEx" src="https://img.shields.io/badge/BepInEx-6%20IL2CPP-5c2d91">
   <img alt="No cheats" src="https://img.shields.io/badge/hile-yok%20%2F%20no%20cheats-3dd68c">
-  <img alt="License" src="https://img.shields.io/badge/license-Freemium%20%2F%20Pro-f59e0b">
+  <img alt="License" src="https://img.shields.io/badge/license-GPLv3-blue">
 </p>
 
 <p align="center">

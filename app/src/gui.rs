@@ -13,7 +13,6 @@ use crate::export;
 use crate::history;
 use crate::i18n::{self, Lang};
 use crate::individual::{self, IndividualState};
-use crate::license::{self, LicenseState};
 use crate::live::LiveState;
 use crate::live_training;
 use crate::model::{Component, Effectiveness, Factor, category_of, level_color, level_name, session_by_code};
@@ -235,33 +234,24 @@ fn find_prefix<'a>(obj: &'a serde_json::Value, prefix: &str) -> Option<&'a serde
     map.iter().find(|(k, _)| k.starts_with(&with_colon) || k.as_str() == prefix).map(|(_, v)| v)
 }
 
-fn parse_num(v: &serde_json::Value) -> Option<f32> {
-    v.as_f64().map(|n| n as f32).or_else(|| v.as_str()?.trim().parse::<f32>().ok())
-}
-
-fn score_of(node: &serde_json::Value) -> Option<f32> {
-    let inner = find_prefix(node, "OverallEffectiveness").unwrap_or(node);
-    let raw = find_prefix(inner, "MaxValue").or_else(|| find_prefix(inner, "MinValue"))?;
-    parse_num(raw).map(|v| v.clamp(0.0, 100.0))
+fn read_bepinex_dump() -> Option<(Effectiveness, String)> {
+    read_bepinex_dump_for(&std::collections::HashSet::new())
 }
 
 /// BepInEx eklentisinin yazdığı `bepinex-tactical-dump.json` dosyasından 4 bileşen + 17 faktörü okur.
-fn read_bepinex_dump() -> Option<(Effectiveness, String)> {
+fn read_bepinex_dump_for(squad_rids: &std::collections::HashSet<u32>) -> Option<(Effectiveness, String)> {
     let text = std::fs::read_to_string(bepinex_dump_file()).ok()?;
     let root: serde_json::Value = serde_json::from_str(&text).ok()?;
     let updated = root.get("updated_utc")?.as_str()?.to_string();
     let data = root.get("data")?.as_object()?;
-    let te = data
-        .iter()
-        .find(|(k, _)| k.starts_with("TeamTactic:") && k.ends_with(".TacticalEffectiveness"))
-        .or_else(|| data.iter().find(|(k, _)| k.ends_with(".TacticalEffectiveness")))
-        .map(|(_, v)| v)?;
+    let te = individual::pick_tactical_effectiveness_entry(&root, data, squad_rids)?;
 
     let mut eff = Effectiveness::default();
+    eff.overall = find_prefix(te, "OverallEffectiveness").and_then(individual::score_of_node);
     let mut found = 0usize;
 
     if let Some(tu) = find_prefix(te, "TacticalUnderstanding") {
-        if let Some(v) = score_of(tu) {
+        if let Some(v) = individual::score_of_node(tu) {
             eff.set_component(Component::TacticalUnderstanding, v);
         }
         let tu_map: [(&str, Factor); 10] = [
@@ -277,7 +267,7 @@ fn read_bepinex_dump() -> Option<(Effectiveness, String)> {
             ("TacticalComplexity", Factor::TacticalComplexity),
         ];
         for (key, factor) in tu_map {
-            if let Some(v) = find_prefix(tu, key).and_then(score_of) {
+            if let Some(v) = find_prefix(tu, key).and_then(individual::score_of_node) {
                 eff.set(factor, v);
                 found += 1;
             }
@@ -285,14 +275,14 @@ fn read_bepinex_dump() -> Option<(Effectiveness, String)> {
     }
 
     if let Some(pa) = find_prefix(te, "PlayerAbility") {
-        if let Some(v) = score_of(pa) {
+        if let Some(v) = individual::score_of_node(pa) {
             eff.set_component(Component::PlayerAbility, v);
         }
         for (key, factor) in [
             ("CapabilityKeyFactor", Factor::PlayerCapability),
             ("RoleSuitabilityKeyFactor", Factor::PlayerRoleSuitability),
         ] {
-            if let Some(v) = find_prefix(pa, key).and_then(score_of) {
+            if let Some(v) = find_prefix(pa, key).and_then(individual::score_of_node) {
                 eff.set(factor, v);
                 found += 1;
             }
@@ -300,7 +290,7 @@ fn read_bepinex_dump() -> Option<(Effectiveness, String)> {
     }
 
     if let Some(bi) = find_prefix(te, "PlayerBuyIn") {
-        if let Some(v) = score_of(bi) {
+        if let Some(v) = individual::score_of_node(bi) {
             eff.set_component(Component::PlayerBuyIn, v);
         }
         for (key, factor) in [
@@ -308,7 +298,7 @@ fn read_bepinex_dump() -> Option<(Effectiveness, String)> {
             ("TeammateAndStaffRelationshipsKeyFactor", Factor::TeammatesAndStaffRelationships),
             ("ManagerTendenciesKeyFactor", Factor::ManagerTendencies),
         ] {
-            if let Some(v) = find_prefix(bi, key).and_then(score_of) {
+            if let Some(v) = find_prefix(bi, key).and_then(individual::score_of_node) {
                 eff.set(factor, v);
                 found += 1;
             }
@@ -316,14 +306,14 @@ fn read_bepinex_dump() -> Option<(Effectiveness, String)> {
     }
 
     if let Some(nm) = find_prefix(te, "NextMatchInformation") {
-        if let Some(v) = score_of(nm) {
+        if let Some(v) = individual::score_of_node(nm) {
             eff.set_component(Component::NextMatchInfo, v);
         }
         for (key, factor) in [
             ("QualityOfReportKeyFactor", Factor::QualityOfNextOppositionReport),
             ("OppositionPlayerKnowledgeKeyFactor", Factor::OppositionPlayerKnowledge),
         ] {
-            if let Some(v) = find_prefix(nm, key).and_then(score_of) {
+            if let Some(v) = find_prefix(nm, key).and_then(individual::score_of_node) {
                 eff.set(factor, v);
                 found += 1;
             }
@@ -368,7 +358,6 @@ enum SettingsSection {
     General,
     Planner,
     FmConnection,
-    License,
     Updates,
     Folders,
 }
@@ -420,9 +409,6 @@ struct App {
     last_bepinex_check: std::time::Instant,
     individual: IndividualState,
     updater: UpdaterState,
-    license: LicenseState,
-    show_pro_modal: bool,
-    pro_modal_team: Option<String>,
     show_camp_modal: bool,
     camp_modal_draft: planner::PreSeasonIntensity,
     camp_prompted_this_session: bool,
@@ -447,11 +433,7 @@ impl App {
             _ => {}
         }
         i18n::set(settings.lang);
-        let license = LicenseState::default();
-        let active_team = if license.is_pro() { settings.training_team } else { None };
-        if !license.is_pro() && settings.training_team.is_some() {
-            settings.training_team = None;
-        }
+        let active_team = settings.training_team;
         let cal_opts = CalendarOptions::default();
         let calendar = std::fs::read_to_string(calendar_file_for(active_team))
             .ok()
@@ -476,8 +458,6 @@ impl App {
         individual.auto_apply_intensity = settings.auto_individual_intensity;
         individual.profile = settings.intensity_profile;
         individual.role_training_mode = settings.role_training_mode;
-        let show_pro_modal = std::env::var_os("FM27_PRO_MODAL").is_some();
-        let pro_modal_team = show_pro_modal.then(|| "U21".to_string());
         let show_camp_modal = std::env::var_os("FM27_CAMP_MODAL").is_some();
         let camp_modal_draft = settings.planner.preseason_intensity;
         App {
@@ -518,7 +498,6 @@ impl App {
             live: {
                 let mut l = LiveState::default();
                 l.sell.buy = std::env::var("FM27_PAGE").as_deref() == Ok("buy");
-                l.pro_unlocked = license.is_pro();
                 l.youth_dev_mode = settings.youth_dev_mode;
                 l.choice = (settings.manager_club, active_team);
                 if std::env::var_os("FM27_SNAPSHOT").is_some() && std::env::var_os("FM27_DEMO_TEAMS").is_some() {
@@ -533,9 +512,6 @@ impl App {
             last_bepinex_check: std::time::Instant::now() - std::time::Duration::from_secs(10),
             individual,
             updater: UpdaterState::default(),
-            license,
-            show_pro_modal,
-            pro_modal_team,
             show_camp_modal,
             camp_modal_draft,
             camp_prompted_this_session: false,
@@ -575,11 +551,7 @@ impl App {
     }
 
     fn active_team_slot(&self) -> Option<usize> {
-        if self.license.is_pro() {
-            self.settings.training_team
-        } else {
-            None
-        }
+        self.settings.training_team
     }
 
     fn active_team_short_label(&self) -> Option<String> {
@@ -640,7 +612,7 @@ impl App {
         }
         self.save_calendar();
 
-        let next_team = if self.license.is_pro() { team } else { None };
+        let next_team = team;
         self.settings.manager_club = club;
         self.settings.training_team = next_team;
         self.save_settings();
@@ -887,32 +859,6 @@ impl App {
                                     .clicked()
                                 {
                                     open_path(std::path::Path::new(DONATE_URL));
-                                }
-
-                                ui.add_space(4.0);
-                                if self.license.is_pro() {
-                                    if theme::small_button(ui, &format!("★ {}", t!("PRO", "PRO", "PRO")), true).clicked() {
-                                        self.page = Page::Settings;
-                                        self.settings_section = SettingsSection::License;
-                                        self.settings_scroll_to = Some(SettingsSection::License);
-                                    }
-                                } else {
-                                    let pro_lbl = if compact {
-                                        "★".to_string()
-                                    } else {
-                                        format!("{} PRO", icon::CROWN)
-                                    };
-                                    if theme::small_button(ui, &pro_lbl, true)
-                                        .on_hover_text(t!(
-                                            "Ontgrendel jeugdelftallen (U18/U19/U21/B) met Pro",
-                                            "Unlock Youth & Reserve teams (U18/U19/U21/B) with Pro",
-                                            "Pro ile altyapı takımlarını (U18/U19/U21/B) açın"
-                                        ))
-                                        .clicked()
-                                    {
-                                        self.pro_modal_team = None;
-                                        self.show_pro_modal = true;
-                                    }
                                 }
 
                                 ui.add_space(4.0);
@@ -1195,7 +1141,32 @@ impl App {
 
     /// BepInEx köprüsünden (bepinex-tactical-dump.json) 4 bileşen + 17 faktörü kesin değerlerle yükler.
     fn sync_from_bepinex(&mut self, explicit: bool) {
-        let Some((mut next, updated)) = read_bepinex_dump() else {
+        let mut names = std::collections::HashMap::new();
+        let mut uid_to_rid = std::collections::HashMap::new();
+        for p in &self.live.squad {
+            let rid = p.get("runtime_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            if rid == 0 {
+                continue;
+            }
+            if let Some(uid) = p.get("uid").and_then(|v| v.as_u64()) {
+                uid_to_rid.insert(uid as u32, rid);
+            }
+            if let Some(n) = p.get("name").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+                names.insert(rid, n.to_string());
+            }
+        }
+        if let Some(td) = &self.live.tactics {
+            for tp in &td.players {
+                if let Some(&rid) = uid_to_rid.get(&tp.uid) {
+                    if !tp.name.trim().is_empty() {
+                        names.entry(rid).or_insert_with(|| tp.name.clone());
+                    }
+                }
+            }
+        }
+        let squad_rids: std::collections::HashSet<u32> = names.keys().copied().collect();
+
+        let Some((mut next, updated)) = read_bepinex_dump_for(&squad_rids) else {
             if explicit {
                 self.set_status(
                     t!(
@@ -1210,11 +1181,11 @@ impl App {
         };
         if !explicit && updated == self.last_bepinex_utc {
             // Kadro isimleri sonradan yüklendiyse eksik oyuncu isimlerini tamamla
-            if !self.individual.bottlenecks.is_empty() && !self.live.squad.is_empty() {
+            if !self.individual.bottlenecks.is_empty() && !names.is_empty() {
                 for b in &mut self.individual.bottlenecks {
                     if b.name.starts_with("Oyuncu #") || b.name.starts_with("Player #") || b.name == "—" {
-                        if let Some(n) = self.live.squad.iter().find(|p| p.get("runtime_id").and_then(|v| v.as_u64()) == Some(b.runtime_id as u64)).and_then(|p| p.get("name")).and_then(|v| v.as_str()) {
-                            b.name = n.to_string();
+                        if let Some(n) = names.get(&b.runtime_id) {
+                            b.name = n.clone();
                         }
                     }
                 }
@@ -1224,17 +1195,6 @@ impl App {
         self.last_bepinex_utc = updated;
         if let Ok(text) = std::fs::read_to_string(bepinex_dump_file()) {
             if let Ok(root) = serde_json::from_str::<serde_json::Value>(&text) {
-                let mut names = std::collections::HashMap::new();
-                for p in &self.live.squad {
-                    if let (Some(rid), Some(n)) = (
-                        p.get("runtime_id").and_then(|v| v.as_u64()),
-                        p.get("name").and_then(|v| v.as_str()),
-                    ) {
-                        if rid > 0 {
-                            names.insert(rid as u32, n.to_string());
-                        }
-                    }
-                }
                 let parsed = individual::parse_bepinex_individual(&root, &names);
                 self.individual.bottlenecks = parsed.bottlenecks;
                 for (rid, lvl) in parsed.intensities {
@@ -1242,6 +1202,12 @@ impl App {
                 }
                 for (rid, fid) in parsed.current_focuses {
                     self.individual.current_focuses.insert(rid, fid);
+                }
+                for (rid, pr) in parsed.current_pos_roles {
+                    self.individual.current_pos_roles.insert(rid, pr);
+                }
+                for (rid, oop) in parsed.current_oop_roles {
+                    self.individual.current_oop_roles.insert(rid, oop);
                 }
                 for (id, name) in parsed.focus_options {
                     self.individual.focus_options.insert(id, name);
@@ -1894,7 +1860,6 @@ impl App {
             return;
         }
         let sel = |v: &Value| v.get("selected").and_then(|b| b.as_bool()) == Some(true);
-        let is_pro = self.license.is_pro();
         let mut pick: Option<(Option<u32>, Option<usize>)> = None;
 
         theme::card(ui, |ui| {
@@ -1922,11 +1887,9 @@ impl App {
                     let is_sel = if own {
                         self.active_team_slot().is_none()
                     } else {
-                        is_pro && self.active_team_slot() == Some(idx)
+                        self.active_team_slot() == Some(idx)
                     };
-                    let locked = !own && !is_pro;
 
-                    let gold = egui::Color32::from_rgb(245, 194, 66);
                     let (fill, stroke, txt_col, ic_str, ic_col) = if is_sel {
                         (
                             theme::ACCENT_SOFT,
@@ -1934,14 +1897,6 @@ impl App {
                             egui::Color32::WHITE,
                             if own { icon::SHIELD } else { icon::SPARKLE },
                             theme::ACCENT_HI,
-                        )
-                    } else if locked {
-                        (
-                            theme::SURFACE2,
-                            Stroke::new(1.0_f32, theme::tint(gold, 0.45)),
-                            theme::TEXT_DIM,
-                            icon::LOCK,
-                            gold,
                         )
                     } else {
                         (
@@ -1953,11 +1908,7 @@ impl App {
                         )
                     };
 
-                    let lbl = if locked {
-                        format!("{short} · {players} · PRO")
-                    } else {
-                        format!("{short} · {players}")
-                    };
+                    let lbl = format!("{short} · {players}");
                     let mut job = egui::text::LayoutJob::default();
                     let fmt = |font_id: egui::FontId, color: egui::Color32| egui::text::TextFormat {
                         font_id,
@@ -1978,19 +1929,7 @@ impl App {
                     p.rect_stroke(rect, CornerRadius::same(15), stroke, egui::StrokeKind::Inside);
                     p.galley(rect.center() - galley.size() / 2.0, galley, txt_col);
                     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                    if locked {
-                        let clicked = resp
-                            .on_hover_text(t!(
-                                "Pro-functie: klik om jeugdelftallen te ontgrendelen",
-                                "Pro feature: click to unlock Youth & Reserve teams",
-                                "Pro özellik: altyapı takımlarını açmak için tıklayın"
-                            ))
-                            .clicked();
-                        if clicked {
-                            self.pro_modal_team = Some(short);
-                            self.show_pro_modal = true;
-                        }
-                    } else if resp.clicked() && !is_sel {
+                    if resp.clicked() && !is_sel {
                         pick = Some((self.settings.manager_club, if own { None } else { Some(idx) }));
                     }
                 }
@@ -2549,11 +2488,10 @@ impl App {
         let mut trigger_check = false;
         let mut trigger_install: Option<updater::ReleaseInfo> = None;
 
-        let sections: [(SettingsSection, &str, &str); 6] = [
+        let sections: [(SettingsSection, &str, &str); 5] = [
             (SettingsSection::General, icon::GEAR_SIX, t!("Algemeen", "General", "Genel")),
             (SettingsSection::Planner, icon::CALENDAR_DOTS, t!("Planner", "Planner", "Planlayıcı")),
             (SettingsSection::FmConnection, icon::PLUGS_CONNECTED, t!("FM-verbinding", "FM connection", "FM bağlantısı")),
-            (SettingsSection::License, icon::CROWN, t!("Licentie / Pro", "License / Pro", "Lisans / Pro")),
             (SettingsSection::Updates, icon::ARROWS_CLOCKWISE, t!("Updates", "Updates", "Güncellemeler")),
             (SettingsSection::Folders, icon::FOLDER_OPEN, t!("Mappen", "Folders", "Klasörler")),
         ];
@@ -2945,66 +2883,6 @@ impl App {
                     }
                 });
 
-            // ---- Pro Lisans
-            section_heading(ui, SettingsSection::License, t!("Licentie / Pro", "License / Pro", "Lisans / Pro"), &mut app.settings_scroll_to, false);
-            ui.add_space(4.0);
-            if app.license.is_pro() {
-                ui.horizontal_wrapped(|ui| {
-                    theme::pill(ui, t!("Pro Actief", "Pro Active", "Pro Aktif"), theme::SUCCESS);
-                    if let Some(lic) = &app.license.stored {
-                        theme::pill(ui, &lic.key_masked, theme::INFO);
-                        if let Some(ref em) = lic.customer_email
-                            && !em.is_empty()
-                        {
-                            ui.label(theme::dim(em));
-                        }
-                    }
-                });
-                ui.add_space(6.0);
-                if theme::button(
-                    ui,
-                    icon::X,
-                    t!("Licentie deactiveren", "Deactivate license", "Lisansı bu cihazdan kaldır"),
-                    !app.license.busy,
-                )
-                .clicked()
-                {
-                    app.license.deactivate(&ctx);
-                }
-            } else {
-                theme::setting_row(
-                    ui,
-                    t!("Huidig plan", "Current plan", "Mevcut plan"),
-                    Some(t!(
-                        "Gratis editie: volledig voor het eerste elftal. Pro voegt U18/U19/U21/B-teams toe.",
-                        "Free edition covers First Team. Pro unlocks U18/U19/U21/B teams & Academy Dev mode.",
-                        "Ücretsiz sürüm As Takım özelliklerini içerir. Pro sürüm U18/U19/U21/B ve Akademi Gelişimini açar."
-                    )),
-                    |ui| {
-                        theme::pill(ui, t!("Gratis", "Free", "Ücretsiz"), theme::TEXT_DIM);
-                    },
-                );
-                ui.add_space(4.0);
-                ui.horizontal_wrapped(|ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut app.license.key_input)
-                            .desired_width(240.0)
-                            .hint_text("XXXX-XXXX-XXXX-XXXX"),
-                    );
-                    if theme::primary_button(ui, icon::KEY, t!("Activeren", "Activate", "Etkinleştir"), !app.license.busy).clicked() {
-                        app.license.activate(&ctx);
-                    }
-                    if theme::support_button(ui, icon::CROWN, t!("Koop Pro-licentie", "Get Pro License", "Pro Lisans Satın Al"), false).clicked() {
-                        open_path(std::path::Path::new(license::CHECKOUT_URL));
-                    }
-                });
-            }
-            if !app.license.status_msg.is_empty() {
-                ui.add_space(4.0);
-                let col = if app.license.status_err { theme::DANGER } else { theme::SUCCESS };
-                ui.add(egui::Label::new(RichText::new(&app.license.status_msg).size(12.5).color(col)).wrap());
-            }
-
             // ---- Güncellemeler
             section_heading(ui, SettingsSection::Updates, t!("Updates", "Updates", "Güncellemeler"), &mut app.settings_scroll_to, false);
             ui.add_space(4.0);
@@ -3194,9 +3072,9 @@ impl App {
             );
             ui.add(
                 egui::Label::new(theme::faint(t!(
-                    "Licentie: Gratis / Pro (broncode onder MIT voor upstream). Sessienamen, limieten en presets komen uit FM27's eigen game-data. Alleen voor single-player. Lettertype: Inter (SIL OFL). Iconen: Phosphor (MIT).",
-                    "License: Free / Pro (upstream portions MIT). Session names, limits and presets come from FM27's own game data. Single-player only. Font: Inter (SIL OFL). Icons: Phosphor (MIT).",
-                    "Lisans: Ücretsiz / Pro (üst kaynak MIT). Seans adları, limitler ve şablonlar FM27 oyun verisinden gelir. Yalnızca tek oyunculu içindir. Yazı tipi: Inter (SIL OFL). Simgeler: Phosphor (MIT)."
+                    "Licentie: GPL-3.0. Sessienamen, limieten en presets komen uit FM27's eigen game-data. Alleen voor single-player. Lettertype: Inter (SIL OFL). Iconen: Phosphor (MIT).",
+                    "License: GPL-3.0. Session names, limits and presets come from FM27's own game data. Single-player only. Font: Inter (SIL OFL). Icons: Phosphor (MIT).",
+                    "Lisans: GPL-3.0. Seans adları, limitler ve şablonlar FM27'nin kendi oyun verilerinden gelir. Yalnızca tek oyunculu içindir. Yazı tipi: Inter (SIL OFL). Simgeler: Phosphor (MIT)."
                 )))
                 .wrap(),
             );
@@ -3275,157 +3153,6 @@ impl App {
             self.save_settings();
             self.week_plan = None;
             self.year.clear();
-        }
-    }
-
-    fn render_pro_modal(&mut self, ctx: &egui::Context) {
-        if !self.show_pro_modal {
-            return;
-        }
-        let gold = egui::Color32::from_rgb(245, 194, 66);
-        let screen = ctx.screen_rect();
-        egui::Area::new(egui::Id::new("pro_modal_backdrop"))
-            .fixed_pos(screen.min)
-            .order(egui::Order::Middle)
-            .show(ctx, |ui| {
-                let (rect, resp) = ui.allocate_exact_size(screen.size(), egui::Sense::click());
-                ui.painter().rect_filled(rect, CornerRadius::ZERO, egui::Color32::from_rgba_unmultiplied(6, 10, 13, 185));
-                if resp.clicked() {
-                    self.show_pro_modal = false;
-                }
-            });
-
-        let mut close_now = false;
-        egui::Window::new("pro_modal_win")
-            .title_bar(false)
-            .resizable(false)
-            .collapsible(false)
-            .order(egui::Order::Foreground)
-            .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
-            .default_width(470.0)
-            .max_width(470.0)
-            .frame(
-                Frame::new()
-                    .fill(theme::SURFACE)
-                    .stroke(Stroke::new(1.2_f32, theme::tint(gold, 0.72)))
-                    .corner_radius(CornerRadius::same(14))
-                    .inner_margin(Margin::same(22)),
-            )
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(theme::ic(icon::CROWN).color(gold).size(22.0));
-                    ui.label(
-                        RichText::new("FM27 Training Assistant Pro")
-                            .font(egui::FontId::new(18.0, theme::bold()))
-                            .color(theme::TEXT),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if theme::small_button(ui, icon::X, true).clicked() {
-                            close_now = true;
-                        }
-                    });
-                });
-
-                if let Some(team) = self.pro_modal_team.as_deref() {
-                    ui.add_space(6.0);
-                    theme::pill(
-                        ui,
-                        &t!(
-                            format!("{team} · Jeugdteam vereist Pro"),
-                            format!("{team} · Youth & Reserve requires Pro"),
-                            format!("{team} · Altyapı takımları için Pro gerekir")
-                        ),
-                        gold,
-                    );
-                }
-
-                ui.add_space(10.0);
-                ui.add(
-                    egui::Label::new(theme::dim(t!(
-                        "Ontgrendel alle jeugd- en reserveteams (U18, U19, U21, B-team) in de volledige app:",
-                        "Unlock every Youth & Reserve squad (U18, U19, U21, B) across all tabs:",
-                        "Tüm sekmelerde U18, U19, U21, U23 ve B takımlarını eksiksiz yönetin:"
-                    )))
-                    .wrap(),
-                );
-                ui.add_space(8.0);
-
-                let bullets = [
-                    t!(
-                        "Volledige planning, kalender en spelers voor U18 / U19 / U21 / B-teams",
-                        "Full schedule, calendar & squad sync for U18 / U19 / U21 / B teams",
-                        "U18 / U19 / U21 / B takımları için canlı takvim, analiz ve kadro yönetimi"
-                    ),
-                    t!(
-                        "Academie-ontwikkelingsmodus voor maximale groei van talenten",
-                        "Academy Dev Mode prioritizing youth growth & safe Double Intensity",
-                        "Genç oyuncular için Akademi Gelişim Modu ve güvenli Çift Yoğunluk"
-                    ),
-                    t!(
-                        "Rolgeschiktheid, beste elf en individuele focus per jeugdteam",
-                        "Youth role fit, Best XI & individualized Additional Focus advice",
-                        "Altyapı takımlarına özel Ek Odak, rol uyumu ve En İyi 11 analizi"
-                    ),
-                    t!(
-                        "Aparte kalender, metingen en voortgangsgrafiek per team",
-                        "Separate calendars, Breakdown readings & history per team",
-                        "Her takım için bağımsız takvim, verimlilik kaydı ve gelişim grafiği"
-                    ),
-                ];
-                for b in bullets {
-                    ui.horizontal(|ui| {
-                        ui.label(theme::ic(icon::CHECK_CIRCLE).color(theme::SUCCESS).size(15.0));
-                        ui.add(egui::Label::new(RichText::new(b).size(13.0).color(theme::TEXT)).wrap());
-                    });
-                    ui.add_space(4.0);
-                }
-
-                ui.add_space(12.0);
-                if theme::support_button(
-                    ui,
-                    icon::CROWN,
-                    t!("Koop Pro-licentie", "Get Pro License", "Pro Lisans Satın Al"),
-                    true,
-                )
-                .clicked()
-                {
-                    open_path(std::path::Path::new(license::CHECKOUT_URL));
-                }
-
-                ui.add_space(14.0);
-                let (sep, _) = ui.allocate_exact_size(vec2(ui.available_width().max(20.0), 1.0), egui::Sense::hover());
-                ui.painter().hline(sep.x_range(), sep.center().y, Stroke::new(1.0_f32, theme::BORDER));
-                ui.add_space(10.0);
-
-                ui.label(theme::label_strong(t!(
-                    "Heb je al een licentiesleutel?",
-                    "Already have a license key?",
-                    "Lisans anahtarınız var mı?"
-                )));
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    let resp = ui.add(
-                        egui::TextEdit::singleline(&mut self.license.key_input)
-                            .desired_width(305.0)
-                            .hint_text("XXXX-XXXX-XXXX-XXXX"),
-                    );
-                    let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    if (theme::primary_button(ui, icon::KEY, t!("Activeren", "Activate", "Etkinleştir"), !self.license.busy).clicked()
-                        || enter)
-                        && !self.license.busy
-                    {
-                        self.license.activate(ctx);
-                    }
-                });
-                if !self.license.status_msg.is_empty() {
-                    ui.add_space(6.0);
-                    let col = if self.license.status_err { theme::DANGER } else { theme::SUCCESS };
-                    ui.add(egui::Label::new(RichText::new(&self.license.status_msg).size(12.5).color(col)).wrap());
-                }
-            });
-
-        if close_now || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.show_pro_modal = false;
         }
     }
 
@@ -3575,12 +3302,6 @@ impl eframe::App for App {
         self.snapshot(ctx);
         self.poll_analysis(ctx);
         self.updater.tick(ctx, self.settings.auto_update);
-        self.license.tick(ctx);
-        let pro_now = self.license.is_pro();
-        if self.live.pro_unlocked && !pro_now && self.settings.training_team.is_some() {
-            self.switch_team_context(ctx, self.settings.manager_club, None);
-        }
-        self.live.pro_unlocked = pro_now;
         self.live.youth_dev_mode = self.settings.youth_dev_mode;
         // automatisch uitlezen: niet tijdens handmatig aanpassen en nooit tijdens een testopname
         if self.settings.auto_read
@@ -3600,7 +3321,6 @@ impl eframe::App for App {
         if !self.settings.preseason_intensity_chosen
             && !self.camp_prompted_this_session
             && !self.show_camp_modal
-            && !self.show_pro_modal
             && std::env::var_os("FM27_SNAPSHOT").is_none()
             && self
                 .live
@@ -3744,12 +3464,11 @@ impl eframe::App for App {
                     });
                 });
             });
-        self.render_pro_modal(ctx);
         self.render_camp_modal(ctx);
         let minimized = ctx.input(|i| i.viewport().minimized == Some(true));
         if minimized {
             ctx.request_repaint_after(std::time::Duration::from_secs(5));
-        } else if self.analysis_rx.is_some() || self.live.busy() || self.updater.busy() || self.license.busy {
+        } else if self.analysis_rx.is_some() || self.live.busy() || self.updater.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         } else if self.settings.auto_read {
             ctx.request_repaint_after(std::time::Duration::from_secs(1));

@@ -1,6 +1,6 @@
 # Third-party & Upstream Credits
 
-FM27 Training Assistant is proprietary software (see [LICENSE](LICENSE)), built upon open-source upstream code licensed under MIT (see [LICENSE-UPSTREAM-MIT](LICENSE-UPSTREAM-MIT)) and the permissive third-party components below.
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0-or-later)** (see [`LICENSE`](LICENSE)).
 
 | Onderdeel / Component | Licentie / License | Gebruik / Use |
 |---|---|---|

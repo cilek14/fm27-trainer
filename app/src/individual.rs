@@ -31,7 +31,7 @@ impl IntensityLevel {
 
     pub fn from_code(c: i64) -> Option<Self> {
         match c {
-            0 => Some(Self::Half),
+            0 | 3 | 4 => Some(Self::Half),
             1 => Some(Self::Normal),
             2 => Some(Self::Double),
             _ => None,
@@ -415,6 +415,8 @@ pub struct ParsedBepInEx {
     pub bottlenecks: Vec<PlayerBottleneck>,
     pub intensities: HashMap<u32, IntensityLevel>,
     pub current_focuses: HashMap<u32, i32>,
+    pub current_pos_roles: HashMap<u32, (i64, i32)>,
+    pub current_oop_roles: HashMap<u32, i64>,
     pub focus_options: HashMap<i32, String>,
     pub pos_role_options: Vec<PosRoleOption>,
     pub oop_role_options: HashMap<i64, String>,
@@ -454,6 +456,7 @@ pub struct UnifiedPlayerRow {
     pub focus_weak_attrs: Option<String>,
     pub focus_reason: Option<String>,
     pub focus_active: bool,
+    pub focus_cur_name: Option<String>,
 }
 
 impl UnifiedPlayerRow {
@@ -503,6 +506,8 @@ pub struct IndividualState {
     pub bottlenecks: Vec<PlayerBottleneck>,
     pub current_intensities: HashMap<u32, IntensityLevel>,
     pub current_focuses: HashMap<u32, i32>,
+    pub current_pos_roles: HashMap<u32, (i64, i32)>,
+    pub current_oop_roles: HashMap<u32, i64>,
     pub focus_options: HashMap<i32, String>,
     pub pos_role_options: Vec<PosRoleOption>,
     pub oop_role_options: HashMap<i64, String>,
@@ -533,6 +538,8 @@ impl Default for IndividualState {
             bottlenecks: Vec::new(),
             current_intensities: HashMap::new(),
             current_focuses: HashMap::new(),
+            current_pos_roles: HashMap::new(),
+            current_oop_roles: HashMap::new(),
             focus_options: HashMap::new(),
             pos_role_options: Vec::new(),
             oop_role_options: HashMap::new(),
@@ -581,7 +588,7 @@ fn parse_num(v: &Value) -> Option<f32> {
     v.as_f64().map(|n| n as f32).or_else(|| v.as_str()?.trim().parse::<f32>().ok())
 }
 
-fn score_of(node: &Value) -> Option<f32> {
+pub(crate) fn score_of_node(node: &Value) -> Option<f32> {
     if let Some(n) = parse_num(node) {
         return Some(n.clamp(0.0, 100.0));
     }
@@ -589,10 +596,56 @@ fn score_of(node: &Value) -> Option<f32> {
         .or_else(|| find_prefix(node, "Score"))
         .or_else(|| find_prefix(node, "Value"))
         .unwrap_or(node);
-    let raw = find_prefix(inner, "MaxValue")
-        .or_else(|| find_prefix(inner, "MinValue"))
-        .or_else(|| find_prefix(inner, "Value"))?;
-    parse_num(raw).map(|v| v.clamp(0.0, 100.0))
+    let uses_range = find_prefix(inner, "UsesRange").is_some_and(|v| {
+        v.as_bool() == Some(true)
+            || v.as_str().is_some_and(|s| s.trim().eq_ignore_ascii_case("true"))
+    });
+    let min_v = find_prefix(inner, "MinValue").and_then(parse_num);
+    let max_v = find_prefix(inner, "MaxValue").and_then(parse_num);
+    if uses_range {
+        if let (Some(mn), Some(mx)) = (min_v, max_v) {
+            return Some(((mn + mx) * 0.5).clamp(0.0, 100.0));
+        }
+    }
+    let val = max_v
+        .or(min_v)
+        .or_else(|| find_prefix(inner, "Value").and_then(parse_num))?;
+    Some(val.clamp(0.0, 100.0))
+}
+
+pub(crate) fn pick_tactical_effectiveness_entry<'a>(
+    root: &'a Value,
+    data: &'a serde_json::Map<String, Value>,
+    squad_rids: &HashSet<u32>,
+) -> Option<&'a Value> {
+    let last_key = root.get("last_tactic_key").and_then(|v| v.as_str());
+    let mut best: Option<((usize, u8, u8), &'a Value)> = None;
+    for (k, v) in data {
+        let is_te = k.ends_with(".TacticalEffectiveness");
+        if !is_te {
+            continue;
+        }
+        let is_team_tactic = u8::from(k.starts_with("TeamTactic:"));
+        let is_last = u8::from(last_key == Some(k.as_str()));
+        let overlap = if squad_rids.is_empty() {
+            0
+        } else {
+            find_prefix(v, "Players")
+                .and_then(|p| p.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(extract_runtime_id)
+                        .filter(|rid| squad_rids.contains(rid))
+                        .count()
+                })
+                .unwrap_or(0)
+        };
+        let rank = (overlap, is_team_tactic, is_last);
+        if best.as_ref().is_none_or(|(b, _)| rank > *b) {
+            best = Some((rank, v));
+        }
+    }
+    best.map(|(_, v)| v)
 }
 
 fn extract_runtime_id(node: &Value) -> Option<u32> {
@@ -655,6 +708,32 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
         }
     }
 
+    let mut current_pos_roles = HashMap::new();
+    if let Some(cp) = root.get("current_pos_roles").and_then(|v| v.as_object()) {
+        for (k, v) in cp {
+            if let (Ok(rid), Some(role_id), Some(pos_id)) = (
+                k.parse::<u32>(),
+                v.get("role_id").and_then(|x| x.as_i64()),
+                v.get("pos_id").and_then(|x| x.as_i64()),
+            ) {
+                if role_id >= 0 && pos_id >= 0 {
+                    current_pos_roles.insert(rid, (role_id, pos_id as i32));
+                }
+            }
+        }
+    }
+
+    let mut current_oop_roles = HashMap::new();
+    if let Some(co) = root.get("current_oop_roles").and_then(|v| v.as_object()) {
+        for (k, v) in co {
+            if let (Ok(rid), Some(role_id)) = (k.parse::<u32>(), v.as_i64()) {
+                if role_id >= 0 {
+                    current_oop_roles.insert(rid, role_id);
+                }
+            }
+        }
+    }
+
     let mut focus_options = HashMap::new();
     if let Some(fo) = root.get("focus_options").and_then(|v| v.as_object()) {
         for (k, v) in fo {
@@ -693,28 +772,28 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
         }
     }
 
+    let squad_rids: HashSet<u32> = squad_names.keys().copied().collect();
     let mut out = Vec::new();
     let Some(data) = root.get("data").and_then(|v| v.as_object()) else {
         return ParsedBepInEx {
             bottlenecks: out,
             intensities,
             current_focuses,
+            current_pos_roles,
+            current_oop_roles,
             focus_options,
             pos_role_options,
             oop_role_options,
             session_ready,
         };
     };
-    let Some(te) = data
-        .iter()
-        .find(|(k, _)| k.starts_with("TeamTactic:") && k.ends_with(".TacticalEffectiveness"))
-        .or_else(|| data.iter().find(|(k, _)| k.ends_with(".TacticalEffectiveness")))
-        .map(|(_, v)| v)
-    else {
+    let Some(te) = pick_tactical_effectiveness_entry(root, data, &squad_rids) else {
         return ParsedBepInEx {
             bottlenecks: out,
             intensities,
             current_focuses,
+            current_pos_roles,
+            current_oop_roles,
             focus_options,
             pos_role_options,
             oop_role_options,
@@ -727,6 +806,8 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
             bottlenecks: out,
             intensities,
             current_focuses,
+            current_pos_roles,
+            current_oop_roles,
             focus_options,
             pos_role_options,
             oop_role_options,
@@ -754,7 +835,7 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
             .or_else(|| find_prefix(eff_node, "PlayerTacticalUnderstanding"))
             .or_else(|| find_prefix(eff_node, "Comprehension"))
             .or_else(|| find_prefix(item, "TacticalUnderstanding"))
-            .and_then(score_of);
+            .and_then(score_of_node);
 
         let pa_node = find_prefix(eff_node, "PlayerAbility").or_else(|| find_prefix(item, "PlayerAbility"));
         let capability = find_prefix(eff_node, "CapabilityKeyFactor")
@@ -762,22 +843,22 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
             .or_else(|| find_prefix(eff_node, "Capability"))
             .or_else(|| pa_node.and_then(|pa| find_prefix(pa, "CapabilityKeyFactor").or_else(|| find_prefix(pa, "CapabilityScore"))))
             .or_else(|| pa_node)
-            .and_then(score_of);
+            .and_then(score_of_node);
 
         let role_suitability = find_prefix(eff_node, "RoleSuitabilityKeyFactor")
             .or_else(|| find_prefix(eff_node, "RoleSuitabilityScore"))
             .or_else(|| find_prefix(eff_node, "RoleSuitability"))
             .or_else(|| pa_node.and_then(|pa| find_prefix(pa, "RoleSuitabilityKeyFactor").or_else(|| find_prefix(pa, "RoleSuitabilityScore"))))
-            .and_then(score_of);
+            .and_then(score_of_node);
 
         let buy_in = find_prefix(eff_node, "PlayerBuyIn")
             .or_else(|| find_prefix(eff_node, "BuyIn"))
             .or_else(|| find_prefix(item, "PlayerBuyIn"))
-            .and_then(score_of);
+            .and_then(score_of_node);
 
         let overall = find_prefix(eff_node, "OverallEffectiveness")
             .or_else(|| find_prefix(item, "OverallEffectiveness"))
-            .and_then(score_of)
+            .and_then(score_of_node)
             .or_else(|| {
                 let parts: Vec<f32> = [understanding, capability, role_suitability, buy_in].into_iter().flatten().collect();
                 (!parts.is_empty()).then(|| parts.iter().sum::<f32>() / parts.len() as f32)
@@ -857,6 +938,8 @@ pub fn parse_bepinex_individual(root: &Value, squad_names: &HashMap<u32, String>
         bottlenecks: out,
         intensities,
         current_focuses,
+        current_pos_roles,
+        current_oop_roles,
         focus_options,
         pos_role_options,
         oop_role_options,
@@ -1390,27 +1473,68 @@ fn best_position_index_for_place(player: &TacticPlayer, place: &tactics::Place) 
         .unwrap_or_else(|| candidates.first().copied().unwrap_or(0))
 }
 
-/// Bellekteki `Player.positions` dizisindeki indeksi (0..15) FM27 olayındaki gerçek pozisyon bitmask'ine çevirir.
+/// Bellekteki `Player.positions` dizisindeki indeksi (0..15) FM27'nin gerçek `FM.UI.PositionMask` bitmask'ine çevirir.
 pub fn fm_position_mask(pos_idx: usize) -> Option<i32> {
     let bit = match pos_idx {
-        0 => 0,   // GK  -> 1
-        1 => 1,   // SW  -> 2
-        2 => 2,   // DL  -> 4
-        4 => 3,   // DR  -> 8
-        3 => 4,   // DC  -> 16
-        13 => 5,  // WBL -> 32
-        14 => 6,  // WBR -> 64
-        5 => 7,   // DM  -> 128
-        6 => 8,   // ML  -> 256
-        8 => 9,   // MR  -> 512
-        7 => 10,  // MC  -> 1024
-        9 => 11,  // AML -> 2048
-        11 => 12, // AMR -> 4096
-        10 => 13, // AMC -> 8192
-        12 => 14, // ST  -> 16384
+        0 => 0,   // GK  -> 1 (Goalkeeper)
+        1 => 1,   // SW  -> 2 (SweeperCentreNotInUse)
+        4 => 2,   // DR  -> 4 (DefenderRight)
+        2 => 3,   // DL  -> 8 (DefenderLeft)
+        3 => 4,   // DC  -> 16 (DefenderCentre)
+        14 => 5,  // WBR -> 32 (WingBackRight)
+        13 => 6,  // WBL -> 64 (WingBackLeft)
+        5 => 7,   // DM  -> 128 (DefensiveMidfielderCentre)
+        8 => 8,   // MR  -> 256 (MidfielderRight)
+        6 => 9,   // ML  -> 512 (MidfielderLeft)
+        7 => 10,  // MC  -> 1024 (MidfielderCentre)
+        11 => 11, // AMR -> 2048 (AttackingMidfielderRight)
+        9 => 12,  // AML -> 4096 (AttackingMidfielderLeft)
+        10 => 13, // AMC -> 8192 (AttackingMidfielderCentre)
+        12 => 14, // ST  -> 16384 (AttackerCentre)
         _ => return None,
     };
     Some(1i32 << bit)
+}
+
+fn role_name_keywords(role_bit: u8, is_oop: bool, en_name: &str) -> Vec<String> {
+    let mut kws = Vec::new();
+    if !en_name.is_empty() {
+        kws.push(en_name.to_lowercase());
+    }
+    let extra: &[&str] = if !is_oop {
+        match role_bit {
+            0 | 53 => &["kaleci", "doelman", "standart kaleci", "no-nonsense goalkeeper"],
+            12 => &["oyun kuran kaleci", "libero kaleci", "meevoetballende keeper"],
+            1 | 29 => &["stoper", "çakılı stoper", "centrale verdediger"],
+            14 | 24 => &["pasör stoper", "gelişmiş stoper", "opbouwende verdediger"],
+            51 | 54 => &["kenar stoper", "overlap"],
+            2 | 36 => &["bek", "defansif bek", "vleugelverdediger"],
+            3 | 38 | 44 | 52 | 55 => &["kanat bek", "ters ayaklı bek", "iç bek", "vleugelback"],
+            4 | 33 | 35 | 39 | 50 => &["ön libero", "defansif orta saha", "çapa", "regista", "segundo volante", "verdedigende middenvelder"],
+            5 | 16 | 46 | 47 | 48 | 56 | 57 => &["merkez orta saha", "iki yönlü", "mezzala", "centrale middenvelder"],
+            15 | 17 | 28 => &["derin oyun kurucu", "gelişmiş oyun kurucu", "savaşçı orta saha", "spelmaker", "balverover"],
+            6 | 7 | 30 | 42 | 43 | 45 | 49 => &["kanat oyuncusu", "ters ayaklı kanat", "iç forvet", "kanat forvet", "buitenspeler"],
+            9 | 32 | 37 | 41 => &["ofansif orta saha", "serbest rol", "enganche", "ikinci forvet", "schaduwspits"],
+            10 | 11 | 18 | 19 | 20 | 31 | 40 => &["santrfor", "komple forvet", "hedef santrfor", "fırsatçı", "sahte dokuz", "yardımcı forvet", "spits"],
+            _ => &[],
+        }
+    } else {
+        match role_bit {
+            0..=2 => &["kaleci", "libero kaleci", "çizgi kalecisi", "keeper"],
+            3..=8 => &["stoper", "kesici stoper", "sigorta stoper", "kenar stoper", "verdediger"],
+            9..=14 => &["bek", "kanat bek", "baskı yapan bek", "tutucu bek", "back"],
+            15..=19 => &["ön libero", "defansif orta saha", "verdedigende middenvelder"],
+            20..=29 => &["merkez orta saha", "baskı yapan orta saha", "middenvelder"],
+            30..=33 => &["ofansif orta saha", "aanvallende middenvelder"],
+            35..=41 => &["kanat", "kanat oyuncusu", "buitenspeler"],
+            42..=45 => &["santrfor", "forvet", "spits"],
+            _ => &[],
+        }
+    };
+    for &k in extra {
+        kws.push(k.to_string());
+    }
+    kws
 }
 
 fn match_pos_role_option(
@@ -1419,7 +1543,8 @@ fn match_pos_role_option(
     ip_name: &str,
     pos_idx: usize,
 ) -> Option<PosRoleOption> {
-    let bit = ip_bit? as i64;
+    let bit_u8 = ip_bit?;
+    let bit = bit_u8 as i64;
     let want_mask = fm_position_mask(pos_idx);
     let uses_bitmask = opts.iter().any(|o| o.pos_id >= 16);
     let pos_matches = |pid: i32| {
@@ -1437,12 +1562,12 @@ fn match_pos_role_option(
     {
         return Some(m.clone());
     }
-    // 2. İsim + pozisyon eşleşmesi
-    if !ip_name.is_empty() {
-        let low = ip_name.to_lowercase();
+    // 2. Çok dilli (EN/TR/NL) rol adı + pozisyon eşleşmesi
+    let kws = role_name_keywords(bit_u8, false, ip_name);
+    for kw in &kws {
         if let Some(m) = opts
             .iter()
-            .find(|o| pos_matches(o.pos_id) && o.role_id > 0 && o.name.to_lowercase().contains(&low))
+            .find(|o| pos_matches(o.pos_id) && o.role_id > 0 && o.name.to_lowercase().contains(kw))
         {
             return Some(m.clone());
         }
@@ -1455,7 +1580,8 @@ fn match_pos_role_option(
 }
 
 fn match_oop_role_option(opts: &HashMap<i64, String>, oop_bit: Option<u8>, oop_name: &str) -> Option<(i64, String)> {
-    let bit = oop_bit? as i64;
+    let bit_u8 = oop_bit?;
+    let bit = bit_u8 as i64;
     if let Some(name) = opts.get(&bit) {
         return Some((bit, name.clone()));
     }
@@ -1465,9 +1591,9 @@ fn match_oop_role_option(opts: &HashMap<i64, String>, oop_bit: Option<u8>, oop_n
             return Some((mask, name.clone()));
         }
     }
-    if !oop_name.is_empty() {
-        let low = oop_name.to_lowercase();
-        if let Some((&id, name)) = opts.iter().find(|(_, n)| n.to_lowercase().contains(&low)) {
+    let kws = role_name_keywords(bit_u8, true, oop_name);
+    for kw in &kws {
+        if let Some((&id, name)) = opts.iter().find(|(_, n)| n.to_lowercase().contains(kw)) {
             return Some((id, name.clone()));
         }
     }
@@ -1637,6 +1763,11 @@ pub fn build_unified_player_rows(
             focus_weak_attrs: None,
             focus_reason: None,
             focus_active: false,
+            focus_cur_name: state
+                .current_focuses
+                .get(&r.runtime_id)
+                .and_then(|id| state.focus_options.get(id))
+                .cloned(),
         });
     }
 
@@ -1664,6 +1795,13 @@ pub fn build_unified_player_rows(
             row.focus_weak_attrs = Some(f.weak_attrs);
             row.focus_reason = Some(f.reason);
             row.focus_active = active_by_applied || active_by_live;
+            if row.focus_cur_name.is_none() {
+                row.focus_cur_name = state
+                    .current_focuses
+                    .get(&row.runtime_id)
+                    .and_then(|id| state.focus_options.get(id))
+                    .cloned();
+            }
         } else {
             let idx = rows.len();
             if f.runtime_id != 0 {
@@ -1697,6 +1835,11 @@ pub fn build_unified_player_rows(
                 focus_weak_attrs: Some(f.weak_attrs),
                 focus_reason: Some(f.reason),
                 focus_active: active_by_applied || active_by_live,
+                focus_cur_name: state
+                    .current_focuses
+                    .get(&f.runtime_id)
+                    .and_then(|id| state.focus_options.get(id))
+                    .cloned(),
             });
         }
     }
@@ -1745,6 +1888,11 @@ pub fn build_unified_player_rows(
                 focus_weak_attrs: None,
                 focus_reason: None,
                 focus_active: false,
+                focus_cur_name: state
+                    .current_focuses
+                    .get(&b.runtime_id)
+                    .and_then(|id| state.focus_options.get(id))
+                    .cloned(),
             });
         }
     }
@@ -2302,9 +2450,21 @@ pub fn render_page(
                                     }
                                 })
                                 .response;
-                            if let Some(tip) = r.focus_reason.as_deref().or(r.focus_weak_attrs.as_deref()) {
-                                resp.on_hover_text(tip);
+                            let base_tip = r.focus_reason.as_deref().or(r.focus_weak_attrs.as_deref());
+                            match (base_tip, &r.focus_cur_name) {
+                                (Some(tip), Some(cur)) => {
+                                    resp.on_hover_text(format!("{tip}\nFM: {cur}"));
+                                }
+                                (Some(tip), None) => {
+                                    resp.on_hover_text(tip);
+                                }
+                                (None, Some(cur)) => {
+                                    resp.on_hover_text(format!("FM: {cur}"));
+                                }
+                                (None, None) => {}
                             }
+                        } else if let Some(cur) = &r.focus_cur_name {
+                            theme::pill(ui, cur, theme::TEXT_FAINT);
                         } else {
                             ui.label(theme::faint("—"));
                         }
@@ -2543,7 +2703,16 @@ fn render_tactic_role_card(
                     };
                     theme::pill(ui, &format!("{} ({})", p.pos_word, p.pos_rating), fit_col);
 
-                    let written_same = state.applied_roles.get(&p.uid) == Some(&(p.ip_bit, p.oop_bit));
+                    let ip_live_ok = !state.role_apply_ip
+                        || p.matched_pos_role
+                            .as_ref()
+                            .is_some_and(|m| state.current_pos_roles.get(&p.runtime_id) == Some(&(m.role_id, m.pos_id)));
+                    let oop_live_ok = !state.role_apply_oop
+                        || p.matched_oop_role
+                            .as_ref()
+                            .is_some_and(|(oid, _)| state.current_oop_roles.get(&p.runtime_id) == Some(oid));
+                    let live_same = (p.matched_pos_role.is_some() || p.matched_oop_role.is_some()) && ip_live_ok && oop_live_ok;
+                    let written_same = state.applied_roles.get(&p.uid) == Some(&(p.ip_bit, p.oop_bit)) || live_same;
                     if written_same {
                         theme::pill(ui, t!("✓ Geschreven", "✓ Written", "✓ Yazıldı"), theme::SUCCESS);
                     } else if p.matched_pos_role.is_some() || p.matched_oop_role.is_some() {
@@ -2741,12 +2910,20 @@ mod tests {
 
     #[test]
     fn pos_role_bitmask_maps_exact_fm27_positions_without_cross_flank_collision() {
+        // FM.UI.PositionMask: DR=4, DL=8, WBR=32, WBL=64, MR=256, ML=512, AMR=2048, AML=4096
         assert_eq!(fm_position_mask(0), Some(1));
+        assert_eq!(fm_position_mask(4), Some(4));
+        assert_eq!(fm_position_mask(2), Some(8));
         assert_eq!(fm_position_mask(3), Some(16));
+        assert_eq!(fm_position_mask(14), Some(32));
+        assert_eq!(fm_position_mask(13), Some(64));
         assert_eq!(fm_position_mask(5), Some(128));
+        assert_eq!(fm_position_mask(8), Some(256));
+        assert_eq!(fm_position_mask(6), Some(512));
         assert_eq!(fm_position_mask(7), Some(1024));
-        assert_eq!(fm_position_mask(9), Some(2048));
-        assert_eq!(fm_position_mask(11), Some(4096));
+        assert_eq!(fm_position_mask(11), Some(2048));
+        assert_eq!(fm_position_mask(9), Some(4096));
+        assert_eq!(fm_position_mask(10), Some(8192));
         assert_eq!(fm_position_mask(12), Some(16384));
 
         let opts = vec![
@@ -2754,16 +2931,73 @@ mod tests {
             PosRoleOption { role_id: 2, pos_id: 16, name: "Stoper".into() },
             PosRoleOption { role_id: 16, pos_id: 128, name: "Box-to-Box (DOS)".into() },
             PosRoleOption { role_id: 16, pos_id: 1024, name: "İki Yönlü Orta Saha".into() },
-            PosRoleOption { role_id: 128, pos_id: 2048, name: "Kanat Oyuncusu (Sol)".into() },
+            PosRoleOption { role_id: 128, pos_id: 2048, name: "Kanat Oyuncusu (Sağ)".into() },
+            PosRoleOption { role_id: 128, pos_id: 4096, name: "Kanat Oyuncusu (Sol)".into() },
         ];
-        // MC (idx=7, bit=1024): DM (128) yerine gerçek MC (1024) ile eşleşmeli
+        // MC (idx=7, mask=1024): DM (128) yerine gerçek MC (1024) ile eşleşmeli
         let mc_fit = match_pos_role_option(&opts, Some(16), "Box-to-Box Midfielder", 7).unwrap();
         assert_eq!(mc_fit.pos_id, 1024);
-        // AMR (idx=11, bit=4096): AML (2048) seçimine asla düşmemeli
-        assert!(match_pos_role_option(&opts, Some(7), "Winger", 11).is_none());
-        // DC (idx=3, bit=16): role_id=0 ("Oynadığı Mevki") seçilmemeli
+        // AMR (idx=11, mask=2048): sağ kanat 2048'e bağlanmalı, AML (4096) ile karışmamalı
+        let amr_fit = match_pos_role_option(&opts, Some(7), "Winger", 11).unwrap();
+        assert_eq!(amr_fit.pos_id, 2048);
+        assert!(amr_fit.name.contains("Sağ"));
+        // AML (idx=9, mask=4096): sol kanat 4096'ya bağlanmalı
+        let aml_fit = match_pos_role_option(&opts, Some(7), "Winger", 9).unwrap();
+        assert_eq!(aml_fit.pos_id, 4096);
+        assert!(aml_fit.name.contains("Sol"));
+        // DC (idx=3, mask=16): role_id=0 ("Oynadığı Mevki") seçilmemeli
         let dc_fit = match_pos_role_option(&opts, Some(1), "Centre-Back", 3).unwrap();
         assert_eq!(dc_fit.role_id, 2);
+    }
+
+    #[test]
+    fn uses_range_intensity_rest_codes_and_active_roles_parse_cleanly() {
+        let range_node = json!({
+            "OverallEffectiveness:1": {
+                "MinValue:1": "40",
+                "MaxValue:1": "70",
+                "UsesRange:1": "True"
+            }
+        });
+        assert_eq!(score_of_node(&range_node), Some(55.0));
+
+        assert_eq!(IntensityLevel::from_code(3), Some(IntensityLevel::Half));
+        assert_eq!(IntensityLevel::from_code(4), Some(IntensityLevel::Half));
+
+        let sample = json!({
+            "session_ready": true,
+            "last_tactic_key": "TeamTactic:10.TacticalEffectiveness",
+            "current_intensities": { "301": 3 },
+            "current_pos_roles": { "301": { "role_id": 128, "pos_id": 2048 } },
+            "current_oop_roles": { "301": 38 },
+            "data": {
+                "TeamTactic:10.TacticalEffectiveness": {
+                    "Players": [
+                        { "Player:1": { "runtime_id": 999 }, "OverallEffectiveness:1": { "MaxValue:1": "60" } }
+                    ]
+                },
+                "TeamTactic:20.TacticalEffectiveness": {
+                    "Players": [
+                        { "Player:1": { "runtime_id": 301 }, "OverallEffectiveness:1": { "MaxValue:1": "72" } }
+                    ]
+                }
+            }
+        });
+        let mut names = HashMap::new();
+        names.insert(301, "Aktif Sağ Kanat".into());
+        let parsed = parse_bepinex_individual(&sample, &names);
+        assert_eq!(parsed.intensities.get(&301), Some(&IntensityLevel::Half));
+        assert_eq!(parsed.current_pos_roles.get(&301), Some(&(128, 2048)));
+        assert_eq!(parsed.current_oop_roles.get(&301), Some(&38));
+        // Kadro örtüşmesine göre TeamTactic:20 seçilmeli
+        assert_eq!(parsed.bottlenecks.len(), 1);
+        assert_eq!(parsed.bottlenecks[0].runtime_id, 301);
+        assert!((parsed.bottlenecks[0].overall - 72.0).abs() < 0.01);
+
+        // Türkçe çok dilli rol yedek eşleşmesi
+        let tr_opts = vec![PosRoleOption { role_id: 999999, pos_id: 2048, name: "Kanat Oyuncusu".into() }];
+        let tr_fit = match_pos_role_option(&tr_opts, Some(7), "Winger", 11).unwrap();
+        assert_eq!(tr_fit.pos_id, 2048);
     }
 
     #[test]

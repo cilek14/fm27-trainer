@@ -17,7 +17,7 @@ using SI.Interop;
 
 namespace FM27Trainer.Bridge;
 
-[BepInPlugin("com.fm27trainer.bridge", "FM27 Training Assistant Bridge", "0.9.0")]
+[BepInPlugin("com.fm27trainer.bridge", "FM27 Training Assistant Bridge", "0.9.1")]
 public sealed class Plugin : BasePlugin
 {
     internal static ManualLogSource LogSource = null!;
@@ -52,7 +52,7 @@ public sealed class Plugin : BasePlugin
         Directory.CreateDirectory(OutDir);
         _harmony = new Harmony("com.fm27trainer.bridge");
         _harmony.PatchAll(typeof(InteropChannelPatches));
-        Log.LogInfo("FM27 Training Assistant Bridge 0.9.0 loaded. Watching TacticalEffectiveness + Players + Intensity/Focus/Role Events.");
+        Log.LogInfo("FM27 Training Assistant Bridge 0.9.1 loaded. Watching TacticalEffectiveness + Players + Intensity/Focus/Role Events.");
     }
 }
 
@@ -60,14 +60,18 @@ internal enum ChannelKind
 {
     TacticalEffectiveness,
     PlayerIntensity,
+    IntensityOptions,
     PlayerActiveFocus,
     FocusOptions,
+    PlayerActivePosRole,
     PosRoleOptions,
+    PlayerActiveOopRole,
     OopRoleOptions,
 }
 
 internal sealed record ChannelInfo(ChannelKind Kind, string RefName, string PropertyName, uint RuntimeId = 0);
 internal sealed record PosRoleOption(long role_id, int pos_id, string name);
+internal sealed record ActivePosRole(long role_id, int pos_id);
 
 internal sealed class IntensityCommandPayload
 {
@@ -134,10 +138,14 @@ internal static class InteropChannelPatches
 
     private static readonly ConcurrentDictionary<int, ChannelInfo> Tracked = new();
     private static readonly ConcurrentDictionary<uint, int> CurrentIntensities = new();
+    private static readonly ConcurrentDictionary<int, string> IntensityOptions = new();
     private static readonly ConcurrentDictionary<uint, int> CurrentFocuses = new();
+    private static readonly ConcurrentDictionary<uint, ActivePosRole> CurrentPosRoles = new();
+    private static readonly ConcurrentDictionary<uint, long> CurrentOopRoles = new();
     private static readonly ConcurrentDictionary<int, string> FocusOptions = new();
     private static readonly ConcurrentDictionary<string, PosRoleOption> PosRoleOptions = new();
     private static readonly ConcurrentDictionary<long, string> OopRoleOptions = new();
+    private static readonly ConcurrentDictionary<string, object> TacticalDumps = new();
     private static readonly object WriteLock = new();
 
     private static volatile int _sessionId;
@@ -167,45 +175,74 @@ internal static class InteropChannelPatches
                 return;
             }
 
-            if (playerRuntimeId != 0 && propName.EndsWith("IndividualTrainingIntensity", StringComparison.OrdinalIgnoreCase))
+            if (propName.IndexOf("IndividualTrainingIntensityList", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("IndividualTrainingIntensityRow", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("TrainingIntensityDropdownRow", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                Tracked[key.GetHashCode()] = new ChannelInfo(ChannelKind.IntensityOptions, DescribeSource(source), propName, playerRuntimeId);
+                return;
+            }
+
+            if (playerRuntimeId != 0
+                && !propName.EndsWith("AutoSelected", StringComparison.OrdinalIgnoreCase)
+                && (propName.IndexOf("IndividualTrainingIntensity", StringComparison.OrdinalIgnoreCase) >= 0
+                    || propName.IndexOf("PersonTrainingIntensityRest", StringComparison.OrdinalIgnoreCase) >= 0
+                    || propName.IndexOf("TrainingIntensityOrRest", StringComparison.OrdinalIgnoreCase) >= 0))
             {
                 Tracked[key.GetHashCode()] = new ChannelInfo(ChannelKind.PlayerIntensity, "PlayerTraining", propName, playerRuntimeId);
                 return;
             }
 
-            bool isFocusProp = propName.IndexOf("TrainingFocus", StringComparison.OrdinalIgnoreCase) >= 0
-                || propName.IndexOf("AdditionalFocus", StringComparison.OrdinalIgnoreCase) >= 0
-                || propName.IndexOf("FocusOption", StringComparison.OrdinalIgnoreCase) >= 0
-                || propName.IndexOf("FocusList", StringComparison.OrdinalIgnoreCase) >= 0
-                || propName.IndexOf("IndividualTrainingType", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isListProp = propName.IndexOf("Possible", StringComparison.OrdinalIgnoreCase) >= 0
                 || propName.IndexOf("Available", StringComparison.OrdinalIgnoreCase) >= 0
                 || propName.IndexOf("List", StringComparison.OrdinalIgnoreCase) >= 0
                 || propName.IndexOf("Options", StringComparison.OrdinalIgnoreCase) >= 0
-                || propName.IndexOf("Types", StringComparison.OrdinalIgnoreCase) >= 0;
+                || propName.IndexOf("Types", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("Roles", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("DropdownRow", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            // OOP Rolleri: Genel TrainingRole/TrainingPosition kontrollerinden önce yakala
+            bool isOopRoleProp = propName.IndexOf("OOPTrainingRole", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("IndividualOOPTrainingRole", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("PersonTrainingOOPRole", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("OutOfPossessionTraining", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("OutOfPossessionRole", StringComparison.OrdinalIgnoreCase) >= 0
+                || (propName.IndexOf("OOPRole", StringComparison.OrdinalIgnoreCase) >= 0
+                    && propName.IndexOf("BestOOPRole", StringComparison.OrdinalIgnoreCase) < 0
+                    && propName.IndexOf("OOPRoleOrBest", StringComparison.OrdinalIgnoreCase) < 0);
+
+            if (isOopRoleProp)
+            {
+                var kind = (playerRuntimeId != 0 && !isListProp) ? ChannelKind.PlayerActiveOopRole : ChannelKind.OopRoleOptions;
+                Tracked[key.GetHashCode()] = new ChannelInfo(kind, DescribeSource(source), propName, playerRuntimeId);
+                return;
+            }
+
+            // Pozisyon & Topla Rol: Ek Odak kontrolünden önce yakala (IndividualTrainingType dahil!)
+            bool isPosRoleProp = propName.IndexOf("TrainingPosition", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("PersonTrainingNewPosition", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("TrainingRole", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("PossibleIndividualTrainingTypes", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("IndividualTrainingType", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("IndividualTrainingPositionList", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (isPosRoleProp)
+            {
+                var kind = (playerRuntimeId != 0 && !isListProp) ? ChannelKind.PlayerActivePosRole : ChannelKind.PosRoleOptions;
+                Tracked[key.GetHashCode()] = new ChannelInfo(kind, DescribeSource(source), propName, playerRuntimeId);
+                return;
+            }
+
+            bool isFocusProp = propName.IndexOf("TrainingFocus", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("AdditionalFocus", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("PersonTrainingFocus", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("FocusOption", StringComparison.OrdinalIgnoreCase) >= 0
+                || propName.IndexOf("FocusList", StringComparison.OrdinalIgnoreCase) >= 0;
 
             if (isFocusProp)
             {
                 var kind = (playerRuntimeId != 0 && !isListProp) ? ChannelKind.PlayerActiveFocus : ChannelKind.FocusOptions;
                 Tracked[key.GetHashCode()] = new ChannelInfo(kind, DescribeSource(source), propName, playerRuntimeId);
-                return;
-            }
-
-            if (propName.IndexOf("OOPTrainingRole", StringComparison.OrdinalIgnoreCase) >= 0
-                || propName.IndexOf("OOPRole", StringComparison.OrdinalIgnoreCase) >= 0
-                || propName.IndexOf("OutOfPossessionTraining", StringComparison.OrdinalIgnoreCase) >= 0
-                || propName.IndexOf("OutOfPossessionRole", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                Tracked[key.GetHashCode()] = new ChannelInfo(ChannelKind.OopRoleOptions, DescribeSource(source), propName, playerRuntimeId);
-                return;
-            }
-
-            if (propName.IndexOf("TrainingPosition", StringComparison.OrdinalIgnoreCase) >= 0
-                || propName.IndexOf("TrainingRole", StringComparison.OrdinalIgnoreCase) >= 0
-                || propName.IndexOf("PossibleIndividualTrainingTypes", StringComparison.OrdinalIgnoreCase) >= 0
-                || propName.IndexOf("IndividualTrainingPositionList", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                Tracked[key.GetHashCode()] = new ChannelInfo(ChannelKind.PosRoleOptions, DescribeSource(source), propName, playerRuntimeId);
             }
         }
         catch (Exception ex)
@@ -299,12 +336,15 @@ internal static class InteropChannelPatches
             {
                 if (item.runtime_id == 0) continue;
                 var level = Math.Clamp(item.level, 0, 2);
-                var label = level switch
+                var defaultLabel = level switch
                 {
                     0 => "Half Intensity",
                     2 => "Double Intensity",
                     _ => "Normal Intensity",
                 };
+                var label = IntensityOptions.TryGetValue(level, out var locLabel) && !string.IsNullOrWhiteSpace(locLabel)
+                    ? locLabel
+                    : defaultLabel;
 
                 try
                 {
@@ -356,6 +396,7 @@ internal static class InteropChannelPatches
                 try
                 {
                     ApplyPosRoleItem(subsystem, mgrVal, item);
+                    CurrentPosRoles[item.runtime_id] = new ActivePosRole(item.role_id, item.pos_id);
                     applied++;
                 }
                 catch (Exception ex)
@@ -373,6 +414,7 @@ internal static class InteropChannelPatches
                 try
                 {
                     ApplyOopRoleItem(subsystem, mgrVal, item);
+                    CurrentOopRoles[item.runtime_id] = item.role_id;
                     applied++;
                 }
                 catch (Exception ex)
@@ -384,8 +426,7 @@ internal static class InteropChannelPatches
 
         Plugin.LogSource.LogInfo($"Applied legitimate training command for {applied} item(s) (errors={errors.Count}).");
         WriteCommandResult(applied, errors);
-        if (_lastEntryKey != null && _lastTacticalDump != null)
-            WriteLatest(_lastEntryKey, _lastTacticalDump);
+        FlushLatest();
     }
 
     private static void ApplyFocusItem(GameInteropSubsystem subsystem, int mgrVal, FocusCommandItem item)
@@ -508,46 +549,96 @@ internal static class InteropChannelPatches
 
             if (info.Kind == ChannelKind.PlayerIntensity)
             {
-                if (info.RuntimeId != 0 && TryExtractInt(value, out var lvl) && lvl is >= 0 and <= 4)
-                    CurrentIntensities[info.RuntimeId] = lvl;
+                if (info.RuntimeId != 0 && TryExtractOptionIdRecursive(value, 0, out var lvlLong) && lvlLong is >= 0 and <= 4)
+                {
+                    var lvl = (int)lvlLong;
+                    if (!CurrentIntensities.TryGetValue(info.RuntimeId, out var prev) || prev != lvl)
+                    {
+                        CurrentIntensities[info.RuntimeId] = lvl;
+                        FlushLatest();
+                    }
+                }
+                return;
+            }
+
+            if (info.Kind == ChannelKind.IntensityOptions)
+            {
+                if (HarvestOptionsRecursive(value, 0, HarvestIntensityOptionsFromRecord))
+                    FlushLatest();
                 return;
             }
 
             if (info.Kind == ChannelKind.PlayerActiveFocus)
             {
                 var added = HarvestOptionsRecursive(value, 0, HarvestFocusOptionsFromRecord);
-                var focused = false;
-                if (info.RuntimeId != 0 && TryExtractInt(value, out var fid) && fid is >= 0 and <= 100)
+                var changed = false;
+                if (info.RuntimeId != 0 && TryExtractOptionIdRecursive(value, 0, out var fidLong) && fidLong is >= 0 and <= 100)
                 {
+                    var fid = (int)fidLong;
                     if (!CurrentFocuses.TryGetValue(info.RuntimeId, out var prev) || prev != fid)
                     {
                         CurrentFocuses[info.RuntimeId] = fid;
-                        focused = true;
+                        changed = true;
                     }
                 }
-                if ((added || focused) && _lastEntryKey != null && _lastTacticalDump != null)
-                    WriteLatest(_lastEntryKey, _lastTacticalDump);
+                if (added || changed)
+                    FlushLatest();
+                return;
+            }
+
+            if (info.Kind == ChannelKind.PlayerActivePosRole)
+            {
+                var added = HarvestOptionsRecursive(value, 0, HarvestPosRoleOptionsFromRecord);
+                var changed = false;
+                if (info.RuntimeId != 0 && TryExtractPosRoleRecursive(value, 0, out var roleId, out var posId) && roleId >= 0 && posId >= 0)
+                {
+                    var next = new ActivePosRole(roleId, posId);
+                    if (!CurrentPosRoles.TryGetValue(info.RuntimeId, out var prev) || prev != next)
+                    {
+                        CurrentPosRoles[info.RuntimeId] = next;
+                        changed = true;
+                    }
+                }
+                if (added || changed)
+                    FlushLatest();
+                return;
+            }
+
+            if (info.Kind == ChannelKind.PlayerActiveOopRole)
+            {
+                var added = HarvestOptionsRecursive(value, 0, HarvestOopRoleOptionsFromRecord);
+                var changed = false;
+                if (info.RuntimeId != 0 && TryExtractOptionIdRecursive(value, 0, out var roleId) && roleId >= 0)
+                {
+                    if (!CurrentOopRoles.TryGetValue(info.RuntimeId, out var prev) || prev != roleId)
+                    {
+                        CurrentOopRoles[info.RuntimeId] = roleId;
+                        changed = true;
+                    }
+                }
+                if (added || changed)
+                    FlushLatest();
                 return;
             }
 
             if (info.Kind == ChannelKind.FocusOptions)
             {
-                if (HarvestOptionsRecursive(value, 0, HarvestFocusOptionsFromRecord) && _lastEntryKey != null && _lastTacticalDump != null)
-                    WriteLatest(_lastEntryKey, _lastTacticalDump);
+                if (HarvestOptionsRecursive(value, 0, HarvestFocusOptionsFromRecord))
+                    FlushLatest();
                 return;
             }
 
             if (info.Kind == ChannelKind.PosRoleOptions)
             {
-                if (HarvestOptionsRecursive(value, 0, HarvestPosRoleOptionsFromRecord) && _lastEntryKey != null && _lastTacticalDump != null)
-                    WriteLatest(_lastEntryKey, _lastTacticalDump);
+                if (HarvestOptionsRecursive(value, 0, HarvestPosRoleOptionsFromRecord))
+                    FlushLatest();
                 return;
             }
 
             if (info.Kind == ChannelKind.OopRoleOptions)
             {
-                if (HarvestOptionsRecursive(value, 0, HarvestOopRoleOptionsFromRecord) && _lastEntryKey != null && _lastTacticalDump != null)
-                    WriteLatest(_lastEntryKey, _lastTacticalDump);
+                if (HarvestOptionsRecursive(value, 0, HarvestOopRoleOptionsFromRecord))
+                    FlushLatest();
                 return;
             }
 
@@ -555,9 +646,10 @@ internal static class InteropChannelPatches
             if (dumped == null) return;
 
             var entryKey = $"{info.RefName}.{info.PropertyName}";
+            TacticalDumps[entryKey] = dumped;
             _lastEntryKey = entryKey;
             _lastTacticalDump = dumped;
-            WriteLatest(entryKey, dumped);
+            FlushLatest();
         }
         catch (Exception ex)
         {
@@ -752,10 +844,108 @@ internal static class InteropChannelPatches
         return false;
     }
 
+    private static bool HarvestIntensityOptionsFromRecord(Record rec, int depth)
+    {
+        var added = false;
+        var optId = -1;
+        string? optName = null;
+        var en = rec.GetEnumerator();
+        while (en.MoveNext())
+        {
+            var kv = en.Current;
+            if (kv.Key == KeyOptionId && TryExtractInt(kv.Value, out var id))
+                optId = id;
+            else if (kv.Key == KeyOptionName)
+                optName = kv.Value?.AsString()?.Trim();
+            else if (HarvestOptionsRecursive(kv.Value, depth + 1, HarvestIntensityOptionsFromRecord))
+                added = true;
+        }
+        if (optId >= 0 && optId <= 10 && !string.IsNullOrWhiteSpace(optName))
+        {
+            if (!IntensityOptions.TryGetValue(optId, out var prev) || prev != optName)
+            {
+                IntensityOptions[optId] = optName!;
+                added = true;
+            }
+        }
+        return added;
+    }
+
+    private static bool TryExtractOptionIdRecursive(TypedValue? tv, int depth, out long val)
+    {
+        val = -1;
+        if (tv == null || tv.IsNull || depth > 4) return false;
+        if (TryExtractLong(tv, out val))
+            return true;
+        try
+        {
+            var rec = tv.Get()?.TryCast<Record>();
+            if (rec != null)
+            {
+                var en = rec.GetEnumerator();
+                while (en.MoveNext())
+                {
+                    var cur = en.Current;
+                    if (cur.Key == KeyOptionId && TryExtractOptionIdRecursive(cur.Value, depth + 1, out val))
+                        return true;
+                    if (cur.Key == KeyFocusInner || cur.Key == KeyOopRoleInner || cur.Key == KeyPosRoleInner)
+                    {
+                        if (TryExtractOptionIdRecursive(cur.Value, depth + 1, out val))
+                            return true;
+                    }
+                }
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    private static bool TryExtractPosRoleRecursive(TypedValue? tv, int depth, out long roleId, out int posId)
+    {
+        roleId = -1;
+        posId = -1;
+        if (tv == null || tv.IsNull || depth > 4) return false;
+        try
+        {
+            var rec = tv.Get()?.TryCast<Record>();
+            if (rec == null) return false;
+            var en = rec.GetEnumerator();
+            while (en.MoveNext())
+            {
+                var cur = en.Current;
+                if (cur.Key == KeyOptionId)
+                {
+                    if (TryExtractLong(cur.Value, out var r))
+                        roleId = r;
+                    if (TryExtractPosRoleRecursive(cur.Value, depth + 1, out var nr, out var np))
+                    {
+                        if (nr >= 0) roleId = nr;
+                        if (np >= 0) posId = np;
+                    }
+                }
+                else if (cur.Key == KeyPositionId && TryExtractInt(cur.Value, out var pid))
+                {
+                    posId = pid;
+                }
+                else if (cur.Key == KeyPosRoleInner)
+                {
+                    if (TryExtractPosRoleRecursive(cur.Value, depth + 1, out var nr, out var np))
+                    {
+                        if (nr >= 0) roleId = nr;
+                        if (np >= 0) posId = np;
+                    }
+                }
+            }
+            return roleId >= 0 && posId >= 0;
+        }
+        catch { }
+        return false;
+    }
+
     private static object? DumpTypedValue(TypedValue? tv, int depth)
     {
         if (tv == null || tv.IsNull) return null;
-        if (depth > 6) return "<max-depth>";
+        if (depth > 8) return "<max-depth>";
 
         try
         {
@@ -839,6 +1029,7 @@ internal static class InteropChannelPatches
                 if (propName.StartsWith("Players:", StringComparison.OrdinalIgnoreCase)
                     || propName.StartsWith("KeyFactors:", StringComparison.OrdinalIgnoreCase)
                     || propName.StartsWith("ExtraFactors:", StringComparison.OrdinalIgnoreCase)
+                    || propName.StartsWith("AsKeyFactor:", StringComparison.OrdinalIgnoreCase)
                     || propName.StartsWith("TacticalAreasKeyFactors:", StringComparison.OrdinalIgnoreCase)
                     || propName.StartsWith("TacticalComprehensionKeyFactors:", StringComparison.OrdinalIgnoreCase)
                     || propName.StartsWith("Advice", StringComparison.OrdinalIgnoreCase))
@@ -1032,7 +1223,7 @@ internal static class InteropChannelPatches
         return "";
     }
 
-    private static void WriteLatest(string entryKey, object dumped)
+    private static void FlushLatest()
     {
         lock (WriteLock)
         {
@@ -1042,9 +1233,21 @@ internal static class InteropChannelPatches
                 foreach (var kv in CurrentIntensities)
                     intensities[kv.Key.ToString()] = kv.Value;
 
+                var intensityOpts = new Dictionary<string, string>();
+                foreach (var kv in IntensityOptions)
+                    intensityOpts[kv.Key.ToString()] = kv.Value;
+
                 var focuses = new Dictionary<string, int>();
                 foreach (var kv in CurrentFocuses)
                     focuses[kv.Key.ToString()] = kv.Value;
+
+                var posRoles = new Dictionary<string, ActivePosRole>();
+                foreach (var kv in CurrentPosRoles)
+                    posRoles[kv.Key.ToString()] = kv.Value;
+
+                var oopRoles = new Dictionary<string, long>();
+                foreach (var kv in CurrentOopRoles)
+                    oopRoles[kv.Key.ToString()] = kv.Value;
 
                 var focusOpts = new Dictionary<string, string>();
                 foreach (var kv in FocusOptions)
@@ -1055,19 +1258,26 @@ internal static class InteropChannelPatches
                 foreach (var kv in OopRoleOptions)
                     oopRoleOpts[kv.Key.ToString()] = kv.Value;
 
+                var dataDict = new Dictionary<string, object?>();
+                foreach (var kv in TacticalDumps)
+                    dataDict[kv.Key] = kv.Value;
+                if (dataDict.Count == 0 && _lastEntryKey != null && _lastTacticalDump != null)
+                    dataDict[_lastEntryKey] = _lastTacticalDump;
+
                 var payload = new Dictionary<string, object?>
                 {
                     ["updated_utc"] = System.DateTime.UtcNow.ToString("O"),
                     ["session_ready"] = _sessionId != 0,
+                    ["last_tactic_key"] = _lastEntryKey,
                     ["current_intensities"] = intensities,
+                    ["intensity_options"] = intensityOpts,
                     ["current_focuses"] = focuses,
+                    ["current_pos_roles"] = posRoles,
+                    ["current_oop_roles"] = oopRoles,
                     ["focus_options"] = focusOpts,
                     ["pos_role_options"] = posRoleOpts,
                     ["oop_role_options"] = oopRoleOpts,
-                    ["data"] = new Dictionary<string, object?>
-                    {
-                        [entryKey] = dumped
-                    }
+                    ["data"] = dataDict,
                 };
                 var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
                 var tmp = Plugin.DumpPath + ".tmp";

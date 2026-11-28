@@ -157,10 +157,13 @@ macro_rules! role {
 /// Rollen met bal. Het bitnummer is dat van FM's rolmasker; de namen bij de bits zijn in FM's
 /// tactiekscherm gezien (FMLibreEditor, en 15/40/57 op de Ajax-save van 14 nov 2026).
 pub const IP_ROLES: &[Role] = &[
+    role!(0, "GK", "Goalkeeper", Keeper, [handling, reflexes, one_on_ones, aerial_reach, command_of_area, positioning, concentration, agility, kicking, communication]),
     role!(1, "CB", "Centre-Back", CentreBack, [heading, marking, tackling, positioning, jumping_reach, strength, anticipation, concentration, bravery, pace]),
     role!(2, "FB", "Full-Back", WideBack, [tackling, marking, positioning, crossing, stamina, pace, work_rate, anticipation, teamwork, concentration]),
     role!(3, "WB", "Wing-Back", WideBack, [crossing, dribbling, stamina, pace, acceleration, work_rate, off_the_ball, tackling, teamwork, technique]),
     role!(4, "DM", "Defensive Midfielder", DefMid, [tackling, positioning, anticipation, concentration, marking, teamwork, work_rate, stamina, passing, decisions, strength]),
+    role!(5, "CM", "Central Midfielder", CentreMid, [passing, first_touch, tackling, decisions, teamwork, work_rate, stamina, positioning, off_the_ball, anticipation]),
+    role!(6, "WM", "Wide Midfielder", Wide, [crossing, passing, tackling, stamina, work_rate, teamwork, positioning, first_touch, decisions, off_the_ball]),
     role!(7, "W", "Winger", Wide, [crossing, dribbling, pace, acceleration, technique, agility, off_the_ball, flair, stamina]),
     role!(9, "AM", "Attacking Midfielder", AttMid, [first_touch, passing, technique, off_the_ball, vision, decisions, composure, long_shots, flair, anticipation, dribbling]),
     role!(10, "DLF", "Deep-Lying Forward", Striker, [first_touch, passing, technique, composure, decisions, off_the_ball, teamwork, vision, finishing, strength]),
@@ -170,18 +173,34 @@ pub const IP_ROLES: &[Role] = &[
     role!(15, "DLP", "Deep-Lying Playmaker", DefOrCentreMid, [passing, vision, first_touch, composure, decisions, technique, teamwork, anticipation, positioning]),
     role!(16, "BBM", "Box-to-Box Midfielder", CentreMid, [stamina, work_rate, passing, tackling, off_the_ball, teamwork, long_shots, strength, decisions, pace]),
     role!(17, "AP", "Advanced Playmaker", CentreOrAttMid, [passing, vision, first_touch, technique, composure, decisions, flair, off_the_ball, teamwork]),
+    role!(18, "TF", "Target Forward", Striker, [heading, jumping_reach, strength, bravery, first_touch, finishing, aggression, teamwork, composure, balance]),
     role!(19, "P", "Poacher", Striker, [finishing, off_the_ball, anticipation, composure, acceleration, first_touch, pace]),
+    role!(20, "CF", "Complete Forward", Striker, [finishing, dribbling, first_touch, heading, long_shots, passing, technique, anticipation, composure, decisions, off_the_ball, vision, acceleration, agility, jumping_reach, pace, strength]),
     role!(24, "BCB", "Ball-Playing Centre-Back", CentreBack, [heading, marking, tackling, positioning, jumping_reach, strength, anticipation, passing, first_touch, composure, vision, technique]),
     role!(27, "IF", "Inside Forward", Wide, [dribbling, finishing, first_touch, technique, off_the_ball, acceleration, pace, composure, anticipation, long_shots, agility]),
+    role!(28, "BWM", "Ball-Winning Midfielder", DefOrCentreMid, [tackling, aggression, anticipation, bravery, teamwork, work_rate, stamina, marking, strength, pace]),
     role!(29, "NCB", "No-Nonsense Centre-Back", CentreBack, [heading, marking, tackling, positioning, strength, jumping_reach, bravery, aggression]),
+    role!(30, "DW", "Defensive Winger", Wide, [work_rate, stamina, tackling, marking, positioning, teamwork, crossing, dribbling, anticipation, acceleration, aggression]),
+    role!(31, "CHF", "Channel Forward", Striker, [acceleration, pace, off_the_ball, finishing, dribbling, first_touch, anticipation, composure, work_rate, stamina]),
+    role!(32, "FR", "Free Role", CentreOrAttMid, [passing, vision, technique, first_touch, dribbling, flair, decisions, composure, off_the_ball, anticipation, agility]),
+    role!(33, "A", "Anchor", DefMid, [marking, tackling, positioning, anticipation, concentration, decisions, composure, strength, teamwork]),
     role!(35, "HB", "Half-Back", DefMid, [positioning, tackling, marking, anticipation, concentration, composure, passing, decisions, strength, heading]),
+    role!(36, "NFB", "No-Nonsense Full-Back", WideBack, [tackling, marking, heading, positioning, strength, bravery, anticipation, concentration, aggression, teamwork]),
+    role!(37, "EG", "Enganche", AttMid, [passing, vision, first_touch, technique, decisions, composure, flair, anticipation, teamwork]),
     role!(38, "AWB", "Advanced Wing-Back", WideBack, [crossing, dribbling, pace, acceleration, stamina, off_the_ball, flair, technique, work_rate]),
+    role!(39, "RGA", "Regista", DefMid, [passing, vision, first_touch, technique, decisions, composure, flair, off_the_ball, dribbling, anticipation, teamwork]),
     role!(40, "F9", "False Nine", Striker, [first_touch, passing, technique, vision, dribbling, composure, decisions, off_the_ball, finishing, flair, agility]),
+    role!(41, "SS", "Second Striker", AttMid, [finishing, off_the_ball, anticipation, composure, first_touch, dribbling, passing, acceleration, pace, work_rate, decisions]),
+    role!(42, "WTF", "Wide Target Forward", Wide, [heading, jumping_reach, strength, bravery, first_touch, off_the_ball, teamwork, work_rate, stamina, finishing]),
     role!(43, "PW", "Playmaking Winger", Wide, [passing, vision, first_touch, technique, dribbling, decisions, composure, flair, off_the_ball]),
     role!(44, "IWB", "Inside Wing-Back", WideBack, [passing, first_touch, decisions, composure, tackling, positioning, teamwork, anticipation, technique]),
     role!(45, "WFD", "Wide Forward", Wide, [finishing, off_the_ball, pace, acceleration, dribbling, first_touch, composure, anticipation, heading]),
     role!(46, "BBP", "Box-to-Box Playmaker", CentreMid, [stamina, work_rate, passing, vision, technique, first_touch, composure, off_the_ball, teamwork, decisions]),
+    role!(47, "MEZ", "Mezzala", CentreMid, [passing, dribbling, first_touch, technique, off_the_ball, vision, decisions, work_rate, stamina, acceleration, long_shots]),
     role!(48, "WCM", "Wide Central Midfielder", CentreMid, [passing, crossing, stamina, work_rate, off_the_ball, teamwork, first_touch, decisions]),
+    role!(49, "IW", "Inside Winger", Wide, [dribbling, passing, first_touch, technique, crossing, off_the_ball, vision, decisions, acceleration, pace, agility, flair]),
+    role!(50, "SV", "Segundo Volante", DefMid, [tackling, marking, positioning, passing, off_the_ball, finishing, long_shots, stamina, work_rate, pace, acceleration, anticipation, decisions, strength]),
+    role!(51, "WCB", "Wide Centre-Back", CentreBack, [tackling, marking, heading, positioning, jumping_reach, strength, pace, stamina, dribbling, crossing, passing, anticipation]),
     role!(52, "IFB", "Inside Full-Back", WideBack, [tackling, marking, positioning, heading, strength, concentration, passing, anticipation]),
     role!(53, "NGK", "No-Nonsense Goalkeeper", Keeper, [handling, reflexes, aerial_reach, one_on_ones, concentration, positioning, command_of_area, communication]),
     role!(54, "OCB", "Overlapping Centre-Back", CentreBack, [pace, stamina, crossing, dribbling, tackling, marking, work_rate, positioning, heading]),
@@ -194,30 +213,45 @@ pub const IP_ROLES: &[Role] = &[
 /// wingbacks, verdedigende middenvelders, middenvelders, aanvallende middenvelders,
 /// vleugelmiddenvelders, buitenspelers, spitsen): een bit zonder naam krijgt zo toch zijn linie.
 pub const OOP_ROLES: &[Role] = &[
+    role!(0, "GK", "Goalkeeper", Keeper, [handling, reflexes, positioning, concentration, aerial_reach, command_of_area, one_on_ones]),
     role!(1, "SK", "Sweeper Keeper", Keeper, [rushing_out, one_on_ones, anticipation, acceleration, command_of_area, reflexes, handling, decisions, concentration]),
     role!(2, "LHK", "Line-Holding Keeper", Keeper, [handling, reflexes, positioning, concentration, aerial_reach, command_of_area, one_on_ones]),
     role!(3, "CB", "Centre-Back", CentreBack, [marking, tackling, positioning, heading, jumping_reach, strength, concentration, anticipation]),
     role!(4, "SCB", "Stopping Centre-Back", CentreBack, [aggression, bravery, tackling, anticipation, strength, decisions, marking, heading]),
     role!(5, "CCB", "Covering Centre-Back", CentreBack, [pace, acceleration, positioning, anticipation, concentration, marking, decisions, tackling]),
     role!(6, "WCB", "Wide Centre-Back", CentreBack, [tackling, marking, pace, positioning, stamina, anticipation]),
+    role!(7, "SWCB", "Stopping Wide Centre-Back", CentreBack, [aggression, bravery, tackling, marking, anticipation, strength, decisions, pace]),
+    role!(8, "CWCB", "Covering Wide Centre-Back", CentreBack, [pace, acceleration, positioning, anticipation, concentration, marking, tackling, decisions]),
     role!(9, "FB", "Full-Back", WideBack, [tackling, marking, positioning, concentration, anticipation, pace, teamwork]),
     role!(10, "PFB", "Pressing Full-Back", WideBack, [aggression, work_rate, stamina, tackling, acceleration, anticipation, pace, bravery]),
     role!(11, "HFB", "Holding Full-Back", WideBack, [positioning, concentration, marking, tackling, anticipation, decisions]),
     role!(12, "WB", "Wing-Back", WideBack, [tackling, marking, stamina, work_rate, pace, positioning]),
+    role!(13, "PWB", "Pressing Wing-Back", WideBack, [aggression, work_rate, stamina, tackling, acceleration, pace, anticipation, bravery, teamwork]),
     role!(14, "HWB", "Holding Wing-Back", WideBack, [positioning, concentration, marking, tackling, anticipation, stamina]),
     role!(15, "DM", "Defensive Midfielder", DefMid, [positioning, tackling, anticipation, concentration, marking, teamwork, strength]),
     role!(16, "DDM", "Dropping Defensive Midfielder", DefMid, [positioning, marking, heading, concentration, anticipation, tackling, strength, decisions]),
     role!(17, "PDM", "Pressing Defensive Midfielder", DefMid, [aggression, work_rate, stamina, tackling, anticipation, acceleration, bravery, teamwork]),
+    role!(18, "SDM", "Screening Defensive Midfielder", DefMid, [positioning, anticipation, concentration, marking, tackling, decisions, teamwork]),
+    role!(19, "WCDM", "Wide Covering Defensive Midfielder", DefMid, [positioning, tackling, anticipation, concentration, pace, acceleration, stamina, work_rate, teamwork]),
     role!(20, "CM", "Central Midfielder", CentreMid, [tackling, positioning, work_rate, teamwork, stamina, anticipation, concentration]),
     role!(27, "PCM", "Pressing Central Midfielder", CentreMid, [work_rate, stamina, aggression, tackling, anticipation, acceleration, teamwork, bravery]),
     role!(28, "SCM", "Screening Central Midfielder", CentreMid, [positioning, anticipation, concentration, tackling, marking, teamwork, decisions]),
+    role!(29, "WCCM", "Wide Covering Central Midfielder", CentreMid, [positioning, tackling, work_rate, stamina, pace, acceleration, anticipation, teamwork, concentration]),
+    role!(30, "AM", "Attacking Midfielder", AttMid, [work_rate, teamwork, positioning, anticipation, stamina, tackling, decisions]),
+    role!(31, "TAM", "Tracking Attacking Midfielder", AttMid, [work_rate, stamina, teamwork, tackling, marking, positioning, anticipation, concentration]),
     role!(32, "OAM", "Outlet Attacking Midfielder", AttMid, [off_the_ball, anticipation, acceleration, pace, composure, first_touch]),
+    role!(33, "SOAM", "Splitting Outlet Attacking Midfielder", AttMid, [off_the_ball, acceleration, pace, anticipation, dribbling, composure, first_touch]),
+    role!(35, "WM", "Wide Midfielder", Wide, [work_rate, stamina, teamwork, tackling, positioning, marking, anticipation, concentration]),
+    role!(36, "TWM", "Tracking Wide Midfielder", Wide, [work_rate, stamina, teamwork, tackling, marking, positioning, concentration, anticipation]),
+    role!(37, "WOWM", "Wide Outlet Wide Midfielder", Wide, [off_the_ball, acceleration, pace, anticipation, first_touch, dribbling, composure]),
     role!(38, "W", "Winger", Wide, [work_rate, stamina, teamwork, tackling, positioning, pace, anticipation]),
     role!(39, "TW", "Tracking Winger", Wide, [work_rate, stamina, teamwork, tackling, marking, positioning, concentration]),
     role!(40, "IOW", "Inside Outlet Winger", Wide, [off_the_ball, anticipation, acceleration, pace, composure]),
+    role!(41, "WOW", "Wide Outlet Winger", Wide, [off_the_ball, acceleration, pace, anticipation, dribbling, first_touch, composure]),
     role!(42, "CFD", "Centre Forward", Striker, [work_rate, teamwork, anticipation, stamina, aggression, strength, pace]),
     role!(43, "TCF", "Tracking Centre Forward", Striker, [work_rate, stamina, teamwork, tackling, aggression, anticipation]),
     role!(44, "OCF", "Outlet Centre Forward", Striker, [off_the_ball, anticipation, pace, acceleration, strength, composure]),
+    role!(45, "SOCF", "Splitting Outlet Centre Forward", Striker, [off_the_ball, acceleration, pace, anticipation, dribbling, composure, first_touch]),
 ];
 
 pub fn ip_role(bit: u8) -> Option<&'static Role> {
@@ -238,8 +272,8 @@ pub fn oop_line(bit: u8) -> Line {
         3..=8 => Line::CentreBack,
         9..=14 => Line::WideBack,
         15..=19 => Line::DefMid,
-        20..=28 => Line::CentreMid,
-        29..=33 => Line::AttMid,
+        20..=29 => Line::CentreMid,
+        30..=33 => Line::AttMid,
         34..=41 => Line::Wide,
         _ => Line::Striker,
     }
@@ -495,10 +529,12 @@ mod tests {
         assert!(fit(&striker, &place) > fit(&same_but_defender, &place) + 20.0);
         // een rol die we niet kennen: de linie van de rol zonder bal, zonder paniek
         assert_eq!(oop_line(35), Line::Wide);
+        assert_eq!(oop_line(29), Line::CentreMid);
         assert_eq!(oop_line(30), Line::AttMid);
-        let unknown = Place { line: oop_line(35), side: Side::Centre, ip: Some(49), oop: Some(35), uid: None, oop_order: 8 };
+        assert_eq!(ip_label(Some(49)).0, "IW");
+        let unknown = Place { line: oop_line(35), side: Side::Centre, ip: Some(60), oop: Some(35), uid: None, oop_order: 8 };
         assert!(fit(&striker, &unknown) > 0.0);
-        assert_eq!(ip_label(Some(49)).0, "#49");
+        assert_eq!(ip_label(Some(60)).0, "#60");
     }
 
     #[test]

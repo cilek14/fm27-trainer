@@ -13,7 +13,6 @@ mod i18n_it;
 mod i18n_tr;
 mod individual;
 mod labels;
-mod license;
 mod live;
 mod live_training;
 mod model;
