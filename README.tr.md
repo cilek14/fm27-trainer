@@ -92,7 +92,7 @@ Oluşturulan haftalık programı tek tıkla FM27 takvimine yazın ve **Otomatik 
 ### Windows (10 / 11)
 
 1. [**FM27-Training-Assistant-Windows.zip**](https://github.com/cilek14/fm27-trainer/releases/latest/download/FM27-Training-Assistant-Windows.zip) dosyasını indirin, istediğiniz klasöre çıkarın ve **`FM27 Training Assistant.exe`** dosyasını çalıştırın (kurulum gerektirmez).
-2. *(Önerilen — isteğe bağlı oyun eklentisi `v0.9.1`)* Oyununuzda **BepInEx 6 (Unity IL2CPP)** kuruluysa **`FM27Trainer.Bridge.dll`** dosyasını `<FM27 klasörü>\BepInEx\plugins\FM27Trainer.Bridge\` içine kopyalayıp FM27'yi yeniden başlatın.
+2. *(Önerilen — isteğe bağlı oyun eklentisi `v0.9.1`)* Oyununuzda **BepInEx 6 (Unity IL2CPP)** kuruluysa **`FM27Trainer.Bridge.dll`** dosyasını sürüm arşivindeki `BepInEx-plugin/FM27Trainer.Bridge/` (veya `BepInEx/plugins/FM27Trainer.Bridge/`) klasöründen ya da [son sürüm sayfasındaki](https://github.com/cilek14/fm27-trainer/releases/latest) **`FM27Trainer.Bridge.dll`** ek dosyasından alıp `<FM27 klasörü>\BepInEx\plugins\FM27Trainer.Bridge\` içine kopyalayın ve FM27'yi yeniden başlatın.
 3. FM27'de kariyerinizi açın — uygulama oyuna otomatik bağlanır:
    - Faktör skorlarının ve oyuncu darboğazlarının okunması için oyunda **Taktiksel Verimlilik** ekranını bir kez açın.
    - **Ek Odak** veya rol eğitimi göndermeden önce FM27'de **Bireysel Antrenman** sekmesini bir kez açın.
@@ -204,7 +204,7 @@ cargo build --release -p fm27-trainer
 # macOS Universal .app & .dmg paketi (macOS üzerinde çalıştırılır)
 ./release.sh
 
-# İsteğe bağlı BepInEx 6 IL2CPP eklentisi (.NET 6 / .NET 8 SDK)
+# İsteğe bağlı BepInEx 6 IL2CPP eklentisi (.NET 6 / .NET 8 SDK; yerel FM27 + BepInEx interop klasörü gerektirir)
 dotnet build bridge/FM27Trainer.Bridge.csproj -c Release -p:FM27Dir="FM27_YOLU"
 ```
 

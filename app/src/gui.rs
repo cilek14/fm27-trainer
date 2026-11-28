@@ -1233,10 +1233,12 @@ impl App {
             }
         }
         self.eff = next;
-        let _ = crate::save_effectiveness_for(self.active_team_slot(), &self.eff);
-        let hkey = self.club_history_key();
-        if self.history.record(&hkey, &self.eff) {
-            self.history.save();
+        if std::env::var_os("FM27_SNAPSHOT").is_none() {
+            let _ = crate::save_effectiveness_for(self.active_team_slot(), &self.eff);
+            let hkey = self.club_history_key();
+            if self.history.record(&hkey, &self.eff) {
+                self.history.save();
+            }
         }
         if changed {
             self.week_plan = None;

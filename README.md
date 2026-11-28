@@ -92,7 +92,7 @@ On **Players** and **Tactics**, apply injury-safe individual intensity (`Protect
 ### Windows (10 / 11)
 
 1. Download [**FM27-Training-Assistant-Windows.zip**](https://github.com/cilek14/fm27-trainer/releases/latest/download/FM27-Training-Assistant-Windows.zip), extract it anywhere, and launch **`FM27 Training Assistant.exe`** (portable, no installer required).
-2. *(Recommended — optional game plugin `v0.9.1`)* If you use **BepInEx 6 (Unity IL2CPP)**, copy **`FM27Trainer.Bridge.dll`** into `<FM27 folder>\BepInEx\plugins\FM27Trainer.Bridge\` and restart FM27.
+2. *(Recommended — optional game plugin `v0.9.1`)* If you use **BepInEx 6 (Unity IL2CPP)**, get **`FM27Trainer.Bridge.dll`** either from the `BepInEx-plugin/FM27Trainer.Bridge/` (or `BepInEx/plugins/FM27Trainer.Bridge/`) folder inside the release archive or as the standalone **`FM27Trainer.Bridge.dll`** asset on the [latest release page](https://github.com/cilek14/fm27-trainer/releases/latest), copy it into `<FM27 folder>\BepInEx\plugins\FM27Trainer.Bridge\`, and restart FM27.
 3. Load your save in FM27 — the app connects automatically:
    - Open **Tactical Effectiveness** in FM27 once to load exact factor scores and player bottlenecks.
    - Open **Individual Training** in FM27 once before applying **Additional Focus** or role training changes.
@@ -204,7 +204,7 @@ cargo build --release -p fm27-trainer
 # macOS Universal .app & .dmg bundle (run on macOS)
 ./release.sh
 
-# Optional BepInEx 6 IL2CPP bridge (.NET 6 / .NET 8 SDK)
+# Optional BepInEx 6 IL2CPP bridge (.NET 6 / .NET 8 SDK; requires a local FM27 + BepInEx interop install)
 dotnet build bridge/FM27Trainer.Bridge.csproj -c Release -p:FM27Dir="PATH_TO_FM27"
 ```
 

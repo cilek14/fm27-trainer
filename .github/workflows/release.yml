@@ -67,12 +67,29 @@ jobs:
         run: |
           $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = "-C target-feature=+crt-static --remap-path-prefix=$($env:USERPROFILE)\.cargo=/cargo --remap-path-prefix=$($PWD.Path)=/src --remap-path-prefix=$($env:USERPROFILE)=/home"
           cargo build --release -p fm27-trainer
+      - name: Build BepInEx bridge (when FM27 assemblies are available)
+        shell: pwsh
+        run: |
+          $fmDir = if ($env:FM27_DIR) { $env:FM27_DIR } else { "C:\Program Files (x86)\Steam\steamapps\common\Football Manager 27" }
+          if (Test-Path "$fmDir\BepInEx\interop") {
+            dotnet build bridge/FM27Trainer.Bridge.csproj -c Release -p:FM27Dir="$fmDir"
+          } else {
+            Write-Host "::notice::Skipping bridge build on GitHub-hosted runner (requires local FM27 BepInEx/core and BepInEx/interop assemblies)."
+          }
       - name: Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/fm27-trainer.exe "dist/FM27 Training Assistant.exe"
-          Compress-Archive -Path "dist/FM27 Training Assistant.exe" -DestinationPath "dist/FM27-Training-Assistant-Windows.zip" -Force
+          $paths = @("dist/FM27 Training Assistant.exe")
+          $bridgeDll = "bridge/bin/Release/net6.0/FM27Trainer.Bridge.dll"
+          if (Test-Path $bridgeDll) {
+            $pluginOut = "dist/BepInEx-plugin/FM27Trainer.Bridge"
+            New-Item -ItemType Directory -Force $pluginOut | Out-Null
+            Copy-Item $bridgeDll "$pluginOut/FM27Trainer.Bridge.dll"
+            $paths += "dist/BepInEx-plugin"
+          }
+          Compress-Archive -Path $paths -DestinationPath "dist/FM27-Training-Assistant-Windows.zip" -Force
       - uses: actions/upload-artifact@v4
         with:
           name: FM27-Training-Assistant-Windows
