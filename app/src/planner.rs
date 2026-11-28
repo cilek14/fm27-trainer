@@ -378,6 +378,9 @@ pub struct PlannerSettings {
     /// Maçsız haftalarda (veya Pazar dinlenme gününde) 1 Takım Kaynaşması seansını Pazar gününe taşır.
     #[serde(default)]
     pub sunday_team_bonding: bool,
+    /// Live kadro kondisyonu (yalnızca canlı modda doldurulur; kaydedilmez).
+    #[serde(skip)]
+    pub squad_condition: Option<f32>,
 }
 
 fn default_block() -> u32 {
@@ -413,6 +416,21 @@ impl Default for PlannerSettings {
             camp_mode: CampMode::Auto,
             preseason_intensity: PreSeasonIntensity::Heavy,
             sunday_team_bonding: false,
+            squad_condition: None,
+        }
+    }
+}
+
+impl PlannerSettings {
+    /// Kondisyon eşiği: sezon öncesi / kondisyon kampı haftalarında seçilen yoğunluğa göre düşürülür.
+    pub fn condition_floor(&self, preseason_context: bool) -> f32 {
+        if !preseason_context {
+            return self.auto_light_below;
+        }
+        match self.preseason_intensity {
+            PreSeasonIntensity::Heavy => self.auto_light_below.min(66.0),
+            PreSeasonIntensity::Balanced => self.auto_light_below.min(72.0),
+            PreSeasonIntensity::TacticalFocus => self.auto_light_below,
         }
     }
 }
@@ -590,8 +608,11 @@ impl WeekState<'_> {
                 return self.take(name);
             }
         }
-        // alle specifieke sessies al gebruikt: laat FM zelf kiezen
-        "Match Preparation".to_string()
+        // alle specifieke sessies al gebruikt: een schrijfbare sessie i.p.v. de generieke (geen FM-code)
+        if let Some(t) = self.pick_tactical(today) {
+            return t;
+        }
+        self.take("Rest")
     }
 
     fn pick_dev(&mut self, today: &[String]) -> String {
@@ -696,6 +717,12 @@ pub fn plan_week(
         CampMode::PlayerDevelopment => CampMode::PlayerDevelopment,
         _ => CampMode::Auto,
     };
+    if let Some(avg) = eff_settings.squad_condition {
+        let floor = eff_settings.condition_floor(week.kind.is_preseason() || active_camp == CampMode::PreSeasonFitness);
+        if floor > 0.0 && avg < floor {
+            eff_settings.load = Load::Light;
+        }
+    }
     let settings = &eff_settings;
     let mut roles = day_roles(week, prev_sunday_match, next_monday_match);
     // Milli ara / kış arası (0 maçlı hafta): kadro yorgunsa (Load::Light) hafta ortasına ekstra Recovery günü ekle
@@ -721,6 +748,8 @@ pub fn plan_week(
     };
     let matches = week.match_count();
     let intensity = settings.preseason_intensity;
+    let guarantee_bonding = intensity == PreSeasonIntensity::Heavy
+        && (week.kind.is_preseason() || active_camp == CampMode::PreSeasonFitness);
     let set_piece_week = active_camp == CampMode::BigMatchPrep
         || (settings.set_pieces_every > 0 && season_week_no % settings.set_pieces_every == 0);
     // Sezon içi kondisyon yüklemesi: normalde 1× Light Conditioning, WinterBreak 2×, Kondisyon kampı seçilen tarza göre
@@ -947,6 +976,21 @@ pub fn plan_week(
         }
         let slots: [String; 3] = [today[0].clone(), today[1].clone(), today[2].clone()];
         days.push(DayPlan { date, role: *role, slots });
+    }
+
+    if guarantee_bonding && st.used("Team Bonding") == 0 {
+        // 1) een Rest-vak op een hersteldag / dag na de wedstrijd, 2) anders het laatste vak van de laatste trainingsdag
+        let pick = days
+            .iter()
+            .position(|d| matches!(d.role, DayRole::PostMatch | DayRole::Recovery) && d.slots[2] == "Rest")
+            .or_else(|| days.iter().rposition(|d| d.role == DayRole::Training));
+        if let Some(di) = pick {
+            let old = std::mem::take(&mut days[di].slots[2]);
+            if let Some(c) = st.count.get_mut(&old) {
+                *c = c.saturating_sub(1);
+            }
+            days[di].slots[2] = st.take("Team Bonding");
+        }
     }
 
     let targets: Vec<(Factor, u32)> = Factor::TACTICAL_AREAS
@@ -1275,5 +1319,157 @@ mod tests {
         val.as_object_mut().unwrap().remove("preseason_intensity");
         let decoded: PlannerSettings = serde_json::from_value(val).unwrap();
         assert_eq!(decoded.preseason_intensity, PreSeasonIntensity::Heavy);
+    }
+
+    #[test]
+    fn congested_and_set_piece_weeks_only_emit_writable_fm_codes() {
+        let eff = Effectiveness::default();
+        let mut three_matches = [false; 7];
+        three_matches[1] = true; // Tue
+        three_matches[3] = true; // Thu
+        three_matches[5] = true; // Sat
+        let congested = CalendarWeek {
+            start: NaiveDate::from_ymd_opt(2027, 10, 18).unwrap(),
+            kind: WeekKind::Season,
+            matches: three_matches,
+            note: String::new(),
+        };
+        for settings in [
+            PlannerSettings::default(),
+            PlannerSettings { set_pieces_every: 1, ..Default::default() },
+        ] {
+            let p = plan_week(&congested, true, false, &eff, &settings, 1);
+            for d in &p.days {
+                for slot in &d.slots {
+                    assert_ne!(slot, "Match Preparation", "generic Match Preparation must not be emitted");
+                    assert!(
+                        crate::model::session_code(slot).is_some(),
+                        "unwritable slot emitted: {slot}"
+                    );
+                }
+            }
+        }
+
+        let mut two_matches = [false; 7];
+        two_matches[2] = true; // Wed
+        two_matches[5] = true; // Sat
+        let two_week = CalendarWeek {
+            start: NaiveDate::from_ymd_opt(2027, 10, 25).unwrap(),
+            kind: WeekKind::Season,
+            matches: two_matches,
+            note: String::new(),
+        };
+        let p2 = plan_week(&two_week, false, false, &eff, &PlannerSettings::default(), 1);
+        for d in &p2.days {
+            for slot in &d.slots {
+                assert_ne!(slot, "Match Preparation", "generic Match Preparation must not be emitted");
+                assert!(
+                    crate::model::session_code(slot).is_some(),
+                    "unwritable slot emitted: {slot}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn preseason_condition_floor_follows_intensity() {
+        let eff = Effectiveness::default();
+        let pre = CalendarWeek {
+            start: NaiveDate::from_ymd_opt(2027, 7, 5).unwrap(),
+            kind: WeekKind::PreSeasonEarly,
+            matches: [false; 7],
+            note: String::new(),
+        };
+
+        let heavy_70 = plan_week(
+            &pre,
+            false,
+            false,
+            &eff,
+            &PlannerSettings {
+                preseason_intensity: PreSeasonIntensity::Heavy,
+                squad_condition: Some(70.0),
+                ..Default::default()
+            },
+            1,
+        );
+        assert_ne!(heavy_70.days[0].slots[2], "Rest", "Heavy pre-season should keep floor at 66, not 78");
+
+        let tac_70 = plan_week(
+            &pre,
+            false,
+            false,
+            &eff,
+            &PlannerSettings {
+                preseason_intensity: PreSeasonIntensity::TacticalFocus,
+                squad_condition: Some(70.0),
+                ..Default::default()
+            },
+            1,
+        );
+        for d in tac_70.days.iter().filter(|d| d.role == DayRole::Training) {
+            assert_eq!(d.slots[2], "Rest", "TacticalFocus keeps 78 floor and switches to Light at 70%");
+        }
+
+        let season = CalendarWeek { kind: WeekKind::Season, ..pre.clone() };
+        let season_70 = plan_week(
+            &season,
+            false,
+            false,
+            &eff,
+            &PlannerSettings {
+                preseason_intensity: PreSeasonIntensity::Heavy,
+                squad_condition: Some(70.0),
+                ..Default::default()
+            },
+            1,
+        );
+        for d in season_70.days.iter().filter(|d| d.role == DayRole::Training) {
+            assert_eq!(d.slots[2], "Rest", "Regular Season without camp keeps 78 floor");
+        }
+
+        let no_cond = plan_week(&pre, false, false, &eff, &PlannerSettings::default(), 1);
+        assert_ne!(no_cond.days[0].slots[2], "Rest");
+    }
+
+    #[test]
+    fn heavy_preseason_guarantees_one_team_bonding() {
+        use crate::model::Component;
+        let mut eff = Effectiveness::default();
+        eff.set(Factor::ManagerialSupport, 90.0);
+        eff.set(Factor::TeammatesAndStaffRelationships, 90.0);
+        eff.set(Factor::ManagerTendencies, 90.0);
+        eff.set_component(Component::PlayerBuyIn, 90.0);
+        assert!(eff.buy_in() >= 60.0);
+
+        let pre = CalendarWeek {
+            start: NaiveDate::from_ymd_opt(2027, 7, 5).unwrap(),
+            kind: WeekKind::PreSeasonEarly,
+            matches: [false; 7],
+            note: String::new(),
+        };
+        let count_tb = |p: &WeekPlan| -> usize {
+            p.days.iter().flat_map(|d| d.slots.iter()).filter(|s| s.as_str() == "Team Bonding").count()
+        };
+
+        let p_heavy = plan_week(
+            &pre,
+            false,
+            false,
+            &eff,
+            &PlannerSettings { preseason_intensity: PreSeasonIntensity::Heavy, ..Default::default() },
+            1,
+        );
+        let p_bal = plan_week(
+            &pre,
+            false,
+            false,
+            &eff,
+            &PlannerSettings { preseason_intensity: PreSeasonIntensity::Balanced, ..Default::default() },
+            1,
+        );
+
+        assert_eq!(count_tb(&p_heavy), 1);
+        assert_eq!(count_tb(&p_bal), 0);
     }
 }

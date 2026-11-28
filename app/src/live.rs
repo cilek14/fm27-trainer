@@ -359,22 +359,7 @@ impl LiveState {
                 s.camp_mode = crate::planner::CampMode::PlayerDevelopment;
             }
         }
-        let light_floor = if s.camp_mode == crate::planner::CampMode::PreSeasonFitness {
-            match s.preseason_intensity {
-                crate::planner::PreSeasonIntensity::Heavy => s.auto_light_below.min(66.0),
-                crate::planner::PreSeasonIntensity::Balanced => s.auto_light_below.min(72.0),
-                crate::planner::PreSeasonIntensity::TacticalFocus => s.auto_light_below,
-            }
-        } else {
-            s.auto_light_below
-        };
-        if light_floor > 0.0 {
-            if let Some(avg) = self.avg_condition() {
-                if avg < light_floor {
-                    s.load = crate::planner::Load::Light;
-                }
-            }
-        }
+        s.squad_condition = self.avg_condition();
         s
     }
 
