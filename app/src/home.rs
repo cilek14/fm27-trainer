@@ -21,6 +21,8 @@ pub struct HomeActions {
     pub refresh_data: bool,
     pub apply_plan: bool,
     pub apply_attention: Option<Vec<(u32, IntensityLevel)>>,
+    pub start_fm: bool,
+    pub reconnect: bool,
 }
 
 pub struct HomeDay {
@@ -278,6 +280,8 @@ pub fn render(
         refresh_data: false,
         apply_plan: false,
         apply_attention: None,
+        start_fm: false,
+        reconnect: false,
     };
 
     let week = build_week_summary(eff, has_data, planner_settings, live);
@@ -296,22 +300,37 @@ pub fn render(
             format_week_range(week_start)
         )));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if theme::primary_button(
-                ui,
-                icon::LIGHTNING,
-                t!("Plan in FM zetten", "Apply plan to FM", "Planı FM'ye uygula"),
-                can_apply,
-            )
-            .on_disabled_hover_text(t!("Verbind met FM27", "Connect to FM27", "FM27'ye bağlanın"))
-            .clicked()
-            {
-                actions.apply_plan = true;
-            }
-            if theme::button(
+            if has_data {
+                if theme::primary_button(
+                    ui,
+                    icon::LIGHTNING,
+                    t!("Plan in FM zetten", "Apply plan to FM", "Planı FM'ye uygula"),
+                    can_apply,
+                )
+                .on_disabled_hover_text(t!(
+                    "Verbind met FM27 om het plan toe te passen",
+                    "Connect to FM27 to apply this plan",
+                    "Planı uygulamak için FM27'ye bağlanın"
+                ))
+                .clicked()
+                {
+                    actions.apply_plan = true;
+                }
+                if theme::button(
+                    ui,
+                    icon::ARROW_COUNTER_CLOCKWISE,
+                    t!("Vernieuwen", "Refresh", "Güncelle"),
+                    true,
+                )
+                .clicked()
+                {
+                    actions.refresh_data = true;
+                }
+            } else if theme::primary_button(
                 ui,
                 icon::ARROW_COUNTER_CLOCKWISE,
                 t!("Vernieuwen", "Refresh", "Güncelle"),
-                !busy,
+                true,
             )
             .clicked()
             {
@@ -330,42 +349,40 @@ pub fn render(
                     theme::SUCCESS,
                 );
             }
-            if busy {
+            if live.connected && busy {
                 ui.spinner();
             }
         });
     });
 
-    ui.add_space(2.0);
-    ui.horizontal_wrapped(|ui| {
-        let dot_col = if live.connected { theme::SUCCESS } else { theme::TEXT_FAINT };
-        theme::status_dot(ui, dot_col);
-        let conn_lbl = if live.connected {
-            live.club_name()
-                .unwrap_or_else(|| t!("Verbonden met FM27", "Connected to FM27", "FM27 bağlı").to_string())
-        } else {
-            t!("Niet verbonden", "Not connected", "Bağlı değil").to_string()
-        };
-        ui.label(theme::dim(conn_lbl));
-        if let Some(hhmm) = last_read_hhmm {
-            ui.label(theme::faint("·"));
-            ui.label(theme::dim(t!(
-                format!("Laatst gelezen {hhmm}"),
-                format!("Last read {hhmm}"),
-                format!("Son okuma {hhmm}")
-            )));
-        }
-        if let Some(nm) = week.as_ref().and_then(|w| w.next_match) {
-            ui.label(theme::faint("·"));
-            let wd = crate::i18n::weekday_short(nm.weekday().num_days_from_monday() as usize);
-            let ds = crate::i18n::date_short(nm);
-            ui.label(theme::dim(t!(
-                format!("Volgende wedstrijd: {wd} {ds}"),
-                format!("Next match: {wd} {ds}"),
-                format!("Sonraki maç: {wd} {ds}")
-            )));
-        }
-    });
+    if live.connected {
+        ui.add_space(2.0);
+        ui.horizontal_wrapped(|ui| {
+            theme::status_dot(ui, theme::SUCCESS);
+            let conn_lbl = live
+                .club_name()
+                .unwrap_or_else(|| t!("Verbonden met FM27", "Connected to FM27", "FM27 bağlı").to_string());
+            ui.label(theme::dim(conn_lbl));
+            if let Some(hhmm) = last_read_hhmm {
+                ui.label(theme::faint("·"));
+                ui.label(theme::dim(t!(
+                    format!("Laatst gelezen {hhmm}"),
+                    format!("Last read {hhmm}"),
+                    format!("Son okuma {hhmm}")
+                )));
+            }
+            if let Some(nm) = week.as_ref().and_then(|w| w.next_match) {
+                ui.label(theme::faint("·"));
+                let wd = crate::i18n::weekday_short(nm.weekday().num_days_from_monday() as usize);
+                let ds = crate::i18n::date_short(nm);
+                ui.label(theme::dim(t!(
+                    format!("Volgende wedstrijd: {wd} {ds}"),
+                    format!("Next match: {wd} {ds}"),
+                    format!("Sonraki maç: {wd} {ds}")
+                )));
+            }
+        });
+    }
 
     ui.add_space(10.0);
     let (sep_rect, _) = ui.allocate_exact_size(vec2(ui.available_width().max(20.0), 1.0), egui::Sense::hover());
@@ -389,16 +406,134 @@ pub fn render(
         ui.add_space(12.0);
     }
 
-    // 2. 4 bileşen kutucuğu (halka olmadan)
     if !has_data {
-        theme::card(ui, |ui| {
-            ui.label(theme::dim(t!(
-                "Nog geen gegevens uitgelezen. Klik rechtsboven op Vernieuwen om te beginnen.",
-                "No Tactical Effectiveness data read yet. Click Refresh above to begin.",
-                "Henüz veri okunmadı. Başlamak için sağ üstten Güncelle butonuna tıklayın."
-            )));
+        let step1_done = live.connected;
+        let step2_done = live.connected && live.club.is_some();
+        let step3_done = has_data;
+        let windows = cfg!(windows);
+        let live_supported = crate::agent::LIVE_SUPPORTED;
+
+        theme::card_accent(ui, theme::ACCENT, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(theme::ic(icon::SPARKLE).color(theme::ACCENT_HI).size(18.0));
+                ui.label(theme::h2(t!("Laten we beginnen", "Let's get started", "Başlayalım")));
+            });
+            ui.add_space(4.0);
+            ui.add(
+                egui::Label::new(theme::dim(t!(
+                    "Volg deze 3 stappen om echte FM27-data in te laden en je eerste trainingsweek op maat te plannen.",
+                    "Complete these 3 steps to load your real FM27 data and generate your first tailored weekly plan.",
+                    "Gerçek FM27 verilerinizi okumak ve takımınıza özel haftalık planı oluşturmak için şu 3 adımı izleyin."
+                )))
+                .wrap(),
+            );
+            ui.add_space(10.0);
+
+            let draw_step1 = |ui: &mut Ui, acts: &mut HomeActions| {
+                theme::step_card_status(
+                    ui,
+                    1,
+                    step1_done,
+                    icon::PLAY,
+                    t!("Start FM27", "Start FM27", "FM27'yi başlat"),
+                    |ui| {
+                        ui.add(
+                            egui::Label::new(theme::dim(if windows {
+                                t!(
+                                    "Start FM27 via Steam, Game Pass of Epic.",
+                                    "Launch FM27 via Steam, Game Pass or Epic.",
+                                    "FM27'yi Steam, Game Pass veya Epic üzerinden başlat."
+                                )
+                            } else {
+                                t!(
+                                    "Start FM27 met de module via Steam.",
+                                    "Launch FM27 with the module via Steam.",
+                                    "Steam açıkken FM27'yi modül ile başlat."
+                                )
+                            }))
+                            .wrap(),
+                        );
+                        if !step1_done && live_supported {
+                            ui.add_space(6.0);
+                            ui.horizontal_wrapped(|ui| {
+                                let start_lbl = if windows {
+                                    t!("Start FM27", "Start FM27", "FM27'yi başlat")
+                                } else {
+                                    t!("Start FM met module", "Start FM with module", "FM27'yi modülle başlat")
+                                };
+                                if theme::small_button(ui, start_lbl, true).clicked() {
+                                    acts.start_fm = true;
+                                }
+                                if theme::small_button(ui, t!("Opnieuw verbinden", "Reconnect", "Yeniden bağlan"), true).clicked() {
+                                    acts.reconnect = true;
+                                }
+                            });
+                        }
+                    },
+                );
+            };
+            let draw_step2 = |ui: &mut Ui| {
+                theme::step_card_status(
+                    ui,
+                    2,
+                    step2_done,
+                    icon::FOLDER_OPEN,
+                    t!("Laad je save", "Load your save", "Kariyerini yükle"),
+                    |ui| {
+                        ui.add(
+                            egui::Label::new(theme::dim(t!(
+                                "Laad je carrière; de app verbindt vanzelf.",
+                                "Load your save; the app connects automatically.",
+                                "Kariyerini yükle; uygulama oyuna otomatik bağlanır."
+                            )))
+                            .wrap(),
+                        );
+                    },
+                );
+            };
+            let draw_step3 = |ui: &mut Ui, acts: &mut HomeActions| {
+                theme::step_card_status(
+                    ui,
+                    3,
+                    step3_done,
+                    icon::GAUGE,
+                    t!("Open Tactical Effectiveness", "Open Tactical Effectiveness", "Taktiksel Verimlilik ekranını aç"),
+                    |ui| {
+                        ui.add(
+                            egui::Label::new(theme::dim(t!(
+                                "Open het scherm in FM27 en klik op Gegevens vernieuwen.",
+                                "Open Tactical Effectiveness in FM27 and refresh data.",
+                                "FM27'de Taktiksel Verimlilik ekranını aç ve Verileri güncelle'ye tıkla."
+                            )))
+                            .wrap(),
+                        );
+                        ui.add_space(6.0);
+                        if theme::small_button(ui, t!("Gegevens vernieuwen", "Refresh data", "Verileri güncelle"), true).clicked() {
+                            acts.refresh_data = true;
+                        }
+                    },
+                );
+            };
+
+            if ui.available_width() >= 900.0 {
+                ui.columns(3, |cols| {
+                    draw_step1(&mut cols[0], &mut actions);
+                    draw_step2(&mut cols[1]);
+                    draw_step3(&mut cols[2], &mut actions);
+                });
+            } else {
+                draw_step1(ui, &mut actions);
+                ui.add_space(8.0);
+                draw_step2(ui);
+                ui.add_space(8.0);
+                draw_step3(ui, &mut actions);
+            }
         });
-    } else {
+        return actions;
+    }
+
+    // 2. 4 bileşen kutucuğu (halka olmadan)
+    {
         let draw_comp = |col_ui: &mut Ui, i: usize, c: Component| {
             let v = eff.component(c);
             let col = theme::rgb(level_color(v));
@@ -453,30 +588,22 @@ pub fn render(
             ui.label(theme::h2(t!("Prioriteiten", "Priorities", "Öncelikler")));
         });
         ui.add_space(6.0);
-        if !has_data {
-            ui.label(theme::dim(t!(
-                "De drie laagste factoren verschijnen hier zodra je de eerste meting hebt gelezen.",
-                "Your lowest three factors appear here once you read Tactical Effectiveness.",
-                "En düşük 3 faktör ve plan adımları veri okunduktan sonra burada görünür."
-            )));
-        } else {
-            let days_ref = week.as_ref().map(|w| &w.days);
-            let label_w = (ui.available_width() * 0.30).clamp(180.0, 270.0);
-            for (f, v) in eff.weakest().into_iter().take(3) {
-                let col = theme::rgb(level_color(v));
-                let action_txt = plan_action_for_factor(f, days_ref);
-                ui.horizontal(|ui| {
-                    ui.allocate_ui_with_layout(vec2(label_w, 22.0), Layout::left_to_right(Align::Center), |ui| {
-                        ui.add(egui::Label::new(theme::label_strong(f.display_label())).truncate());
-                    });
-                    ui.allocate_ui_with_layout(vec2(52.0, 22.0), Layout::right_to_left(Align::Center), |ui| {
-                        theme::pill(ui, &format!("{v:.0}"), col);
-                    });
-                    ui.add_space(8.0);
-                    ui.add(egui::Label::new(theme::dim(action_txt)).wrap());
+        let days_ref = week.as_ref().map(|w| &w.days);
+        let label_w = (ui.available_width() * 0.30).clamp(180.0, 270.0);
+        for (f, v) in eff.weakest().into_iter().take(3) {
+            let col = theme::rgb(level_color(v));
+            let action_txt = plan_action_for_factor(f, days_ref);
+            ui.horizontal(|ui| {
+                ui.allocate_ui_with_layout(vec2(label_w, 22.0), Layout::left_to_right(Align::Center), |ui| {
+                    ui.add(egui::Label::new(theme::label_strong(f.display_label())).truncate());
                 });
-                ui.add_space(4.0);
-            }
+                ui.allocate_ui_with_layout(vec2(52.0, 22.0), Layout::right_to_left(Align::Center), |ui| {
+                    theme::pill(ui, &format!("{v:.0}"), col);
+                });
+                ui.add_space(8.0);
+                ui.add(egui::Label::new(theme::dim(action_txt)).wrap());
+            });
+            ui.add_space(4.0);
         }
     });
     ui.add_space(14.0);

@@ -48,7 +48,7 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Auto rest threshold" => "Auto-Pause-Schwelle",
         "Auto-apply" => "Auto-Anwendung",
         "Auto-keep on plan" => "Plan automatisch schützen",
-        "Auto-read" => "Auto-Lesen (OCR)",
+        "Auto-read" => "Auto-Lesen",
         "Auto-read from screen" => "Automatisch vom Bildschirm lesen",
         "Auto-scales on wide screens · Ctrl + / − / 0" => "Skaliert automatisch auf breiten Bildschirmen · Strg + / − / 0",
         "Automatic installation is not supported on this platform." => "Automatische Installation wird auf dieser Plattform nicht unterstützt.",
@@ -422,7 +422,7 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Weekly schedules" => "Wochenpläne",
         "When all 8 tactical areas are above this threshold, tactical slots automatically switch to player development (0 = off)." => "Sobald alle 8 Taktikbereiche über diesem Schwellenwert liegen, wechseln Taktikeinheiten zur Spielerentwicklung (0 = aus).",
         "When squad condition drops below · 0 = off" => "Wenn Kaderfitness darunter fällt · 0 = aus",
-        "Windows has no text recognition (OCR) installed. Add English: Settings → Time & language → Language & region → Add a language → English, with 'Optical character recognition'." => "Keine Windows-Texterkennung (OCR) installiert. Füge Englisch mit OCR unter Einstellungen → Zeit & Sprache hinzu.",
+        "Windows has no text recognition (OCR) installed. Add English: Settings → Time & language → Language & region → Add a language → English, with 'Optical character recognition'." => "Keine Windows-Texterkennung installiert. Füge Englisch unter Einstellungen → Zeit & Sprache hinzu.",
         "Wing & fast attack" => "Flügelspiel & schneller Angriff",
         "Winter break" => "Winterpause",
         "Work Rate" => "Einsatzfreude",
@@ -523,6 +523,12 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Rehab · do not overload" => "Reha · nicht überlasten",
         "Aggression" => "Aggressivität",
         "Anticipation" => "Antizipation",
+        "Connect to FM27 to apply this plan" => "Mit FM27 verbinden, um diesen Plan anzuwenden",
+        "Let's get started" => "Erste Schritte",
+        "Complete these 3 steps to load your real FM27 data and generate your first tailored weekly plan." => "Schließe diese 3 Schritte ab, um deine echten FM27-Daten zu laden und deinen ersten Wochenplan zu erstellen.",
+        "No team analysis data yet" => "Noch keine Team-Analyse-Daten",
+        "Open the Tactical Effectiveness Breakdown in FM27 to read all 4 components and 17 factors." => "Öffne in FM27 die Detailansicht Taktische Effektivität, um alle 4 Bereiche und 17 Faktoren auszulesen.",
+        "Sample plan · updates once real data is read" => "Beispielplan · wird aktualisiert, sobald echte Daten gelesen wurden",
         _ => en,
     }
 }
@@ -738,7 +744,7 @@ pub fn translate_dynamic(en: String) -> String {
         return format!("Einzeltraining für {n} Spieler in FM27 aktualisiert.");
     }
     if let Some(n) = en.strip_prefix("Sent intensity command for ").and_then(|r| r.strip_suffix(" players to FM27 (BepInEx)…")) {
-        return format!("Intensitätsbefehl für {n} Spieler an FM27 (BepInEx) gesendet…");
+        return format!("Intensitätsbefehl für {n} Spieler an FM27 gesendet…");
     }
     if let Some(n) = en.strip_prefix("Sent Additional Focus command for ").and_then(|r| r.strip_suffix(" players to FM27…")) {
         return format!("Zusatzfokus-Befehl für {n} Spieler an FM27 gesendet…");

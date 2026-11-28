@@ -821,7 +821,7 @@ impl App {
                                     });
                                     if !compact {
                                         ui.label(
-                                            RichText::new(format!("v{} · Pitch Telemetry", env!("CARGO_PKG_VERSION")))
+                                            RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
                                                 .size(10.5)
                                                 .color(theme::TEXT_FAINT),
                                         );
@@ -987,7 +987,7 @@ impl App {
                 )));
             }
             let draw_step1 = |ui: &mut Ui, trigger_start: &mut bool, trigger_reconnect: &mut bool| {
-                step_card_status(
+                theme::step_card_status(
                     ui,
                     1,
                     step1_done,
@@ -1030,7 +1030,7 @@ impl App {
                 );
             };
             let draw_step2 = |ui: &mut Ui| {
-                step_card_status(
+                theme::step_card_status(
                     ui,
                     2,
                     step2_done,
@@ -1049,7 +1049,7 @@ impl App {
                 );
             };
             let draw_step3 = |ui: &mut Ui, trigger_refresh: &mut bool| {
-                step_card_status(
+                theme::step_card_status(
                     ui,
                     3,
                     step3_done,
@@ -1109,10 +1109,8 @@ impl App {
         }
     }
 
-    /// Tekil sayfa boş durumu (bağlantı yoksa tekrarlanan kart yerine global kuruluma yönlendirir).
-    fn empty_connect_card(&mut self, ui: &mut Ui, ctx: &egui::Context, title: &str, desc: &str) {
-        let mut open_setup = false;
-        let mut reconnect = false;
+    /// Tekil sayfa boş durumu (bağlantı yoksa tekrarlanan kart yerine global şerit rehberlik eder).
+    fn empty_connect_card(&self, ui: &mut Ui, title: &str, desc: &str) {
         theme::card(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(theme::ic(icon::PLUGS_CONNECTED).size(24.0).color(theme::ACCENT));
@@ -1121,22 +1119,7 @@ impl App {
                     ui.add(egui::Label::new(theme::dim(desc)).wrap());
                 });
             });
-            ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                if theme::primary_button(ui, icon::PLUGS_CONNECTED, t!("Hoe verbind ik?", "How do I connect?", "Nasıl bağlanırım?"), true).clicked() {
-                    open_setup = true;
-                }
-                if agent::LIVE_SUPPORTED && theme::button(ui, icon::ARROW_COUNTER_CLOCKWISE, t!("Opnieuw verbinden", "Reconnect", "Yeniden bağlan"), !self.live.busy()).clicked() {
-                    reconnect = true;
-                }
-            });
         });
-        if open_setup {
-            self.show_setup = true;
-        }
-        if reconnect {
-            self.live.refresh(ctx, t!("verbinden", "connect"), None);
-        }
     }
 
     /// BepInEx köprüsünden (bepinex-tactical-dump.json) 4 bileşen + 17 faktörü kesin değerlerle yükler.
@@ -1263,7 +1246,8 @@ impl App {
     // -------------------------------------------------------------------- overzicht
 
     fn page_overview(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        let subtitle = if self.has_data() {
+        let has_data = self.has_data();
+        let subtitle = if has_data {
             t!(format!("Laatst uitgelezen: {}", self.eff.source), format!("Last read: {}", self.eff.source))
         } else {
             t!("Open in FM27 de Breakdown van Tactical Effectiveness en lees hem uit.", "Open the Tactical Effectiveness Breakdown in FM27 and read it.").to_string()
@@ -1353,13 +1337,14 @@ impl App {
                         }
                     },
                 );
-                if theme::primary_button(
-                    ui,
-                    icon::ARROW_COUNTER_CLOCKWISE,
-                    t!("Gegevens vernieuwen", "Refresh data", "Verileri güncelle"),
-                    !busy,
-                )
-                .clicked()
+                if (has_data || self.edit_mode)
+                    && theme::primary_button(
+                        ui,
+                        icon::ARROW_COUNTER_CLOCKWISE,
+                        t!("Gegevens vernieuwen", "Refresh data", "Verileri güncelle"),
+                        !busy,
+                    )
+                    .clicked()
                 {
                     refresh_auto = true;
                 }
@@ -1368,6 +1353,40 @@ impl App {
                 }
             },
         );
+        if !has_data && !self.edit_mode {
+            if let Some(msg) = (!self.status.is_empty()).then(|| (self.status.clone(), self.status_error)) {
+                self.status_line(ui, &msg.0, msg.1);
+            }
+            if !refresh_auto {
+                theme::card(ui, |ui| {
+                    ui.label(theme::h2(t!(
+                        "Nog geen teamanalyse beschikbaar",
+                        "No team analysis data yet",
+                        "Henüz takım analizi verisi yok"
+                    )));
+                    ui.add_space(4.0);
+                    ui.add(
+                        egui::Label::new(theme::dim(t!(
+                            "Open in FM27 de Breakdown van Tactical Effectiveness om de 4 onderdelen en 17 factoren te lezen.",
+                            "Open the Tactical Effectiveness Breakdown in FM27 to read all 4 components and 17 factors.",
+                            "4 ana bileşeni ve 17 faktörü görmek için FM27'de Taktiksel Verimlilik ekranını açıp verileri güncelleyin."
+                        )))
+                        .wrap(),
+                    );
+                    ui.add_space(10.0);
+                    if theme::primary_button(
+                        ui,
+                        icon::ARROW_COUNTER_CLOCKWISE,
+                        t!("Gegevens vernieuwen", "Refresh data", "Verileri güncelle"),
+                        !busy,
+                    )
+                    .clicked()
+                    {
+                        refresh_auto = true;
+                    }
+                });
+            }
+        }
         if refresh_auto {
             self.refresh_data_auto(ctx);
         }
@@ -1398,6 +1417,9 @@ impl App {
                 });
             });
             ui.add_space(10.0);
+        }
+        if !has_data && !self.edit_mode {
+            return;
         }
         let (msg, err) = (self.status.clone(), self.status_error);
         self.status_line(ui, &msg, err);
@@ -1445,15 +1467,24 @@ impl App {
                             (FactorSort::ByScore, t!("Op score", "By score", "Skora göre")),
                             (FactorSort::ByComponent, t!("Per onderdeel", "By component", "Bileşene göre")),
                         ];
-                        theme::segmented(ui, factor_sort, &sort_opts);
+                        theme::segmented(ui, "factor_sort", factor_sort, &sort_opts);
                     });
                 });
                 ui.add_space(10.0);
 
+                let label_font = egui::FontId::new(13.0, egui::FontFamily::Proportional);
+                let max_label_w = ui.fonts(|f| {
+                    Factor::ALL
+                        .iter()
+                        .map(|fac| f.layout_no_wrap(fac.display_label().to_string(), label_font.clone(), theme::TEXT_DIM).size().x)
+                        .fold(0.0_f32, f32::max)
+                });
+                let name_w = (max_label_w + 6.0).clamp(135.0, 235.0);
+
                 let render_factor = |ui: &mut Ui, f: Factor, eff: &mut Effectiveness, diff: Option<history::HistoryDiff>, edit: bool, changed: &mut bool| {
                     let v = eff.get(f);
                     let fd = diff.and_then(|d| Factor::ALL.iter().position(|x| *x == f).map(|idx| d.factors[idx]));
-                    theme::factor_bar_row(ui, f.display_label(), v, theme::rgb(level_color(v)), fd);
+                    theme::factor_bar_row(ui, name_w, f.display_label(), v, theme::rgb(level_color(v)), fd);
                     if edit {
                         let mut nv = v;
                         if ui.add(egui::Slider::new(&mut nv, 0.0..=100.0).show_value(false)).changed() && (nv - v).abs() > 0.01 {
@@ -1560,6 +1591,7 @@ impl App {
                 ui.add_space(6.0);
                 theme::segmented(
                     ui,
+                    "plan_tab",
                     &mut tab,
                     &[(PlanTab::Week, t!("Week", "Week", "Hafta")), (PlanTab::Season, t!("Seizoen", "Season", "Sezon"))],
                 );
@@ -1809,10 +1841,11 @@ impl App {
         }
 
         ui.add_space(12.0);
+        let has_data = self.has_data();
         if connected {
             if let Some(o) = self.live.training.clone() {
                 for w in &o.weeks {
-                    week_card(ui, w, o.today, &self.live.fm_had, &self.live.reverted_days, self.settings.planner.no_tactical);
+                    week_card(ui, w, o.today, &self.live.fm_had, &self.live.reverted_days, self.settings.planner.no_tactical, has_data);
                     ui.add_space(10.0);
                 }
             } else if !self.live.busy() {
@@ -1823,13 +1856,25 @@ impl App {
                 ui.horizontal_wrapped(|ui| {
                     let heading = readable_plan_title(p.focus, &p.targets, self.settings.planner.no_tactical, p.kind);
                     ui.label(theme::h2(heading)).on_hover_text(&p.schedule_name);
-                    let pf = match p.focus {
-                        "In Possession" => t!("Balbezit", "In Possession", "Topa Sahipken"),
-                        "Out Of Possession" => t!("Balverlies", "Out Of Possession", "Topsuz Alanda"),
-                        "Full Week of Rest" => t!("Rustweek", "Full Week of Rest", "Tam Dinlenme"),
-                        _ => t!("Gebalanceerd", "Balanced", "Dengeli"),
-                    };
-                    theme::pill(ui, &format!("{}: {}", t!("Focus", "Focus", "Odak"), pf), theme::ACCENT);
+                    if !has_data {
+                        theme::pill(
+                            ui,
+                            t!(
+                                "Voorbeeldplan · wordt vernieuwd zodra echte data is gelezen",
+                                "Sample plan · updates once real data is read",
+                                "Örnek plan · gerçek veriler okunduğunda yenilenir"
+                            ),
+                            theme::WARNING,
+                        );
+                    }
+                    if self.settings.planner.no_tactical && p.focus != "Full Week of Rest" {
+                        let pf = match p.focus {
+                            "In Possession" => t!("Balbezit", "In Possession", "Topa Sahipken"),
+                            "Out Of Possession" => t!("Balverlies", "Out Of Possession", "Topsuz Alanda"),
+                            _ => t!("Gebalanceerd", "Balanced", "Dengeli"),
+                        };
+                        theme::pill(ui, pf, theme::ACCENT);
+                    }
                 });
                 ui.add_space(8.0);
                 plan_grid(ui, p);
@@ -2101,7 +2146,7 @@ impl App {
         let mut reload = false;
         theme::page_header(
             ui,
-            t!("Tactiek", "Tactics"),
+            t!("Tactiek", "Tactics", "Taktik"),
             t!("Hoe goed je spelers bij de rollen van je tactiek passen", "How well your players fit the roles of your tactic"),
             |ui| {
                 if connected && theme::primary_button(ui, icon::ARROWS_CLOCKWISE, if busy { t!("Bezig…", "Reading…") } else { t!("Opnieuw uitlezen", "Read again") }, !busy).clicked() {
@@ -2115,7 +2160,6 @@ impl App {
         if !connected {
             self.empty_connect_card(
                 ui,
-                ctx,
                 t!("Verbind met FM27 voor tactiekanalyse", "Connect to FM27 for tactic analysis", "Taktik analizi için FM27'ye bağlan"),
                 t!(
                     "Rolgeschiktheid en het beste elftal worden berekend zodra je carrière in FM27 is geopend.",
@@ -2192,7 +2236,7 @@ impl App {
                 .collect();
             let options: Vec<(usize, &str)> = labels.iter().enumerate().map(|(i, l)| (i, l.as_str())).collect();
             let mut v = pick;
-            if theme::segmented(ui, &mut v, &options) {
+            if theme::segmented(ui, "tactic_pick", &mut v, &options) {
                 self.tactic_pick = Some(v);
                 theme::restart_enter(ctx);
             }
@@ -2607,6 +2651,7 @@ impl App {
             theme::setting_row(ui, t!("Rust", "Rest", "Dinlenme"), Some(rest_help), |ui| {
                 *dirty |= theme::segmented(
                     ui,
+                    "planner_load",
                     &mut app.settings.planner.load,
                     &[
                         (Load::Light, t!("Meer rust", "More rest")),
@@ -2628,6 +2673,7 @@ impl App {
                     use planner::PreSeasonIntensity;
                     if theme::segmented(
                         ui,
+                        "preseason_intensity",
                         &mut app.settings.planner.preseason_intensity,
                         &[
                             (PreSeasonIntensity::Heavy, PreSeasonIntensity::Heavy.short_label()),
@@ -3400,6 +3446,12 @@ impl eframe::App for App {
                                 if act.refresh_data {
                                     self.refresh_data_auto(ctx);
                                 }
+                                if act.start_fm {
+                                    self.live.start_fm(ctx);
+                                }
+                                if act.reconnect {
+                                    self.live.refresh(ctx, t!("verbinden", "connect"), None);
+                                }
                                 if act.apply_plan {
                                     self.live.training(ctx, &self.eff, &self.settings.planner, true, false);
                                 }
@@ -3434,7 +3486,6 @@ impl eframe::App for App {
                             Page::Individual => {
                                 let mut read_bep = false;
                                 let mut save_auto = false;
-                                let mut open_setup = false;
                                 individual::render_page(
                                     ui,
                                     ctx,
@@ -3442,11 +3493,7 @@ impl eframe::App for App {
                                     &mut self.live,
                                     &mut read_bep,
                                     &mut save_auto,
-                                    &mut open_setup,
                                 );
-                                if open_setup {
-                                    self.show_setup = true;
-                                }
                                 if read_bep {
                                     self.sync_from_bepinex(true);
                                 }
@@ -3553,30 +3600,6 @@ fn chip(ui: &mut Ui, name: &str, highlight: bool, faded: bool) {
     ui.add_space(3.0);
 }
 
-fn step_card_status(ui: &mut Ui, n: u8, done: bool, icon_s: &str, title: &str, body: impl FnOnce(&mut Ui)) {
-    theme::card(ui, |ui| {
-        ui.horizontal(|ui| {
-            let badge_col = if done { theme::SUCCESS } else { theme::ACCENT };
-            let badge_bg = if done { theme::tint(theme::SUCCESS, 0.18) } else { theme::ACCENT_SOFT };
-            Frame::new()
-                .fill(badge_bg)
-                .corner_radius(CornerRadius::same(20))
-                .inner_margin(Margin::symmetric(8, 2))
-                .show(ui, |ui| {
-                    if done {
-                        ui.label(theme::ic(icon::CHECK).color(badge_col).size(13.0));
-                    } else {
-                        ui.label(RichText::new(n.to_string()).color(badge_col).strong());
-                    }
-                });
-            ui.label(theme::ic(icon_s).color(badge_col).size(16.0));
-            ui.label(theme::h2(title));
-        });
-        ui.add_space(4.0);
-        body(ui);
-    });
-}
-
 fn readable_plan_title(focus: &str, targets: &[(Factor, u32)], no_tactical: bool, kind: WeekKind) -> String {
     let base = if matches!(kind, WeekKind::OffSeason) || focus == "Full Week of Rest" {
         t!("Rustweek", "Rest week", "Dinlenme haftası")
@@ -3649,6 +3672,7 @@ fn week_card(
     fm_had: &std::collections::HashMap<NaiveDate, [u16; 3]>,
     reverted_days: &std::collections::HashSet<NaiveDate>,
     no_tactical: bool,
+    has_data: bool,
 ) {
     theme::card(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
@@ -3659,6 +3683,17 @@ fn week_card(
             if !w.name.is_empty() {
                 lbl.on_hover_text(&w.name);
             }
+            if !has_data {
+                theme::pill(
+                    ui,
+                    t!(
+                        "Voorbeeldplan · wordt vernieuwd zodra echte data is gelezen",
+                        "Sample plan · updates once real data is read",
+                        "Örnek plan · gerçek veriler okunduğunda yenilenir"
+                    ),
+                    theme::WARNING,
+                );
+            }
             if w.rest {
                 theme::pill(ui, t!("Rustweek: blijft van FM", "Rest week: kept from FM"), theme::WARNING);
                 return;
@@ -3667,13 +3702,14 @@ fn week_card(
             if matches!(w.kind, WeekKind::InternationalBreak | WeekKind::WinterBreak | WeekKind::PreSeasonEarly | WeekKind::PreSeasonMid | WeekKind::PreSeasonLate) {
                 theme::pill(ui, w.kind.label(), theme::INFO);
             }
-            let focus_label = match w.focus.as_str() {
-                "In Possession" => t!("Balbezit", "In Possession", "Topa Sahipken"),
-                "Out Of Possession" => t!("Balverlies", "Out Of Possession", "Topsuz Alanda"),
-                "Full Week of Rest" => t!("Rustweek", "Full Week of Rest", "Tam Dinlenme"),
-                _ => t!("Gebalanceerd", "Balanced", "Dengeli"),
-            };
-            theme::pill(ui, focus_label, theme::ACCENT);
+            if no_tactical && w.focus != "Full Week of Rest" {
+                let focus_label = match w.focus.as_str() {
+                    "In Possession" => t!("Balbezit", "In Possession", "Topa Sahipken"),
+                    "Out Of Possession" => t!("Balverlies", "Out Of Possession", "Topsuz Alanda"),
+                    _ => t!("Gebalanceerd", "Balanced", "Dengeli"),
+                };
+                theme::pill(ui, focus_label, theme::ACCENT);
+            }
             let pending = (0..7).filter(|d| w.current[*d] != w.planned[*d]).count();
             if w.written > 0 {
                 theme::pill(ui, &t!(format!("{} dagen teruggezet", w.written), format!("{} days restored", w.written)), theme::SUCCESS);
@@ -3757,7 +3793,10 @@ fn plan_grid(ui: &mut Ui, p: &WeekPlan) {
         for (i, d) in p.days.iter().enumerate() {
             let ui = &mut cols[i];
             ui.label(theme::col_header(i18n::weekday_short(i)));
-            let sub = format!("{} · {}", i18n::date_short(d.date), d.role.label());
+            let sub = match d.role {
+                planner::DayRole::Training => i18n::date_short(d.date),
+                _ => format!("{} · {}", i18n::date_short(d.date), d.role.label()),
+            };
             ui.allocate_ui_with_layout(
                 vec2(ui.available_width(), 32.0),
                 egui::Layout::top_down(egui::Align::Min),

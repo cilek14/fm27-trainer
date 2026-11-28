@@ -286,8 +286,11 @@ pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
         .corner_radius(CornerRadius::same(12))
         .inner_margin(Margin::same(18))
         .show(ui, |ui| {
-            ui.set_min_width(ui.available_width());
-            add(ui)
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.set_min_width(ui.available_width());
+                add(ui)
+            })
+            .inner
         })
         .inner
 }
@@ -300,8 +303,11 @@ pub fn card_accent<R>(ui: &mut Ui, accent: Color32, add: impl FnOnce(&mut Ui) ->
         .corner_radius(CornerRadius::same(12))
         .inner_margin(Margin { left: 16, right: 16, top: 15, bottom: 15 })
         .show(ui, |ui| {
-            ui.set_min_width(ui.available_width());
-            add(ui)
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.set_min_width(ui.available_width());
+                add(ui)
+            })
+            .inner
         });
     let r = resp.response.rect;
     let top_bar = egui::Rect::from_min_max(
@@ -456,9 +462,10 @@ pub fn small_button(ui: &mut Ui, text: &str, enabled: bool) -> Response {
     ui.add_enabled(enabled, b)
 }
 
-/// Dikkat çekici altın-kahve pill tarzında Buy Me a Coffee destek butonu.
+/// Sade (ghost) destek butonu: sarılık yalnızca ikonda kalır.
 pub fn support_button(ui: &mut Ui, icon_s: &str, text: &str, full_width: bool) -> Response {
-    let fg = Color32::from_rgb(24, 18, 10);
+    let icon_col = Color32::from_rgb(245, 194, 66);
+    let txt_col = TEXT_DIM;
     let galley = if text.is_empty() {
         let mut job = egui::text::LayoutJob::default();
         job.append(
@@ -466,7 +473,7 @@ pub fn support_button(ui: &mut Ui, icon_s: &str, text: &str, full_width: bool) -
             0.0,
             egui::text::TextFormat {
                 font_id: FontId::new(15.5, icons()),
-                color: fg,
+                color: icon_col,
                 valign: egui::Align::Center,
                 ..Default::default()
             },
@@ -474,36 +481,55 @@ pub fn support_button(ui: &mut Ui, icon_s: &str, text: &str, full_width: bool) -
         ui.fonts(|f| f.layout_job(job))
     } else {
         let mut job = egui::text::LayoutJob::default();
-        let fmt = |font_id: FontId| egui::text::TextFormat {
-            font_id,
-            color: fg,
-            valign: egui::Align::Center,
-            ..Default::default()
-        };
-        job.append(icon_s, 0.0, fmt(FontId::new(15.0, icons())));
-        job.append("  ", 0.0, fmt(FontId::new(12.5, semibold())));
-        job.append(text, 0.0, fmt(FontId::new(12.5, semibold())));
+        job.append(
+            icon_s,
+            0.0,
+            egui::text::TextFormat {
+                font_id: FontId::new(15.0, icons()),
+                color: icon_col,
+                valign: egui::Align::Center,
+                ..Default::default()
+            },
+        );
+        job.append(
+            "  ",
+            0.0,
+            egui::text::TextFormat {
+                font_id: FontId::new(12.5, medium()),
+                color: txt_col,
+                valign: egui::Align::Center,
+                ..Default::default()
+            },
+        );
+        job.append(
+            text,
+            0.0,
+            egui::text::TextFormat {
+                font_id: FontId::new(12.5, medium()),
+                color: txt_col,
+                valign: egui::Align::Center,
+                ..Default::default()
+            },
+        );
         ui.fonts(|f| f.layout_job(job))
     };
     let w = if full_width {
-        ui.available_width().max(galley.size().x + 28.0)
+        ui.available_width().max(galley.size().x + 24.0)
     } else if text.is_empty() {
-        34.0
+        32.0
     } else {
-        galley.size().x + 26.0
+        galley.size().x + 22.0
     };
-    let h = if full_width { 34.0 } else { 32.0 };
+    let h = if full_width { 34.0 } else { 30.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(w, h), Sense::click());
     let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), QUICK);
-    let base = Color32::from_rgb(246, 200, 70);
-    let bright = Color32::from_rgb(255, 221, 102);
-    let fill = mix(base, bright, hover);
-    let stroke = mix(Color32::from_rgb(255, 232, 148), Color32::WHITE, hover * 0.35);
-    let r = CornerRadius::same(16);
+    let r = CornerRadius::same(9);
     let p = ui.painter();
-    p.rect_filled(rect, r, fill);
-    p.rect_stroke(rect, r, Stroke::new(1.0_f32, stroke), egui::StrokeKind::Inside);
-    p.galley(rect.center() - galley.size() / 2.0, galley, fg);
+    if hover > 0.01 {
+        p.rect_filled(rect, r, mix(SIDEBAR, SURFACE2, hover));
+        p.rect_stroke(rect, r, Stroke::new(1.0_f32, mix(SIDEBAR, BORDER, hover)), egui::StrokeKind::Inside);
+    }
+    p.galley(rect.center() - galley.size() / 2.0, galley, TEXT);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
@@ -544,36 +570,77 @@ pub fn nav_tab(ui: &mut Ui, icon_s: &str, label: &str, selected: bool) -> Respon
 
 /// Gesegmenteerde keuze (bv. NL | EN, Week | Seizoen). Zelf getekend op een vaste maat, zodat
 /// hij in elke omringende layout (ook rechts-naar-links) hetzelfde uitziet.
-pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &str)]) -> bool {
-    let font = FontId::new(13.0, medium());
-    let (pad, h, gap) = (12.0, 32.0, 2.0);
-    let widths: Vec<f32> = options
-        .iter()
-        .map(|(_, l)| ui.fonts(|f| f.layout_no_wrap(l.to_string(), font.clone(), TEXT).size().x) + 2.0 * pad)
-        .collect();
-    let total = widths.iter().sum::<f32>() + 6.0 + gap * (options.len().saturating_sub(1)) as f32;
-    let (rect, _) = ui.allocate_exact_size(vec2(total, h), Sense::hover());
-    let p = ui.painter().clone();
-    p.rect_filled(rect, CornerRadius::same(10), SURFACE2);
-    let mut x = rect.left() + 3.0;
-    let mut changed = false;
-    for ((v, label), w) in options.iter().zip(widths) {
-        let r = egui::Rect::from_min_size(egui::pos2(x, rect.top() + 3.0), vec2(w, h - 6.0));
-        let resp = ui.interact(r, ui.id().with(("segmented", *label)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let sel = *value == *v;
-        if sel {
-            p.rect_filled(r, CornerRadius::same(8), ACCENT);
-        } else if resp.hovered() {
-            p.rect_filled(r, CornerRadius::same(8), HOVER);
+pub fn segmented<T: PartialEq + Copy>(
+    ui: &mut Ui,
+    id_salt: impl std::hash::Hash,
+    value: &mut T,
+    options: &[(T, &str)],
+) -> bool {
+    ui.push_id(id_salt, |ui| {
+        let font = FontId::new(13.0, medium());
+        let (pad, h, gap) = (12.0, 32.0, 2.0);
+        let widths: Vec<f32> = options
+            .iter()
+            .map(|(_, l)| ui.fonts(|f| f.layout_no_wrap(l.to_string(), font.clone(), TEXT).size().x) + 2.0 * pad)
+            .collect();
+        let total = widths.iter().sum::<f32>() + 6.0 + gap * (options.len().saturating_sub(1)) as f32;
+        let (rect, _) = ui.allocate_exact_size(vec2(total, h), Sense::hover());
+        let p = ui.painter().clone();
+        p.rect_filled(rect, CornerRadius::same(10), SURFACE2);
+        let mut x = rect.left() + 3.0;
+        let mut changed = false;
+        for (idx, ((v, label), w)) in options.iter().zip(widths).enumerate() {
+            let r = egui::Rect::from_min_size(egui::pos2(x, rect.top() + 3.0), vec2(w, h - 6.0));
+            let resp = ui
+                .interact(r, ui.id().with(("segmented", idx, *label)), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            let sel = *value == *v;
+            if sel {
+                p.rect_filled(r, CornerRadius::same(8), ACCENT);
+            } else if resp.hovered() {
+                p.rect_filled(r, CornerRadius::same(8), HOVER);
+            }
+            p.text(
+                r.center(),
+                egui::Align2::CENTER_CENTER,
+                *label,
+                font.clone(),
+                if sel { Color32::WHITE } else { TEXT_DIM },
+            );
+            if resp.clicked() && !sel {
+                *value = *v;
+                changed = true;
+            }
+            x += w + gap;
         }
-        p.text(r.center(), egui::Align2::CENTER_CENTER, *label, font.clone(), if sel { Color32::WHITE } else { TEXT_DIM });
-        if resp.clicked() && !sel {
-            *value = *v;
-            changed = true;
-        }
-        x += w + gap;
-    }
-    changed
+        changed
+    })
+    .inner
+}
+
+/// 3 adımlı kurulum akışı kartı (Ana ekran ve kurulum akışı paylaşır).
+pub fn step_card_status(ui: &mut Ui, n: u8, done: bool, icon_s: &str, title: &str, body: impl FnOnce(&mut Ui)) {
+    card(ui, |ui| {
+        ui.horizontal(|ui| {
+            let badge_col = if done { SUCCESS } else { ACCENT };
+            let badge_bg = if done { tint(SUCCESS, 0.18) } else { ACCENT_SOFT };
+            Frame::new()
+                .fill(badge_bg)
+                .corner_radius(CornerRadius::same(20))
+                .inner_margin(Margin::symmetric(8, 2))
+                .show(ui, |ui| {
+                    if done {
+                        ui.label(ic(icon::CHECK).color(badge_col).size(13.0));
+                    } else {
+                        ui.label(RichText::new(n.to_string()).color(badge_col).strong());
+                    }
+                });
+            ui.label(ic(icon_s).color(badge_col).size(16.0));
+            ui.label(h2(title));
+        });
+        ui.add_space(4.0);
+        body(ui);
+    });
 }
 
 /// Nötr zeminli, solda 3 px kategori şeritli, 12 px metinli, 24 px yüksekliğinde seans çipi.
@@ -652,14 +719,14 @@ pub fn component_tile(
     });
 }
 
-/// Compact 1-row factor bar: name + inline progress bar + right-aligned fixed score + fixed delta.
-pub fn factor_bar_row(ui: &mut Ui, name: &str, value: f32, color: Color32, delta: Option<f32>) {
+/// Compact 1-row factor bar: fixed-width name + aligned progress bar + right-aligned tabular score + fixed delta.
+pub fn factor_bar_row(ui: &mut Ui, name_w: f32, name: &str, value: f32, color: Color32, delta: Option<f32>) {
     let d_opt = delta.filter(|x| x.abs() >= 1.0);
-    let total_w = ui.available_width().max(200.0);
-    let score_w = 32.0;
-    let delta_w = 36.0;
+    let total_w = ui.available_width().max(220.0);
+    let score_w = 34.0;
+    let delta_w = 42.0;
     let gap = 8.0;
-    let name_w = (total_w * 0.44).clamp(115.0, 215.0);
+    let name_w = name_w.min((total_w - score_w - delta_w - gap * 3.0 - 44.0).max(110.0));
     let bar_w = (total_w - name_w - score_w - delta_w - gap * 3.0).max(44.0);
 
     ui.horizontal(|ui| {
@@ -668,6 +735,8 @@ pub fn factor_bar_row(ui: &mut Ui, name: &str, value: f32, color: Color32, delta
             vec2(name_w, 20.0),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
+                ui.set_min_width(name_w);
+                ui.set_max_width(name_w);
                 ui.add(egui::Label::new(RichText::new(name).size(13.0).color(TEXT_DIM)).truncate())
                     .on_hover_text(name);
             },
@@ -676,6 +745,8 @@ pub fn factor_bar_row(ui: &mut Ui, name: &str, value: f32, color: Color32, delta
             vec2(bar_w, 20.0),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
+                ui.set_min_width(bar_w);
+                ui.set_max_width(bar_w);
                 progress(ui, value, 6.0, color);
             },
         );
@@ -683,9 +754,12 @@ pub fn factor_bar_row(ui: &mut Ui, name: &str, value: f32, color: Color32, delta
             vec2(score_w, 20.0),
             egui::Layout::right_to_left(egui::Align::Center),
             |ui| {
+                ui.set_min_width(score_w);
+                ui.set_max_width(score_w);
                 ui.label(
                     RichText::new(format!("{value:.0}"))
-                        .font(FontId::new(13.5, semibold()))
+                        .font(FontId::new(13.0, FontFamily::Monospace))
+                        .strong()
                         .color(color),
                 );
             },
@@ -694,11 +768,18 @@ pub fn factor_bar_row(ui: &mut Ui, name: &str, value: f32, color: Color32, delta
             vec2(delta_w, 20.0),
             egui::Layout::right_to_left(egui::Align::Center),
             |ui| {
+                ui.set_min_width(delta_w);
+                ui.set_max_width(delta_w);
                 if let Some(d) = d_opt {
                     let up = d > 0.0;
                     let dc = if up { SUCCESS } else { DANGER };
                     let txt = if up { format!("▲+{:.0}", d) } else { format!("▼{:.0}", d) };
-                    ui.label(RichText::new(txt).font(FontId::new(11.0, semibold())).color(dc));
+                    ui.label(
+                        RichText::new(txt)
+                            .font(FontId::new(11.0, FontFamily::Monospace))
+                            .strong()
+                            .color(dc),
+                    );
                 }
             },
         );
@@ -847,7 +928,7 @@ pub fn setting_row_tip(
                     ui.spacing_mut().item_spacing.x = saved_gap;
                     ui.set_min_width(right_w);
                     ui.set_max_width(right_w);
-                    control(ui);
+                    ui.push_id(label, |ui| control(ui));
                 },
             );
         },

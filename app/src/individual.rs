@@ -2086,7 +2086,6 @@ pub fn render_page(
     live: &mut LiveState,
     on_read_bepinex: &mut bool,
     on_save_prefs: &mut bool,
-    on_open_setup: &mut bool,
 ) {
     if live.connected && live.tactics.is_none() && !live.tactics_busy() && !state.tactics_requested {
         state.tactics_requested = true;
@@ -2187,17 +2186,6 @@ pub fn render_page(
                     );
                 });
             });
-            ui.add_space(10.0);
-            if theme::primary_button(
-                ui,
-                icon::PLUGS_CONNECTED,
-                t!("Hoe verbind ik?", "How do I connect?", "Nasıl bağlanırım?"),
-                true,
-            )
-            .clicked()
-            {
-                *on_open_setup = true;
-            }
         });
         return;
     }
@@ -2228,7 +2216,7 @@ pub fn render_page(
                 (IntensityProfile::Balanced, IntensityProfile::Balanced.label()),
                 (IntensityProfile::Development, IntensityProfile::Development.label()),
             ];
-            if theme::segmented(ui, &mut state.profile, &prof_opts) {
+            if theme::segmented(ui, "intensity_profile", &mut state.profile, &prof_opts) {
                 *on_save_prefs = true;
                 state.selection_seeded = false;
             }
@@ -2600,7 +2588,7 @@ fn render_tactic_role_card(
                 (RoleScope::CurrentEleven, RoleScope::CurrentEleven.label()),
                 (RoleScope::BestEleven, RoleScope::BestEleven.label()),
             ];
-            theme::segmented(ui, &mut state.role_scope, &scopes);
+            theme::segmented(ui, "role_scope", &mut state.role_scope, &scopes);
             ui.add_space(10.0);
             ui.checkbox(
                 &mut state.role_apply_ip,
