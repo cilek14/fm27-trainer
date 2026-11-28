@@ -240,6 +240,9 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "No team analysis data yet" => "Henüz takım analizi verisi yok",
         "Open the Tactical Effectiveness Breakdown in FM27 to read all 4 components and 17 factors." => "4 bileşen ve 17 faktörün tamamını okumak için FM27'de Taktiksel Verimlilik Dökümünü açın.",
         "Sample plan · updates once real data is read" => "Örnek plan · gerçek veriler okunduğunda yenilenir",
+        "In possession" => "Topa sahipken",
+        "Out of possession" => "Topsuz alanda",
+        "Full week of rest" => "Tam dinlenme",
         _ => en,
     }
 }

@@ -92,7 +92,7 @@ On **Players** and **Tactics**, apply injury-safe individual intensity (`Protect
 ### Windows (10 / 11)
 
 1. Download [**FM27-Training-Assistant-Windows.zip**](https://github.com/cilek14/fm27-trainer/releases/latest/download/FM27-Training-Assistant-Windows.zip), extract it anywhere, and launch **`FM27 Training Assistant.exe`** (portable, no installer required).
-2. *(Recommended — optional game plugin `v0.9.1`)* If you use **BepInEx 6 (Unity IL2CPP)**, get **`FM27Trainer.Bridge.dll`** either from the `BepInEx-plugin/FM27Trainer.Bridge/` (or `BepInEx/plugins/FM27Trainer.Bridge/`) folder inside the release archive or as the standalone **`FM27Trainer.Bridge.dll`** asset on the [latest release page](https://github.com/cilek14/fm27-trainer/releases/latest), copy it into `<FM27 folder>\BepInEx\plugins\FM27Trainer.Bridge\`, and restart FM27.
+2. *(Recommended — optional game plugin `v0.9.1`)* If you use **BepInEx 6 (Unity IL2CPP)**, download **`FM27Trainer.Bridge.dll`** from the [latest release page](https://github.com/cilek14/fm27-trainer/releases/latest), copy it into `<FM27 folder>\BepInEx\plugins\FM27Trainer.Bridge\`, and restart FM27.
 3. Load your save in FM27 — the app connects automatically:
    - Open **Tactical Effectiveness** in FM27 once to load exact factor scores and player bottlenecks.
    - Open **Individual Training** in FM27 once before applying **Additional Focus** or role training changes.
@@ -114,9 +114,10 @@ On **Players** and **Tactics**, apply injury-safe individual intensity (`Protect
 
 | Store / Platform | Read data | Write training plan | Notes |
 |---|---|---|---|
-| **Steam** (Windows & macOS) | ✅ Yes | ✅ Tested builds | Verified offsets; auto read-only after new FM patches |
-| **Game Pass / Xbox app** (Windows) | ✅ Yes | ✅ Tested builds | Live agent connects when save is loaded |
-| **New FM patch / Epic / Untested builds** | ✅ Yes | 🔒 Read-only by default | Enable writes per session only after checking squad & club match |
+| **Steam (Windows)** | Tested | Tested | Verified offsets (`writes_tested: true` in `agent/src/game.rs`); auto read-only after new FM patches |
+| **Game Pass / Xbox app (Windows)** | Tested | Untested (read-only by default) | Live read verified; writes are not live-tested against Game Pass |
+| **Steam (macOS Apple Silicon)** | Tested | Tested | Verified on builds `26340721`, `26577676`, `26620374` (`26385295` untested / read-only) |
+| **Steam (macOS Intel)** | Untested | Untested (read-only by default) | All Intel builds mark `writes_tested: false` |
 
 When Football Manager receives a patch and internal memory signatures change, the app automatically switches to **read-only mode** so it never writes bad data into your save. Once you verify that club name and squad look accurate in the app, you can toggle **`Allow writes on untested FM build`** under **`Settings → FM connection`** for the current session (back up your save first).
 

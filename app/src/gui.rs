@@ -235,11 +235,11 @@ fn find_prefix<'a>(obj: &'a serde_json::Value, prefix: &str) -> Option<&'a serde
 }
 
 fn read_bepinex_dump() -> Option<(Effectiveness, String)> {
-    read_bepinex_dump_for(&std::collections::HashSet::new())
+    read_bepinex_dump_for(&std::collections::HashSet::new()).map(|(eff, updated, _)| (eff, updated))
 }
 
 /// BepInEx eklentisinin yazdığı `bepinex-tactical-dump.json` dosyasından 4 bileşen + 17 faktörü okur.
-fn read_bepinex_dump_for(squad_rids: &std::collections::HashSet<u32>) -> Option<(Effectiveness, String)> {
+fn read_bepinex_dump_for(squad_rids: &std::collections::HashSet<u32>) -> Option<(Effectiveness, String, bool)> {
     let text = std::fs::read_to_string(bepinex_dump_file()).ok()?;
     let root: serde_json::Value = serde_json::from_str(&text).ok()?;
     let updated = root.get("updated_utc")?.as_str()?.to_string();
@@ -249,10 +249,12 @@ fn read_bepinex_dump_for(squad_rids: &std::collections::HashSet<u32>) -> Option<
     let mut eff = Effectiveness::default();
     eff.overall = find_prefix(te, "OverallEffectiveness").and_then(individual::score_of_node);
     let mut found = 0usize;
+    let mut comp_found = 0usize;
 
     if let Some(tu) = find_prefix(te, "TacticalUnderstanding") {
-        if let Some(v) = individual::score_of_node(tu) {
+        if let Some(v) = individual::score_of_node(tu).filter(|&v| v > 0.0) {
             eff.set_component(Component::TacticalUnderstanding, v);
+            comp_found += 1;
         }
         let tu_map: [(&str, Factor); 10] = [
             ("InPossessionShape", Factor::InPossessionShape),
@@ -269,14 +271,17 @@ fn read_bepinex_dump_for(squad_rids: &std::collections::HashSet<u32>) -> Option<
         for (key, factor) in tu_map {
             if let Some(v) = find_prefix(tu, key).and_then(individual::score_of_node) {
                 eff.set(factor, v);
-                found += 1;
+                if v > 0.0 {
+                    found += 1;
+                }
             }
         }
     }
 
     if let Some(pa) = find_prefix(te, "PlayerAbility") {
-        if let Some(v) = individual::score_of_node(pa) {
+        if let Some(v) = individual::score_of_node(pa).filter(|&v| v > 0.0) {
             eff.set_component(Component::PlayerAbility, v);
+            comp_found += 1;
         }
         for (key, factor) in [
             ("CapabilityKeyFactor", Factor::PlayerCapability),
@@ -284,14 +289,17 @@ fn read_bepinex_dump_for(squad_rids: &std::collections::HashSet<u32>) -> Option<
         ] {
             if let Some(v) = find_prefix(pa, key).and_then(individual::score_of_node) {
                 eff.set(factor, v);
-                found += 1;
+                if v > 0.0 {
+                    found += 1;
+                }
             }
         }
     }
 
     if let Some(bi) = find_prefix(te, "PlayerBuyIn") {
-        if let Some(v) = individual::score_of_node(bi) {
+        if let Some(v) = individual::score_of_node(bi).filter(|&v| v > 0.0) {
             eff.set_component(Component::PlayerBuyIn, v);
+            comp_found += 1;
         }
         for (key, factor) in [
             ("ManagerSupportKeyFactor", Factor::ManagerialSupport),
@@ -300,14 +308,17 @@ fn read_bepinex_dump_for(squad_rids: &std::collections::HashSet<u32>) -> Option<
         ] {
             if let Some(v) = find_prefix(bi, key).and_then(individual::score_of_node) {
                 eff.set(factor, v);
-                found += 1;
+                if v > 0.0 {
+                    found += 1;
+                }
             }
         }
     }
 
     if let Some(nm) = find_prefix(te, "NextMatchInformation") {
-        if let Some(v) = individual::score_of_node(nm) {
+        if let Some(v) = individual::score_of_node(nm).filter(|&v| v > 0.0) {
             eff.set_component(Component::NextMatchInfo, v);
+            comp_found += 1;
         }
         for (key, factor) in [
             ("QualityOfReportKeyFactor", Factor::QualityOfNextOppositionReport),
@@ -315,7 +326,9 @@ fn read_bepinex_dump_for(squad_rids: &std::collections::HashSet<u32>) -> Option<
         ] {
             if let Some(v) = find_prefix(nm, key).and_then(individual::score_of_node) {
                 eff.set(factor, v);
-                found += 1;
+                if v > 0.0 {
+                    found += 1;
+                }
             }
         }
     }
@@ -325,7 +338,8 @@ fn read_bepinex_dump_for(squad_rids: &std::collections::HashSet<u32>) -> Option<
     }
     let when = chrono::Local::now().format("%d-%m %H:%M");
     eff.source = format!("FM27 · {when}");
-    Some((eff, updated))
+    let complete = comp_found == 4 && found == 17;
+    Some((eff, updated, complete))
 }
 
 // ------------------------------------------------------------------------ app
@@ -704,10 +718,6 @@ impl App {
                         self.eff.game_date = Some(gd);
                     }
                     let _ = crate::save_effectiveness_for(self.active_team_slot(), &self.eff);
-                    let hkey = self.club_history_key();
-                    if self.history.record(&hkey, &self.eff) {
-                        self.history.save();
-                    }
                     let mut msg = t!(format!("{} van 17 meters gelezen.", a.gauges.len()), format!("Read {} of 17 gauges.", a.gauges.len())).to_string();
                     if !a.lang.starts_with("english") {
                         msg.push_str(&format!(" (FM: {})", a.lang));
@@ -722,6 +732,12 @@ impl App {
                         ));
                     }
                     let incomplete = a.gauges.len() < 17 || a.components.len() < 4 || !doubts.is_empty();
+                    if !incomplete && Component::ALL.iter().all(|&c| self.eff.component(c) > 0.0) && Factor::ALL.iter().all(|&f| self.eff.get(f) > 0.0) {
+                        let hkey = self.club_history_key();
+                        if self.history.record(&hkey, &self.eff) {
+                            self.history.save();
+                        }
+                    }
                     if incomplete && src_is_screen {
                         // zonder de opname is een verkeerde uitlezing niet na te spelen
                         msg.push(' ');
@@ -1160,7 +1176,7 @@ impl App {
         }
         let squad_rids: std::collections::HashSet<u32> = names.keys().copied().collect();
 
-        let Some((mut next, updated)) = read_bepinex_dump_for(&squad_rids) else {
+        let Some((mut next, updated, dump_complete)) = read_bepinex_dump_for(&squad_rids) else {
             if explicit {
                 self.set_status(
                     t!(
@@ -1236,7 +1252,7 @@ impl App {
         if std::env::var_os("FM27_SNAPSHOT").is_none() {
             let _ = crate::save_effectiveness_for(self.active_team_slot(), &self.eff);
             let hkey = self.club_history_key();
-            if self.history.record(&hkey, &self.eff) {
+            if dump_complete && self.history.record(&hkey, &self.eff) {
                 self.history.save();
             }
         }
@@ -1467,7 +1483,7 @@ impl App {
                 }
             }
             ui.add_space(12.0);
-            history::render_trend_card(ui, points);
+            history::render_trend_card(ui, points, eff, diff);
         };
 
         let mut render_right = |ui: &mut Ui, eff: &mut Effectiveness, factor_sort: &mut FactorSort, edit_mode: &mut bool| {

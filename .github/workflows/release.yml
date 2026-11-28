@@ -1,7 +1,9 @@
-# Builds FM27 Training Assistant for macOS (universal .dmg) and Windows (.zip).
+# Builds FM27 Training Assistant for macOS (universal .dmg), Windows (.zip), and combined SHA256SUMS.txt.
 name: release
 
 on:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       platform:
@@ -45,10 +47,17 @@ jobs:
         run: xcrun notarytool store-credentials fm27-notary --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
       - run: cargo test --workspace
       - run: chmod +x release.sh && ./release.sh
+      - name: Compute SHA-256
+        run: |
+          (cd dist && shasum -a 256 FM27-Training-Assistant-macOS.dmg > SHA256SUMS-macos.txt)
       - uses: actions/upload-artifact@v4
         with:
           name: FM27-Training-Assistant-macOS
           path: dist/FM27-Training-Assistant-macOS.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sha256-macos
+          path: dist/SHA256SUMS-macos.txt
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
@@ -74,28 +83,50 @@ jobs:
           if (Test-Path "$fmDir\BepInEx\interop") {
             dotnet build bridge/FM27Trainer.Bridge.csproj -c Release -p:FM27Dir="$fmDir"
           } else {
-            Write-Host "::notice::Skipping bridge build on GitHub-hosted runner (requires local FM27 BepInEx/core and BepInEx/interop assemblies)."
+            Write-Host "::notice::Skipping bridge build on GitHub-hosted runner; upload FM27Trainer.Bridge.dll manually per docs/RELEASING.md."
           }
       - name: Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/fm27-trainer.exe "dist/FM27 Training Assistant.exe"
-          $paths = @("dist/FM27 Training Assistant.exe")
-          $bridgeDll = "bridge/bin/Release/net6.0/FM27Trainer.Bridge.dll"
-          if (Test-Path $bridgeDll) {
-            $pluginOut = "dist/BepInEx-plugin/FM27Trainer.Bridge"
-            New-Item -ItemType Directory -Force $pluginOut | Out-Null
-            Copy-Item $bridgeDll "$pluginOut/FM27Trainer.Bridge.dll"
-            $paths += "dist/BepInEx-plugin"
-          }
-          Compress-Archive -Path $paths -DestinationPath "dist/FM27-Training-Assistant-Windows.zip" -Force
+          Compress-Archive -Path "dist/FM27 Training Assistant.exe" -DestinationPath "dist/FM27-Training-Assistant-Windows.zip" -Force
+          $hash = (Get-FileHash "dist/FM27-Training-Assistant-Windows.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  FM27-Training-Assistant-Windows.zip" | Out-File -FilePath "dist/SHA256SUMS-windows.txt" -Encoding ascii -NoNewline
+          "`n" | Out-File -FilePath "dist/SHA256SUMS-windows.txt" -Encoding ascii -Append -NoNewline
       - uses: actions/upload-artifact@v4
         with:
           name: FM27-Training-Assistant-Windows
           path: dist/FM27-Training-Assistant-Windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sha256-windows
+          path: dist/SHA256SUMS-windows.txt
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: dist/FM27-Training-Assistant-Windows.zip
           generate_release_notes: true
+
+  checksums:
+    needs: [macos, windows]
+    if: always() && (needs.macos.result == 'success' || needs.windows.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sha256-*
+          path: sums
+          merge-multiple: true
+      - name: Combine SHA256SUMS.txt
+        run: |
+          cat sums/SHA256SUMS-*.txt | tr -d '\r' | sort -k2 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SHA256SUMS
+          path: SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: SHA256SUMS.txt

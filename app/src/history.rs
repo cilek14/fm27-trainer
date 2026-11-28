@@ -44,6 +44,10 @@ impl HistoryPoint {
         }
     }
 
+    pub fn is_valid(&self) -> bool {
+        self.components.iter().all(|&c| c > 0.0) && self.factors.iter().all(|&f| f > 0.0)
+    }
+
     fn differs(&self, other: &Self) -> bool {
         self.components.iter().zip(&other.components).any(|(a, b)| (a - b).abs() >= 0.5)
             || self.factors.iter().zip(&other.factors).any(|(a, b)| (a - b).abs() >= 0.5)
@@ -68,10 +72,18 @@ fn history_file() -> PathBuf {
 
 impl HistoryStore {
     pub fn load() -> Self {
-        std::fs::read_to_string(history_file())
+        let mut store: Self = std::fs::read_to_string(history_file())
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        store.sanitize();
+        store
+    }
+
+    pub fn sanitize(&mut self) {
+        for list in self.clubs.values_mut() {
+            list.retain(|pt| pt.components.iter().all(|&c| c > 0.0));
+        }
     }
 
     pub fn save(&self) {
@@ -94,7 +106,11 @@ impl HistoryStore {
             return false;
         }
         let pt = HistoryPoint::from_eff(eff);
+        if !pt.is_valid() {
+            return false;
+        }
         let list = self.clubs.entry(club_key.to_string()).or_default();
+        list.retain(|p| p.components.iter().all(|&c| c > 0.0));
 
         let changed = match list.last_mut() {
             None => {
@@ -128,21 +144,28 @@ impl HistoryStore {
     }
 
     pub fn previous_diff(&self, club_key: &str, eff: &Effectiveness) -> Option<HistoryDiff> {
-        let pts = self.points(club_key);
         let cur = HistoryPoint::from_eff(eff);
-        let prev = match pts.len() {
+        if !cur.components.iter().all(|&c| c > 0.0) {
+            return None;
+        }
+        let valid: Vec<&HistoryPoint> = self
+            .points(club_key)
+            .iter()
+            .filter(|pt| pt.components.iter().all(|&c| c > 0.0))
+            .collect();
+        let prev = match valid.len() {
             0 => return None,
             1 => {
-                if !pts[0].differs(&cur) {
+                if !valid[0].differs(&cur) {
                     return None;
                 }
-                &pts[0]
+                valid[0]
             }
             n => {
-                if !pts[n - 1].differs(&cur) {
-                    &pts[n - 2]
+                if !valid[n - 1].differs(&cur) {
+                    valid[n - 2]
                 } else {
-                    &pts[n - 1]
+                    valid[n - 1]
                 }
             }
         };
@@ -166,7 +189,56 @@ const COMP_COLORS: [Color32; 4] = [
     theme::WARNING,
 ];
 
-pub fn render_trend_card(ui: &mut Ui, points: &[HistoryPoint]) {
+fn build_x_labels(points: &[HistoryPoint]) -> Vec<String> {
+    let parsed: Vec<(String, Option<String>)> = points
+        .iter()
+        .map(|pt| {
+            let utc_local = chrono::DateTime::parse_from_rfc3339(&pt.recorded_utc)
+                .ok()
+                .map(|dt| dt.with_timezone(&chrono::Local));
+            let day_key = pt
+                .game_date
+                .map(crate::i18n::date_short)
+                .or_else(|| utc_local.as_ref().map(|dt| dt.format("%d.%m").to_string()))
+                .unwrap_or_else(|| pt.label.clone());
+            let hhmm = utc_local.map(|dt| dt.format("%H:%M").to_string());
+            (day_key, hhmm)
+        })
+        .collect();
+
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for (day, _) in &parsed {
+        *counts.entry(day.as_str()).or_insert(0) += 1;
+    }
+
+    parsed
+        .iter()
+        .map(|(day, hhmm)| {
+            if counts.get(day.as_str()).copied().unwrap_or(0) > 1
+                && let Some(t) = hhmm
+            {
+                format!("{day} {t}")
+            } else {
+                day.clone()
+            }
+        })
+        .collect()
+}
+
+pub fn render_trend_card(ui: &mut Ui, points: &[HistoryPoint], eff: &Effectiveness, diff: Option<HistoryDiff>) {
+    let mut plot_points: Vec<HistoryPoint> = points
+        .iter()
+        .filter(|pt| pt.components.iter().all(|&c| c > 0.0))
+        .cloned()
+        .collect();
+    let cur = HistoryPoint::from_eff(eff);
+    if !eff.source.trim().is_empty()
+        && cur.components.iter().all(|&c| c > 0.0)
+        && plot_points.last().is_none_or(|last| last.differs(&cur))
+    {
+        plot_points.push(cur);
+    }
+
     theme::card(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
             ui.label(theme::ic(icon::GAUGE).color(theme::ACCENT_HI).size(18.0));
@@ -175,13 +247,13 @@ pub fn render_trend_card(ui: &mut Ui, points: &[HistoryPoint]) {
                 "Progress Over Time",
                 "Zaman İçinde Gelişim Trendi"
             )));
-            if points.len() >= 2 {
+            if plot_points.len() >= 2 {
                 theme::pill(
                     ui,
                     &t!(
-                        format!("{} metingen", points.len()),
-                        format!("{} readings", points.len()),
-                        format!("{} ölçüm", points.len())
+                        format!("{} metingen", plot_points.len()),
+                        format!("{} readings", plot_points.len()),
+                        format!("{} ölçüm", plot_points.len())
                     ),
                     theme::INFO,
                 );
@@ -189,7 +261,7 @@ pub fn render_trend_card(ui: &mut Ui, points: &[HistoryPoint]) {
         });
         ui.add_space(6.0);
 
-        if points.len() < 2 {
+        if plot_points.len() < 2 {
             ui.add(
                 egui::Label::new(theme::dim(t!(
                     "Zodra je minstens twee keer een waarde uitleest op verschillende datums, verschijnt hier een lijn-grafiek met de voortgang.",
@@ -201,22 +273,21 @@ pub fn render_trend_card(ui: &mut Ui, points: &[HistoryPoint]) {
             return;
         }
 
-        // Üst renkli efsane + ilk ölçüme göre net değişim
-        let first = &points[0];
-        let last = &points[points.len() - 1];
+        // Üst renkli efsane — kutucuklarla aynı güncel skor + fark kaynağı
         ui.horizontal_wrapped(|ui| {
             for (i, c) in Component::ALL.iter().enumerate() {
-                let net = last.components[i] - first.components[i];
-                let sign = if net >= 0.5 {
-                    format!(" (+{:.0})", net)
-                } else if net <= -0.5 {
-                    format!(" ({:.0})", net)
+                let val = eff.component(*c);
+                let d = diff.map(|d| d.components[i]).unwrap_or(0.0);
+                let sign = if d >= 0.5 {
+                    format!(" (+{:.0})", d)
+                } else if d <= -0.5 {
+                    format!(" ({:.0})", d)
                 } else {
                     String::new()
                 };
                 theme::status_dot(ui, COMP_COLORS[i]);
                 ui.label(
-                    egui::RichText::new(format!("{}: {:.0}{sign}", c.display_label(), last.components[i]))
+                    egui::RichText::new(format!("{}: {:.0}{sign}", c.display_label(), val))
                         .size(12.5)
                         .color(theme::TEXT_DIM),
                 );
@@ -228,7 +299,6 @@ pub fn render_trend_card(ui: &mut Ui, points: &[HistoryPoint]) {
         let w = ui.available_width().max(260.0);
         let h = 165.0;
         let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
-        let p = ui.painter();
 
         let plot = Rect::from_min_max(
             Pos2::new(rect.left() + 30.0, rect.top() + 8.0),
@@ -241,6 +311,15 @@ pub fn render_trend_card(ui: &mut Ui, points: &[HistoryPoint]) {
         };
 
         let axis_font = FontId::new(10.5, egui::FontFamily::Proportional);
+        let x_labels = build_x_labels(&plot_points);
+        let max_lbl_w = ui.fonts(|f| {
+            x_labels
+                .iter()
+                .map(|lbl| f.layout_no_wrap(lbl.clone(), axis_font.clone(), theme::TEXT_FAINT).size().x)
+                .fold(32.0_f32, f32::max)
+        });
+        let p = ui.painter();
+
         for level in [0, 25, 50, 75, 100] {
             let y = y_of(level as f32);
             p.line_segment(
@@ -256,7 +335,7 @@ pub fn render_trend_card(ui: &mut Ui, points: &[HistoryPoint]) {
             );
         }
 
-        let n = points.len();
+        let n = plot_points.len();
         let x_of = |idx: usize| -> f32 {
             if n <= 1 {
                 plot.center().x
@@ -265,30 +344,51 @@ pub fn render_trend_card(ui: &mut Ui, points: &[HistoryPoint]) {
             }
         };
 
-        // Alt eksende birkaç tarih etiketi
-        let step = (n / 5).max(1);
-        for (i, pt) in points.iter().enumerate() {
-            if i == 0 || i == n - 1 || i % step == 0 {
-                let align = if i == 0 {
-                    egui::Align2::LEFT_TOP
-                } else if i == n - 1 {
-                    egui::Align2::RIGHT_TOP
-                } else {
-                    egui::Align2::CENTER_TOP
-                };
-                p.text(
-                    Pos2::new(x_of(i), plot.bottom() + 5.0),
-                    align,
-                    &pt.label,
-                    axis_font.clone(),
-                    theme::TEXT_FAINT,
-                );
+        // Alt eksende genişliğe göre seyreltilmiş ve ardışık tekrarsız tarih/saat etiketleri
+        let min_slot_w = max_lbl_w + 18.0;
+        let max_labels = ((plot.width() / min_slot_w).floor() as usize).clamp(2, 6);
+        let step = if n <= max_labels { 1 } else { (n - 1).div_ceil(max_labels - 1) };
+        let mut last_lbl: Option<&str> = None;
+        let mut last_x: f32 = f32::NEG_INFINITY;
+        for (i, lbl) in x_labels.iter().enumerate() {
+            let is_end = i == n - 1;
+            if i != 0 && !is_end && i % step != 0 {
+                continue;
             }
+            if last_lbl == Some(lbl.as_str()) {
+                continue;
+            }
+            let x = x_of(i);
+            if !is_end && x - last_x < min_slot_w {
+                continue;
+            }
+            if !is_end && x_of(n - 1) - x < min_slot_w * 0.85 {
+                continue;
+            }
+            if is_end && x - last_x < max_lbl_w * 0.9 {
+                continue;
+            }
+            let align = if i == 0 {
+                egui::Align2::LEFT_TOP
+            } else if is_end {
+                egui::Align2::RIGHT_TOP
+            } else {
+                egui::Align2::CENTER_TOP
+            };
+            p.text(
+                Pos2::new(x, plot.bottom() + 5.0),
+                align,
+                lbl,
+                axis_font.clone(),
+                theme::TEXT_FAINT,
+            );
+            last_lbl = Some(lbl.as_str());
+            last_x = x;
         }
 
         // 4 ana bileşen çizgisi
         for (ci, col) in COMP_COLORS.iter().enumerate() {
-            let pts: Vec<Pos2> = points
+            let pts: Vec<Pos2> = plot_points
                 .iter()
                 .enumerate()
                 .map(|(i, pt)| Pos2::new(x_of(i), y_of(pt.components[ci])))
@@ -343,5 +443,35 @@ mod tests {
             store.record("100", &mk_eff(Some(d), 60.0 + (i % 10) as f32, 65.0));
         }
         assert_eq!(store.points("100").len(), MAX_POINTS);
+    }
+
+    #[test]
+    fn rejects_zero_components_and_diff_skips_corrupt_entries() {
+        let mut store = HistoryStore::default();
+        let d1 = NaiveDate::from_ymd_opt(2026, 8, 1);
+        let d2 = NaiveDate::from_ymd_opt(2026, 8, 2);
+
+        // Kaydedilen geçerli ilk okuma
+        assert!(store.record("100", &mk_eff(d1, 60.0, 68.0)));
+
+        // Bileşenlerden biri 0 ise geçmişe kaydedilmez
+        let mut bad = mk_eff(d2, 62.0, 69.0);
+        bad.set_component(Component::NextMatchInfo, 0.0);
+        assert!(!store.record("100", &bad));
+        assert_eq!(store.points("100").len(), 1);
+
+        // Eski geçmiş dosyasında bozuk (0'lı) bir kayıt varsa sanitize / previous_diff onu atlar
+        let mut corrupt = HistoryPoint::from_eff(&mk_eff(d2, 61.0, 68.0));
+        corrupt.components[3] = 0.0;
+        store.clubs.get_mut("100").unwrap().push(corrupt);
+
+        let cur = mk_eff(NaiveDate::from_ymd_opt(2026, 8, 3), 65.0, 70.0);
+        let diff = store.previous_diff("100", &cur).unwrap();
+        assert_eq!(diff.components[0], 5.0);
+        assert_eq!(diff.components[1], 2.0);
+        assert_eq!(diff.components[3], 0.0);
+
+        store.sanitize();
+        assert_eq!(store.points("100").len(), 1);
     }
 }

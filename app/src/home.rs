@@ -93,11 +93,17 @@ pub fn plan_action_for_factor(factor: Factor, days: Option<&[HomeDay; 7]>) -> St
 fn build_week_summary(eff: &Effectiveness, has_data: bool, settings: &PlannerSettings, live: &LiveState) -> Option<HomeWeek> {
     if let Some(o) = &live.training {
         let today = o.today;
-        let active = o
-            .weeks
-            .iter()
-            .find(|w| today.is_none_or(|t| w.start + Duration::days(6) >= t))
-            .or_else(|| o.weeks.first());
+        let active = if std::env::var_os("FM27_HOME_SEASON").is_some() {
+            o.weeks.iter().find(|w| !w.rest && matches!(w.kind, crate::planner::WeekKind::Season))
+        } else {
+            None
+        }
+        .or_else(|| {
+            o.weeks
+                .iter()
+                .find(|w| today.is_none_or(|t| w.start + Duration::days(6) >= t))
+                .or_else(|| o.weeks.first())
+        });
         if let Some(w) = active {
             let mut vec_days = Vec::with_capacity(7);
             for d in 0..7 {
@@ -615,9 +621,9 @@ pub fn render(
             ui.label(theme::h2(t!("Weekprogramma", "This week's schedule", "Bu haftanın programı")));
             if let Some(w) = &week {
                 let focus_lbl = match w.focus.as_str() {
-                    "In Possession" => t!("Balbezit", "In Possession", "Topa Sahipken"),
-                    "Out Of Possession" => t!("Balverlies", "Out Of Possession", "Topsuz Alanda"),
-                    "Full Week of Rest" => t!("Rustweek", "Full Week of Rest", "Tam Dinlenme"),
+                    "In Possession" => t!("Balbezit", "In possession", "Topa sahipken"),
+                    "Out Of Possession" => t!("Balverlies", "Out of possession", "Topsuz alanda"),
+                    "Full Week of Rest" => t!("Rustweek", "Full week of rest", "Tam dinlenme"),
                     _ => t!("Gebalanceerd", "Balanced", "Dengeli"),
                 };
                 theme::pill(ui, focus_lbl, theme::ACCENT);

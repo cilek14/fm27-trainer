@@ -529,6 +529,15 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "No team analysis data yet" => "Aucune donnée d'analyse d'équipe pour le moment",
         "Open the Tactical Effectiveness Breakdown in FM27 to read all 4 components and 17 factors." => "Ouvrez le détail d'Efficacité Tactique dans FM27 pour lire les 4 composantes et les 17 facteurs.",
         "Sample plan · updates once real data is read" => "Exemple de programme · mis à jour dès la lecture des vraies données",
+        "GK" => "GB",
+        "CB" => "DC",
+        "FB" => "DL",
+        "DM/CM" => "MD/MC",
+        "W/AM" => "AIL/MO",
+        "ST" => "BT",
+        "In possession" => "En possession",
+        "Out of possession" => "Sans ballon",
+        "Full week of rest" => "Semaine de repos",
         _ => en,
     }
 }

@@ -1148,6 +1148,25 @@ pub fn recommend_intensity_with_ctx(
     )
 }
 
+/// Oyuncunun 15+ FM27 mevki yatkınlık dizisinden doğal mevkisini yerel kısaltma olarak döner.
+pub fn natural_pos_abbr(positions: &[u8]) -> Option<&'static str> {
+    if positions.len() < 15 {
+        return None;
+    }
+    let (best_idx, &best_val) = positions.iter().enumerate().max_by_key(|&(_, v)| *v)?;
+    if best_val == 0 {
+        return None;
+    }
+    Some(match best_idx {
+        0 => t!("DM", "GK", "KL"),
+        1 | 3 => t!("CV", "CB", "STP"),
+        2 | 4 | 13 | 14 => t!("VV", "FB", "BEK"),
+        5..=8 => t!("VM/CM", "DM/CM", "OS"),
+        9..=11 => t!("VL/AM", "W/AM", "KNT/OOS"),
+        _ => t!("SP", "ST", "SNT"),
+    })
+}
+
 /// Oyuncunun kendi doğal mevkisindeki kilit eksik özelliklere göre Ek Odak (Additional Focus) önerir.
 /// Hiçbir oyuncuyu taktikteki uygun olmayan bir role zorlamaz. Sakat veya 32+ veteran oyunculara
 /// ve tüm temel özellikleri zaten yüksek olan yıldızlara ekstra yük bindirmemek için `None` döner.
@@ -1167,74 +1186,57 @@ pub fn recommend_additional_focus(
         .iter()
         .enumerate()
         .max_by_key(|&(_, v)| *v)?;
+    let natural_pos = natural_pos_abbr(&player.positions)?;
 
-    let (natural_pos, candidates): (&'static str, &'static [AdditionalFocus]) = match best_idx {
-        0 => (
-            "KL",
-            &[
-                AdditionalFocus::GkShotStopping,
-                AdditionalFocus::GkHandling,
-                AdditionalFocus::GkDistribution,
-            ],
-        ),
-        1 | 3 => (
-            "STP",
-            &[
-                AdditionalFocus::DefensivePositioning,
-                AdditionalFocus::Tackling,
-                AdditionalFocus::Aerial,
-                AdditionalFocus::Strength,
-                AdditionalFocus::Quickness,
-                AdditionalFocus::BallRetention,
-                AdditionalFocus::Passing,
-            ],
-        ),
-        2 | 4 | 13 | 14 => (
-            "BEK",
-            &[
-                AdditionalFocus::Endurance,
-                AdditionalFocus::Quickness,
-                AdditionalFocus::DefensivePositioning,
-                AdditionalFocus::Tackling,
-                AdditionalFocus::Passing,
-                AdditionalFocus::AgilityAndBalance,
-            ],
-        ),
-        5..=8 => (
-            "OS",
-            &[
-                AdditionalFocus::Passing,
-                AdditionalFocus::BallRetention,
-                AdditionalFocus::BallControl,
-                AdditionalFocus::Tackling,
-                AdditionalFocus::DefensivePositioning,
-                AdditionalFocus::Endurance,
-                AdditionalFocus::FinalThird,
-            ],
-        ),
-        9..=11 => (
-            "KNT/OOS",
-            &[
-                AdditionalFocus::FinalThird,
-                AdditionalFocus::Quickness,
-                AdditionalFocus::BallControl,
-                AdditionalFocus::Passing,
-                AdditionalFocus::Shooting,
-                AdditionalFocus::BallRetention,
-                AdditionalFocus::AgilityAndBalance,
-            ],
-        ),
-        _ => (
-            "SNT",
-            &[
-                AdditionalFocus::Shooting,
-                AdditionalFocus::FinalThird,
-                AdditionalFocus::Quickness,
-                AdditionalFocus::BallControl,
-                AdditionalFocus::Aerial,
-                AdditionalFocus::Strength,
-            ],
-        ),
+    let candidates: &'static [AdditionalFocus] = match best_idx {
+        0 => &[
+            AdditionalFocus::GkShotStopping,
+            AdditionalFocus::GkHandling,
+            AdditionalFocus::GkDistribution,
+        ],
+        1 | 3 => &[
+            AdditionalFocus::DefensivePositioning,
+            AdditionalFocus::Tackling,
+            AdditionalFocus::Aerial,
+            AdditionalFocus::Strength,
+            AdditionalFocus::Quickness,
+            AdditionalFocus::BallRetention,
+            AdditionalFocus::Passing,
+        ],
+        2 | 4 | 13 | 14 => &[
+            AdditionalFocus::Endurance,
+            AdditionalFocus::Quickness,
+            AdditionalFocus::DefensivePositioning,
+            AdditionalFocus::Tackling,
+            AdditionalFocus::Passing,
+            AdditionalFocus::AgilityAndBalance,
+        ],
+        5..=8 => &[
+            AdditionalFocus::Passing,
+            AdditionalFocus::BallRetention,
+            AdditionalFocus::BallControl,
+            AdditionalFocus::Tackling,
+            AdditionalFocus::DefensivePositioning,
+            AdditionalFocus::Endurance,
+            AdditionalFocus::FinalThird,
+        ],
+        9..=11 => &[
+            AdditionalFocus::FinalThird,
+            AdditionalFocus::Quickness,
+            AdditionalFocus::BallControl,
+            AdditionalFocus::Passing,
+            AdditionalFocus::Shooting,
+            AdditionalFocus::BallRetention,
+            AdditionalFocus::AgilityAndBalance,
+        ],
+        _ => &[
+            AdditionalFocus::Shooting,
+            AdditionalFocus::FinalThird,
+            AdditionalFocus::Quickness,
+            AdditionalFocus::BallControl,
+            AdditionalFocus::Aerial,
+            AdditionalFocus::Strength,
+        ],
     };
 
     let mut scored: Vec<(AdditionalFocus, f32, f32, f32, String)> = Vec::new();
@@ -1734,6 +1736,20 @@ pub fn build_unified_player_rows(
     let mut by_rid: HashMap<u32, usize> = HashMap::new();
     let mut by_name: HashMap<String, usize> = HashMap::new();
 
+    let mut pos_by_uid: HashMap<u32, &'static str> = HashMap::new();
+    let mut pos_by_name: HashMap<String, &'static str> = HashMap::new();
+    if let Some(td) = &live.tactics {
+        for tp in &td.players {
+            if let Some(pos) = natural_pos_abbr(&tp.positions) {
+                pos_by_uid.insert(tp.uid, pos);
+                let nm = tp.name.trim().to_lowercase();
+                if !nm.is_empty() {
+                    pos_by_name.insert(nm, pos);
+                }
+            }
+        }
+    }
+
     for r in intensity_recs {
         let norm = r.name.trim().to_lowercase();
         let idx = rows.len();
@@ -1741,14 +1757,14 @@ pub fn build_unified_player_rows(
             by_rid.insert(r.runtime_id, idx);
         }
         if !norm.is_empty() {
-            by_name.entry(norm).or_insert(idx);
+            by_name.entry(norm.clone()).or_insert(idx);
         }
         rows.push(UnifiedPlayerRow {
             key: r.runtime_id,
             uid: None,
             runtime_id: r.runtime_id,
             name: r.name,
-            position: None,
+            position: pos_by_name.get(&norm).copied(),
             age: r.age,
             condition: Some(r.condition),
             sharpness: Some(r.sharpness),
@@ -2290,9 +2306,97 @@ pub fn render_page(
             let mut all_checked = !selectable_keys.is_empty()
                 && selectable_keys.iter().all(|k| state.selected_players.contains(k));
 
+            let show_pos = rows.iter().any(|r| r.position.is_some_and(|p| !p.is_empty()));
+            let show_cond = rows.iter().any(|r| r.condition.is_some());
+            let show_risk = rows.iter().any(|r| r.injured || r.rest_match_warning);
+            let show_tactical = rows.iter().any(|r| r.tactical_overall.is_some());
+            let show_intensity = rows.iter().any(|r| r.intensity_rec.is_some());
+            let show_focus = rows.iter().any(|r| r.focus_rec.is_some() || r.focus_cur_name.is_some());
+
+            let hdr_font = egui::FontId::new(11.0, theme::bold());
+            let cell_font = egui::FontId::new(11.5, theme::bold());
+            let spacing_x = 12.0_f32;
+            let checkbox_w = 22.0_f32;
+            let col_width = |hdr: &str, vals: &[String], extra: f32| -> f32 {
+                ui.fonts(|f| {
+                    let hw = f.layout_no_wrap(format!("{hdr} ▲"), hdr_font.clone(), theme::TEXT).size().x;
+                    let vw = vals
+                        .iter()
+                        .map(|v| f.layout_no_wrap(v.clone(), cell_font.clone(), theme::TEXT).size().x + extra)
+                        .fold(0.0_f32, f32::max);
+                    hw.max(vw).ceil() + 4.0
+                })
+            };
+
+            let hdr_player = t!("Speler", "Player", "Oyuncu");
+            let hdr_pos = t!("Pos", "Pos", "Mevki");
+            let hdr_cond = t!("Conditie", "Condition", "Kondisyon");
+            let hdr_risk = t!("Risico", "Risk", "Risk");
+            let hdr_tac = t!("Tactiekscore", "Tactical score", "Taktik puanı");
+            let hdr_int = t!("Aanbevolen intensiteit", "Rec. intensity", "Önerilen yoğunluk");
+            let hdr_foc = t!("Aanbevolen focus", "Rec. focus", "Önerilen ek odak");
+
+            let pos_w = if show_pos {
+                let vals: Vec<String> = rows.iter().filter_map(|r| r.position.map(str::to_string)).collect();
+                col_width(hdr_pos, &vals, 18.0)
+            } else {
+                0.0
+            };
+            let cond_w = if show_cond {
+                let vals: Vec<String> = rows.iter().filter_map(|r| r.condition.map(|c| format!("{c:.0}%"))).collect();
+                col_width(hdr_cond, &vals, 18.0)
+            } else {
+                0.0
+            };
+            let risk_w = if show_risk {
+                let vals = vec![
+                    t!("BLESSURE", "INJURED", "SAKAT").to_string(),
+                    t!("RUST", "REST", "DİNLENDİR").to_string(),
+                ];
+                col_width(hdr_risk, &vals, 18.0)
+            } else {
+                0.0
+            };
+            let tac_w = if show_tactical {
+                let vals: Vec<String> = rows.iter().filter_map(|r| r.tactical_overall.map(|v| format!("{v:.0}"))).collect();
+                col_width(hdr_tac, &vals, 18.0)
+            } else {
+                0.0
+            };
+            let int_w = if show_intensity {
+                let vals: Vec<String> = rows.iter().filter_map(|r| r.intensity_rec.map(|l| l.short_label().to_string())).collect();
+                col_width(hdr_int, &vals, 36.0)
+            } else {
+                0.0
+            };
+            let foc_w = if show_focus {
+                let vals: Vec<String> = rows
+                    .iter()
+                    .filter_map(|r| {
+                        r.focus_rec
+                            .map(|f| f.label().to_string())
+                            .or_else(|| r.focus_cur_name.clone())
+                    })
+                    .collect();
+                col_width(hdr_foc, &vals, 36.0)
+            } else {
+                0.0
+            };
+
+            let num_cols = 2
+                + usize::from(show_pos)
+                + usize::from(show_cond)
+                + usize::from(show_risk)
+                + usize::from(show_tactical)
+                + usize::from(show_intensity)
+                + usize::from(show_focus);
+            let fixed_w = pos_w + cond_w + risk_w + tac_w + int_w + foc_w;
+            let name_w = (ui.available_width() - checkbox_w - fixed_w - spacing_x * (num_cols.saturating_sub(1)) as f32)
+                .max(160.0);
+
             egui::Grid::new("unified_players_grid")
-                .num_columns(8)
-                .spacing([12.0, 7.0])
+                .num_columns(num_cols)
+                .spacing([spacing_x, 7.0])
                 .striped(true)
                 .show(ui, |ui| {
                     if ui
@@ -2311,16 +2415,28 @@ pub fn render_page(
                         }
                     }
 
-                    let cols: [(PlayerSortCol, &str); 7] = [
-                        (PlayerSortCol::Name, t!("Speler", "Player", "Oyuncu")),
-                        (PlayerSortCol::Position, t!("Pos", "Pos", "Mevki")),
-                        (PlayerSortCol::Condition, t!("Conditie", "Condition", "Kondisyon")),
-                        (PlayerSortCol::Risk, t!("Risico", "Risk", "Risk")),
-                        (PlayerSortCol::TacticalScore, t!("Tactiekscore", "Tactical score", "Taktik puanı")),
-                        (PlayerSortCol::RecommendedIntensity, t!("Aanbevolen intensiteit", "Rec. intensity", "Önerilen yoğunluk")),
-                        (PlayerSortCol::RecommendedFocus, t!("Aanbevolen focus", "Rec. focus", "Önerilen ek odak")),
-                    ];
-                    for (col, label) in cols {
+                    let mut cols: Vec<(PlayerSortCol, &str, f32)> = Vec::with_capacity(num_cols - 1);
+                    cols.push((PlayerSortCol::Name, hdr_player, name_w));
+                    if show_pos {
+                        cols.push((PlayerSortCol::Position, hdr_pos, pos_w));
+                    }
+                    if show_cond {
+                        cols.push((PlayerSortCol::Condition, hdr_cond, cond_w));
+                    }
+                    if show_risk {
+                        cols.push((PlayerSortCol::Risk, hdr_risk, risk_w));
+                    }
+                    if show_tactical {
+                        cols.push((PlayerSortCol::TacticalScore, hdr_tac, tac_w));
+                    }
+                    if show_intensity {
+                        cols.push((PlayerSortCol::RecommendedIntensity, hdr_int, int_w));
+                    }
+                    if show_focus {
+                        cols.push((PlayerSortCol::RecommendedFocus, hdr_foc, foc_w));
+                    }
+
+                    for (col, label, w) in cols {
                         let active = state.sort_col == col;
                         let arrow = if active {
                             if state.sort_asc { " ▲" } else { " ▼" }
@@ -2329,16 +2445,23 @@ pub fn render_page(
                         };
                         let hdr_txt = theme::col_header(&format!("{label}{arrow}"))
                             .color(if active { theme::TEXT } else { theme::TEXT_FAINT });
-                        let resp = ui.add(egui::Label::new(hdr_txt).sense(egui::Sense::click()));
-                        if resp.clicked() {
-                            if active {
-                                state.sort_asc = !state.sort_asc;
-                            } else {
-                                state.sort_col = col;
-                                state.sort_asc = col != PlayerSortCol::Risk;
-                            }
-                        }
-                        resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(w, 20.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(w);
+                                let resp = ui.add(egui::Label::new(hdr_txt).sense(egui::Sense::click()));
+                                if resp.clicked() {
+                                    if active {
+                                        state.sort_asc = !state.sort_asc;
+                                    } else {
+                                        state.sort_col = col;
+                                        state.sort_asc = col != PlayerSortCol::Risk;
+                                    }
+                                }
+                                resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                            },
+                        );
                     }
                     ui.end_row();
 
@@ -2366,95 +2489,114 @@ pub fn render_page(
                             }
                             name_tip.push_str(&format!("{s:.0}%"));
                         }
-                        let name_lbl = ui.label(theme::label_strong(&r.name));
-                        if !name_tip.is_empty() {
-                            name_lbl.on_hover_text(name_tip);
-                        }
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(name_w, 22.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(name_w);
+                                let name_lbl = ui.label(theme::label_strong(&r.name));
+                                if !name_tip.is_empty() {
+                                    name_lbl.on_hover_text(name_tip);
+                                }
+                            },
+                        );
 
-                        if let Some(pos) = r.position {
-                            theme::pill(ui, pos, theme::ACCENT);
-                        } else {
-                            ui.label(theme::faint("—"));
-                        }
-
-                        if let Some(c) = r.condition {
-                            let cond_col = if c >= 85.0 {
-                                theme::SUCCESS
-                            } else if c >= 72.0 {
-                                theme::WARNING
+                        if show_pos {
+                            if let Some(pos) = r.position.filter(|p| !p.is_empty()) {
+                                theme::pill(ui, pos, theme::ACCENT);
                             } else {
-                                theme::DANGER
-                            };
-                            theme::pill(ui, &format!("{c:.0}%"), cond_col);
-                        } else {
-                            ui.label(theme::faint("—"));
-                        }
-
-                        if r.injured {
-                            theme::pill(ui, t!("BLESSURE", "INJURED", "SAKAT"), theme::DANGER);
-                        } else if r.rest_match_warning {
-                            theme::pill(ui, t!("RUST", "REST", "DİNLENDİR"), theme::WARNING);
-                        } else {
-                            ui.label(theme::faint("—"));
-                        }
-
-                        if let Some(ov) = r.tactical_overall {
-                            let resp = ui
-                                .horizontal(|ui| {
-                                    theme::pill(ui, &format!("{ov:.0}"), theme::rgb(level_color(ov)));
-                                })
-                                .response;
-                            if let Some(det) = &r.tactical_detail {
-                                resp.on_hover_text(det);
+                                ui.label("");
                             }
-                        } else {
-                            ui.label(theme::faint("—"));
                         }
 
-                        if let Some(lvl) = r.intensity_rec {
-                            let resp = ui
-                                .horizontal(|ui| {
-                                    theme::pill(ui, lvl.short_label(), lvl.color());
-                                    if r.intensity_cur == Some(lvl) {
-                                        ui.label(theme::ic(icon::CHECK_CIRCLE).color(theme::SUCCESS).size(13.0))
-                                            .on_hover_text(t!("Actief in FM", "Active in FM", "FM'de aktif"));
+                        if show_cond {
+                            if let Some(c) = r.condition {
+                                let cond_col = if c >= 85.0 {
+                                    theme::SUCCESS
+                                } else if c >= 72.0 {
+                                    theme::WARNING
+                                } else {
+                                    theme::DANGER
+                                };
+                                theme::pill(ui, &format!("{c:.0}%"), cond_col);
+                            } else {
+                                ui.label(theme::faint("—"));
+                            }
+                        }
+
+                        if show_risk {
+                            if r.injured {
+                                theme::pill(ui, t!("BLESSURE", "INJURED", "SAKAT"), theme::DANGER);
+                            } else if r.rest_match_warning {
+                                theme::pill(ui, t!("RUST", "REST", "DİNLENDİR"), theme::WARNING);
+                            } else {
+                                ui.label(theme::faint("—"));
+                            }
+                        }
+
+                        if show_tactical {
+                            if let Some(ov) = r.tactical_overall {
+                                let resp = ui
+                                    .horizontal(|ui| {
+                                        theme::pill(ui, &format!("{ov:.0}"), theme::rgb(level_color(ov)));
+                                    })
+                                    .response;
+                                if let Some(det) = &r.tactical_detail {
+                                    resp.on_hover_text(det);
+                                }
+                            } else {
+                                ui.label(theme::faint("—"));
+                            }
+                        }
+
+                        if show_intensity {
+                            if let Some(lvl) = r.intensity_rec {
+                                let resp = ui
+                                    .horizontal(|ui| {
+                                        theme::pill(ui, lvl.short_label(), lvl.color());
+                                        if r.intensity_cur == Some(lvl) {
+                                            ui.label(theme::ic(icon::CHECK_CIRCLE).color(theme::SUCCESS).size(13.0))
+                                                .on_hover_text(t!("Actief in FM", "Active in FM", "FM'de aktif"));
+                                        }
+                                    })
+                                    .response;
+                                if let Some(why) = &r.intensity_reason {
+                                    resp.on_hover_text(why);
+                                }
+                            } else {
+                                ui.label(theme::faint("—"));
+                            }
+                        }
+
+                        if show_focus {
+                            if let Some(fc) = r.focus_rec {
+                                let resp = ui
+                                    .horizontal(|ui| {
+                                        theme::pill(ui, fc.label(), theme::INFO);
+                                        if r.focus_active {
+                                            ui.label(theme::ic(icon::CHECK_CIRCLE).color(theme::SUCCESS).size(13.0))
+                                                .on_hover_text(t!("✓ Gezet", "✓ Set", "✓ Seçildi"));
+                                        }
+                                    })
+                                    .response;
+                                let base_tip = r.focus_reason.as_deref().or(r.focus_weak_attrs.as_deref());
+                                match (base_tip, &r.focus_cur_name) {
+                                    (Some(tip), Some(cur)) => {
+                                        resp.on_hover_text(format!("{tip}\nFM: {cur}"));
                                     }
-                                })
-                                .response;
-                            if let Some(why) = &r.intensity_reason {
-                                resp.on_hover_text(why);
-                            }
-                        } else {
-                            ui.label(theme::faint("—"));
-                        }
-
-                        if let Some(fc) = r.focus_rec {
-                            let resp = ui
-                                .horizontal(|ui| {
-                                    theme::pill(ui, fc.label(), theme::INFO);
-                                    if r.focus_active {
-                                        ui.label(theme::ic(icon::CHECK_CIRCLE).color(theme::SUCCESS).size(13.0))
-                                            .on_hover_text(t!("✓ Gezet", "✓ Set", "✓ Seçildi"));
+                                    (Some(tip), None) => {
+                                        resp.on_hover_text(tip);
                                     }
-                                })
-                                .response;
-                            let base_tip = r.focus_reason.as_deref().or(r.focus_weak_attrs.as_deref());
-                            match (base_tip, &r.focus_cur_name) {
-                                (Some(tip), Some(cur)) => {
-                                    resp.on_hover_text(format!("{tip}\nFM: {cur}"));
+                                    (None, Some(cur)) => {
+                                        resp.on_hover_text(format!("FM: {cur}"));
+                                    }
+                                    (None, None) => {}
                                 }
-                                (Some(tip), None) => {
-                                    resp.on_hover_text(tip);
-                                }
-                                (None, Some(cur)) => {
-                                    resp.on_hover_text(format!("FM: {cur}"));
-                                }
-                                (None, None) => {}
+                            } else if let Some(cur) = &r.focus_cur_name {
+                                theme::pill(ui, cur, theme::TEXT_FAINT);
+                            } else {
+                                ui.label(theme::faint("—"));
                             }
-                        } else if let Some(cur) = &r.focus_cur_name {
-                            theme::pill(ui, cur, theme::TEXT_FAINT);
-                        } else {
-                            ui.label(theme::faint("—"));
                         }
 
                         ui.end_row();
@@ -2815,7 +2957,7 @@ mod tests {
             ],
         );
         let rec_gk = recommend_additional_focus(&gk, 1, Some(24), false).unwrap();
-        assert_eq!(rec_gk.natural_pos, "KL");
+        assert_eq!(rec_gk.natural_pos, t!("DM", "GK", "KL"));
         assert_eq!(rec_gk.focus, AdditionalFocus::GkDistribution);
 
         // Sakat oyuncu ve 32+ veteran oyuncuya ekstra odak yükü verilmez (None)
@@ -2860,7 +3002,7 @@ mod tests {
             ],
         );
         let rec_st = recommend_additional_focus(&st, 3, Some(20), false).unwrap();
-        assert_eq!(rec_st.natural_pos, "SNT");
+        assert_eq!(rec_st.natural_pos, t!("SP", "ST", "SNT"));
         assert_eq!(rec_st.focus, AdditionalFocus::Shooting);
     }
 
@@ -3187,9 +3329,9 @@ mod tests {
         sort_unified_rows(&mut rows, PlayerSortCol::TacticalScore, true);
         assert_eq!(rows[0].name, "Beta");
         assert_eq!(rows[0].tactical_overall, Some(52.0));
-        assert_eq!(rows[0].position, Some("STP"));
+        assert_eq!(rows[0].position, Some(t!("CV", "CB", "STP")));
         assert_eq!(rows[1].name, "Alpha");
-        assert_eq!(rows[1].position, Some("SNT"));
+        assert_eq!(rows[1].position, Some(t!("SP", "ST", "SNT")));
 
         sort_unified_rows(&mut rows, PlayerSortCol::Condition, false);
         assert_eq!(rows[0].name, "Alpha");

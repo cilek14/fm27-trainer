@@ -92,7 +92,7 @@ Oluşturulan haftalık programı tek tıkla FM27 takvimine yazın ve **Otomatik 
 ### Windows (10 / 11)
 
 1. [**FM27-Training-Assistant-Windows.zip**](https://github.com/cilek14/fm27-trainer/releases/latest/download/FM27-Training-Assistant-Windows.zip) dosyasını indirin, istediğiniz klasöre çıkarın ve **`FM27 Training Assistant.exe`** dosyasını çalıştırın (kurulum gerektirmez).
-2. *(Önerilen — isteğe bağlı oyun eklentisi `v0.9.1`)* Oyununuzda **BepInEx 6 (Unity IL2CPP)** kuruluysa **`FM27Trainer.Bridge.dll`** dosyasını sürüm arşivindeki `BepInEx-plugin/FM27Trainer.Bridge/` (veya `BepInEx/plugins/FM27Trainer.Bridge/`) klasöründen ya da [son sürüm sayfasındaki](https://github.com/cilek14/fm27-trainer/releases/latest) **`FM27Trainer.Bridge.dll`** ek dosyasından alıp `<FM27 klasörü>\BepInEx\plugins\FM27Trainer.Bridge\` içine kopyalayın ve FM27'yi yeniden başlatın.
+2. *(Önerilen — isteğe bağlı oyun eklentisi `v0.9.1`)* Oyununuzda **BepInEx 6 (Unity IL2CPP)** kuruluysa [son sürüm sayfasından](https://github.com/cilek14/fm27-trainer/releases/latest) **`FM27Trainer.Bridge.dll`** dosyasını indirin, `<FM27 klasörü>\BepInEx\plugins\FM27Trainer.Bridge\` içine kopyalayın ve FM27'yi yeniden başlatın.
 3. FM27'de kariyerinizi açın — uygulama oyuna otomatik bağlanır:
    - Faktör skorlarının ve oyuncu darboğazlarının okunması için oyunda **Taktiksel Verimlilik** ekranını bir kez açın.
    - **Ek Odak** veya rol eğitimi göndermeden önce FM27'de **Bireysel Antrenman** sekmesini bir kez açın.
@@ -114,9 +114,10 @@ Oluşturulan haftalık programı tek tıkla FM27 takvimine yazın ve **Otomatik 
 
 | Platform / Mağaza | Veri okuma | Antrenman yazma | Notlar |
 |---|---|---|---|
-| **Steam** (Windows & macOS) | ✅ Evet | ✅ Doğrulanmış sürümler | Bellek düzeni doğrulamalı; güncelleme gelirse salt-okunura geçer |
-| **Game Pass / Xbox uygulaması** (Windows) | ✅ Evet | ✅ Doğrulanmış sürümler | Kariyer yüklendiğinde otomatik bağlanır |
-| **Yeni FM yaması / Epic / Test edilmemiş sürüm** | ✅ Evet | 🔒 Varsayılan olarak salt-okunur | Kadro doğru görünüyorsa oturumluk olarak yazma açılabilir |
+| **Steam (Windows)** | Test edildi | Test edildi | Doğrulanmış bellek ofsetleri (`agent/src/game.rs`); yeni FM yaması gelirse salt-okunura geçer |
+| **Game Pass / Xbox uygulaması (Windows)** | Test edildi | Test edilmedi (varsayılan salt-okunur) | Okuma doğrulandı; yazma canlı olarak test edilmedi |
+| **Steam (macOS Apple Silicon)** | Test edildi | Test edildi | `26340721`, `26577676`, `26620374` sürümlerinde doğrulandı (`26385295` salt-okunur) |
+| **Steam (macOS Intel)** | Test edilmedi | Test edilmedi (varsayılan salt-okunur) | Tüm Intel sürümleri `writes_tested: false` olarak işaretlidir |
 
 FM27 yeni bir güncelleme aldığında ve uygulama bellek yapısını doğrulayamadığında, kaydınıza yanlış veri yazmamak için otomatik olarak **salt-okunur moda** geçer. Kulüp adı ve kadronun uygulamada doğru göründüğünü kontrol ettikten sonra **`Ayarlar → FM bağlantısı`** bölümündeki **`Test edilmemiş FM sürümünde yazmaya izin ver`** seçeneğini yalnızca o oturum için açabilirsiniz (önce kayıt yedeği almanız önerilir).
 
