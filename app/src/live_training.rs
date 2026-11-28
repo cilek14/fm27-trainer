@@ -84,13 +84,62 @@ fn is_match_or_travel(d: &[u16; 3]) -> bool {
     d.iter().any(|c| *c == 500 || *c == 402)
 }
 
-fn kind_for(start: NaiveDate, match_count: usize) -> WeekKind {
+pub(crate) fn is_rest_week(name: &str, cur: &[[u16; 3]]) -> bool {
+    name.contains("Rest")
+        || (!cur.is_empty()
+            && cur.iter().all(|d| d.iter().all(|c| matches!(*c, 300 | 320 | 600))))
+}
+
+pub(crate) fn classify_week_kind(
+    start: NaiveDate,
+    match_count: usize,
+    fm_name: &str,
+    weeks_since_holiday: Option<usize>,
+    has_holiday_in_cal: bool,
+) -> WeekKind {
+    let low = fm_name.to_ascii_lowercase();
+    if low.contains("pre-season")
+        || low.contains("preseason")
+        || low.contains("voorbereiding")
+        || low.contains("vorbereitung")
+        || low.contains("sezon öncesi")
+    {
+        if low.contains("early") || low.contains("begin") {
+            return WeekKind::PreSeasonEarly;
+        }
+        if low.contains("late") || low.contains("eind") {
+            return WeekKind::PreSeasonLate;
+        }
+        return match weeks_since_holiday {
+            Some(1..=2) => WeekKind::PreSeasonEarly,
+            Some(n) if n >= 5 => WeekKind::PreSeasonLate,
+            _ => WeekKind::PreSeasonMid,
+        };
+    }
+
+    if let Some(wsh) = weeks_since_holiday {
+        match wsh {
+            1..=2 => return WeekKind::PreSeasonEarly,
+            3..=4 => return WeekKind::PreSeasonMid,
+            5 => return WeekKind::PreSeasonLate,
+            _ => {}
+        }
+    }
+
     let mid = start + Duration::days(3);
-    match (mid.month(), mid.day()) {
-        (6, 20..) => WeekKind::PreSeasonEarly,
-        (7, 1..=10) => WeekKind::PreSeasonEarly,
-        (7, 11..=21) => WeekKind::PreSeasonMid,
-        (7, _) => WeekKind::PreSeasonLate,
+    let m = mid.month();
+    let d = mid.day();
+
+    if weeks_since_holiday.is_none() && !has_holiday_in_cal {
+        match (m, d) {
+            (6, 15..) | (7, 1..=10) => return WeekKind::PreSeasonEarly,
+            (7, 11..=24) => return WeekKind::PreSeasonMid,
+            (7, 25..) | (8, 1..=5) if match_count <= 1 => return WeekKind::PreSeasonLate,
+            _ => {}
+        }
+    }
+
+    match (m, d) {
         (12, 15..) | (1, 1..=15) if match_count == 0 => WeekKind::WinterBreak,
         (8..=12 | 1..=5, _) if match_count == 0 => WeekKind::InternationalBreak,
         _ => WeekKind::Season,
@@ -107,7 +156,7 @@ fn kind_for(start: NaiveDate, match_count: usize) -> WeekKind {
 pub fn run(eff: &Effectiveness, settings: &PlannerSettings, write: bool, skip: &HashSet<NaiveDate>) -> Result<Outcome> {
     let data = agent::request(json!({"cmd": "training_weeks"})).context("training calendar")?;
     let today = fm_date(&data["today"]).context("game date")?;
-    let weeks: Vec<(NaiveDate, Vec<[u16; 3]>, String)> = data["weeks"]
+    let raw_weeks: Vec<(NaiveDate, Vec<[u16; 3]>, String)> = data["weeks"]
         .as_array()
         .context("weeks")?
         .iter()
@@ -115,15 +164,29 @@ pub fn run(eff: &Effectiveness, settings: &PlannerSettings, write: bool, skip: &
         .filter(|(_, d, _)| d.len() == 7)
         .collect();
 
+    let enriched: Vec<(NaiveDate, Vec<[u16; 3]>, String, bool)> = raw_weeks
+        .into_iter()
+        .map(|(start, cur, addr)| {
+            let name = week_name(&addr).unwrap_or_default();
+            let rest = is_rest_week(&name, &cur);
+            (start, cur, name, rest)
+        })
+        .collect();
+    let has_holiday_in_cal = enriched.iter().any(|(_, _, _, rest)| *rest);
+
     let mut out = Outcome { today: Some(today), ..Default::default() };
     let mut proj = eff.clone();
-    for (i, (start, cur, addr)) in weeks.iter().enumerate() {
+    let mut last_holiday_idx: Option<usize> = None;
+    let mut upcoming_no: u32 = 0;
+
+    for (i, (start, cur, name, rest)) in enriched.iter().enumerate() {
+        if *rest {
+            last_holiday_idx = Some(i);
+        }
         if *start + Duration::days(6) <= today {
             continue; // week is voorbij
         }
-        let name = week_name(addr).unwrap_or_default();
-        let rest = name.contains("Rest");
-        if rest {
+        if *rest {
             out.weeks.push(WeekPreview {
                 start: *start,
                 name: name.clone(),
@@ -138,16 +201,18 @@ pub fn run(eff: &Effectiveness, settings: &PlannerSettings, write: bool, skip: &
             });
             continue;
         }
+        upcoming_no += 1;
+        let weeks_since_holiday = last_holiday_idx.map(|h| i - h);
         let mut matches = [false; 7];
         for d in 0..7 {
             matches[d] = cur[d].contains(&500);
         }
-        let prev_sun = i > 0 && weeks[i - 1].1[6].contains(&500);
-        let next_mon = weeks.get(i + 1).is_some_and(|w| w.1[0].contains(&500));
+        let prev_sun = i > 0 && enriched[i - 1].1[6].contains(&500);
+        let next_mon = enriched.get(i + 1).is_some_and(|w| w.1[0].contains(&500));
         let match_count = matches.iter().filter(|m| **m).count();
-        let kind = kind_for(*start, match_count);
+        let kind = classify_week_kind(*start, match_count, name, weeks_since_holiday, has_holiday_in_cal);
         let cw = CalendarWeek { start: *start, kind, matches, note: String::new() };
-        let plan = planner::plan_week(&cw, prev_sun, next_mon, &proj, settings, i as u32 + 1);
+        let plan = planner::plan_week(&cw, prev_sun, next_mon, &proj, settings, upcoming_no);
         // geschatte vooruitgang: de volgende week mikt op wat dan het zwakst is
         for f in crate::model::Factor::TACTICAL_AREAS {
             let n = plan.targets.iter().find(|(x, _)| *x == f).map(|(_, n)| *n).unwrap_or(0);
@@ -191,7 +256,7 @@ pub fn run(eff: &Effectiveness, settings: &PlannerSettings, write: bool, skip: &
         }
         out.weeks.push(WeekPreview {
             start: *start,
-            name,
+            name: name.clone(),
             kind,
             rest: false,
             matches: matches.iter().filter(|m| **m).count(),
@@ -270,4 +335,34 @@ pub fn short(code: u16) -> &'static str {
 
 pub fn long(code: u16) -> String {
     model::session_by_code(code).map(str::to_string).unwrap_or_else(|| format!("code {code}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_week_kind_detects_holiday_transition_and_summer_leagues() {
+        let aug_early = NaiveDate::from_ymd_opt(2027, 8, 2).unwrap();
+        assert_eq!(
+            classify_week_kind(aug_early, 1, "Pre-Season - Balanced", Some(4), true),
+            WeekKind::PreSeasonMid
+        );
+        assert_eq!(
+            classify_week_kind(NaiveDate::from_ymd_opt(2027, 7, 5).unwrap(), 1, "", Some(1), true),
+            WeekKind::PreSeasonEarly
+        );
+        // Yaz liginde tatil Ocak'taysa Temmuz ayında 20+ hafta sonra sezon devam eder: Sezon Öncesi sayılmaz
+        assert_eq!(
+            classify_week_kind(NaiveDate::from_ymd_opt(2027, 7, 12).unwrap(), 1, "Balanced", Some(22), true),
+            WeekKind::Season
+        );
+        // Takvimde hiç tatil yoksa Avrupa varsayılanı Temmuz sonunu geç sezon öncesi sayar
+        assert_eq!(
+            classify_week_kind(NaiveDate::from_ymd_opt(2027, 7, 26).unwrap(), 1, "", None, false),
+            WeekKind::PreSeasonLate
+        );
+        assert!(is_rest_week("Full Week of Rest", &[]));
+        assert!(is_rest_week("", &[[300, 300, 300]; 7]));
+    }
 }

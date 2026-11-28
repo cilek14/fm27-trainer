@@ -359,9 +359,14 @@ impl LiveState {
                 s.camp_mode = crate::planner::CampMode::PlayerDevelopment;
             }
         }
-        if s.auto_light_below > 0.0 {
+        let light_floor = if s.camp_mode == crate::planner::CampMode::PreSeasonFitness {
+            s.auto_light_below.min(66.0)
+        } else {
+            s.auto_light_below
+        };
+        if light_floor > 0.0 {
             if let Some(avg) = self.avg_condition() {
-                if avg < s.auto_light_below {
+                if avg < light_floor {
                     s.load = crate::planner::Load::Light;
                 }
             }

@@ -631,10 +631,10 @@ pub fn plan_week(
     {
         eff_settings.no_tactical = true;
     }
-    // Özel kamplar (Kondisyon / Derbi) unutulma riskine karşı yalnızca mevcut/ilk haftaya uygulanır.
-    // Ayrıca Kondisyon kampı, düşük kadro kondisyonu veya 2+ maç (Load::Light) koruması aktifken ağır yükleme yapmaz.
+    // Özel kamplar (Kondisyon / Derbi) yalnızca ilk aktif haftaya uygulanır.
+    // Kondisyon kampı sıkışık 2+ maç haftalarında güvenlik amacıyla devre dışı kalır.
     let active_camp = match eff_settings.camp_mode {
-        CampMode::PreSeasonFitness if season_week_no == 1 && eff_settings.load != Load::Light => CampMode::PreSeasonFitness,
+        CampMode::PreSeasonFitness if season_week_no == 1 && week.match_count() <= 1 => CampMode::PreSeasonFitness,
         CampMode::BigMatchPrep if season_week_no == 1 => CampMode::BigMatchPrep,
         CampMode::PlayerDevelopment => CampMode::PlayerDevelopment,
         _ => CampMode::Auto,
@@ -665,13 +665,13 @@ pub fn plan_week(
     let matches = week.match_count();
     let set_piece_week = active_camp == CampMode::BigMatchPrep
         || (settings.set_pieces_every > 0 && season_week_no % settings.set_pieces_every == 0);
-    // Light Conditioning: één keer in een week met ≤1 wedstrijd (SI doet dat op de 3e dag)
-    // Kondisyon kampı aktifse (ve Load::Light değilse) en fazla 2 kondisyon günü eklenir.
+    // Sezon içi kondisyon yüklemesi: normalde 1× Light Conditioning, WinterBreak 2×, Kondisyon kampı 2–3× (ağır)
     let mut conditioning_left: u32 = match (week.kind, matches) {
-        (k, _) if k.is_preseason() => 0, // voorbereiding regelt het per dag hieronder
+        (k, _) if k.is_preseason() => 0,
         (WeekKind::OffSeason, _) => 0,
+        (_, 0) if active_camp == CampMode::PreSeasonFitness => 3,
+        (_, 1) if active_camp == CampMode::PreSeasonFitness => 2,
         (WeekKind::WinterBreak, 0) if settings.load != Load::Light => 2,
-        (_, 0 | 1) if active_camp == CampMode::PreSeasonFitness => 2,
         (_, 0 | 1) => 1,
         _ => 0,
     };
@@ -682,15 +682,29 @@ pub fn plan_week(
     } else {
         None
     };
+    let lc_day3 = if active_camp == CampMode::PreSeasonFitness && matches == 0 && training_days.len() >= 4 {
+        training_days.last().copied().filter(|d| Some(*d) != lc_day && Some(*d) != lc_day2)
+    } else {
+        None
+    };
 
     let mut days = Vec::new();
+    let mut train_day_idx = 0usize;
     for (i, role) in roles.iter().enumerate() {
         let date = week.start + Duration::days(i as i64);
         let mut plan: [Slot; 3] = match role {
             DayRole::Match => [Slot::Fixed("Rest"), Slot::Fixed("Match"), Slot::Fixed("Rest")],
             DayRole::PostMatch => [Slot::Fixed("Recovery"), Slot::Fixed("Rest"), Slot::Extra],
             DayRole::PostAndPreMatch => [Slot::Fixed("Recovery"), Slot::MatchPrep, Slot::Fixed("Rest")],
-            DayRole::PreMatch => [Slot::MatchPrep, Slot::MatchPrep, Slot::MatchPrep],
+            DayRole::PreMatch => match week.kind {
+                WeekKind::PreSeasonEarly | WeekKind::PreSeasonMid => {
+                    [Slot::Fixed("Conditioning"), Slot::Tactical, Slot::MatchPrep]
+                }
+                WeekKind::PreSeasonLate => {
+                    [Slot::Fixed("Light Conditioning"), Slot::Tactical, Slot::MatchPrep]
+                }
+                _ => [Slot::MatchPrep, Slot::MatchPrep, Slot::MatchPrep],
+            },
             DayRole::Recovery => {
                 if i == 6 && sunday_bonding {
                     [Slot::Fixed("Recovery"), Slot::Fixed("Rest"), Slot::Extra]
@@ -699,21 +713,65 @@ pub fn plan_week(
                 }
             }
             DayRole::Holiday => [Slot::Fixed("Rest"), Slot::Fixed("Rest"), Slot::Fixed("Rest")],
-            DayRole::Training => match week.kind {
-                WeekKind::PreSeasonEarly => [Slot::Fixed(if i % 2 == 0 { "Heavy Conditioning" } else { "Conditioning" }), Slot::Tactical, Slot::Tactical],
-                WeekKind::PreSeasonMid => [Slot::Fixed(if i % 3 == 2 { "Heavy Conditioning" } else { "Conditioning" }), Slot::Tactical, Slot::Tactical],
-                WeekKind::PreSeasonLate => [Slot::Fixed(if i % 2 == 0 { "Light Conditioning" } else { "Conditioning" }), Slot::Tactical, Slot::Tactical],
-                _ if conditioning_left > 0 && (Some(i) == lc_day || Some(i) == lc_day2) => {
-                    conditioning_left -= 1;
-                    let cond_name = if active_camp == CampMode::PreSeasonFitness && Some(i) == lc_day2 {
-                        "Conditioning"
-                    } else {
-                        "Light Conditioning"
-                    };
-                    [Slot::Fixed(cond_name), Slot::Tactical, Slot::Tactical]
+            DayRole::Training => {
+                let td = train_day_idx;
+                train_day_idx += 1;
+                match week.kind {
+                    WeekKind::PreSeasonEarly => {
+                        if matches >= 2 {
+                            [Slot::Fixed("Conditioning"), Slot::Tactical, Slot::Tactical]
+                        } else if (td == 0 || (active_camp == CampMode::PreSeasonFitness && td == 2))
+                            && settings.load != Load::Light
+                        {
+                            [Slot::Fixed("Heavy Conditioning"), Slot::Fixed("Conditioning"), Slot::Tactical]
+                        } else {
+                            [Slot::Fixed("Heavy Conditioning"), Slot::Tactical, Slot::Tactical]
+                        }
+                    }
+                    WeekKind::PreSeasonMid => {
+                        if active_camp == CampMode::PreSeasonFitness && matches <= 1 {
+                            [Slot::Fixed("Heavy Conditioning"), Slot::Tactical, Slot::Tactical]
+                        } else {
+                            [
+                                Slot::Fixed(if td % 2 == 0 { "Heavy Conditioning" } else { "Conditioning" }),
+                                Slot::Tactical,
+                                Slot::Tactical,
+                            ]
+                        }
+                    }
+                    WeekKind::PreSeasonLate => {
+                        if active_camp == CampMode::PreSeasonFitness && matches <= 1 {
+                            [
+                                Slot::Fixed(if td % 2 == 0 { "Heavy Conditioning" } else { "Conditioning" }),
+                                Slot::Tactical,
+                                Slot::Tactical,
+                            ]
+                        } else {
+                            [
+                                Slot::Fixed(if td % 2 == 0 { "Conditioning" } else { "Light Conditioning" }),
+                                Slot::Tactical,
+                                Slot::Tactical,
+                            ]
+                        }
+                    }
+                    _ if conditioning_left > 0
+                        && (Some(i) == lc_day || Some(i) == lc_day2 || Some(i) == lc_day3) =>
+                    {
+                        conditioning_left -= 1;
+                        let cond_name = if active_camp == CampMode::PreSeasonFitness {
+                            if Some(i) == lc_day2 || Some(i) == lc_day3 {
+                                "Heavy Conditioning"
+                            } else {
+                                "Conditioning"
+                            }
+                        } else {
+                            "Light Conditioning"
+                        };
+                        [Slot::Fixed(cond_name), Slot::Tactical, Slot::Tactical]
+                    }
+                    _ => [Slot::Tactical, Slot::Tactical, Slot::Extra],
                 }
-                _ => [Slot::Tactical, Slot::Tactical, Slot::Extra],
-            },
+            }
         };
         match settings.load {
             Load::Light if matches!(role, DayRole::Training | DayRole::PreMatch) => plan[2] = Slot::Fixed("Rest"),
@@ -830,7 +888,7 @@ pub fn plan_year(calendar: &[CalendarWeek], start: &Effectiveness, settings: &Pl
     let mut eff = start.clone();
     let mut plan_basis = start.clone();
     let mut out = Vec::new();
-    let mut season_week = 0u32;
+    let mut active_week = 0u32;
     let block = settings.replan_every_weeks.max(1) as usize;
     for (i, week) in calendar.iter().enumerate() {
         if i % block == 0 {
@@ -838,10 +896,10 @@ pub fn plan_year(calendar: &[CalendarWeek], start: &Effectiveness, settings: &Pl
         }
         let prev_sun = i > 0 && calendar[i - 1].matches[6];
         let next_mon = calendar.get(i + 1).is_some_and(|w| w.matches[0]);
-        if week.kind == WeekKind::Season {
-            season_week += 1;
+        if !matches!(week.kind, WeekKind::OffSeason) {
+            active_week += 1;
         }
-        let mut plan = plan_week(week, prev_sun, next_mon, &plan_basis, settings, season_week);
+        let mut plan = plan_week(week, prev_sun, next_mon, &plan_basis, settings, active_week);
 
         // projectie: winst per sessie (afnemend naar 100), verval als niet getraind,
         // en een beetje winst door wedstrijden met de tactiek.
@@ -960,5 +1018,58 @@ mod tests {
         assert_eq!(with_sunday.days[6].slots, ["Recovery", "Rest", "Team Bonding"]);
         assert_eq!(with_sunday.days[0].slots[2], "Team Bonding");
         assert_ne!(with_sunday.days[1].slots[2], "Team Bonding");
+    }
+
+    #[test]
+    fn preseason_early_and_mid_schedule_heavy_conditioning_and_friendly_prematch() {
+        let mut matches = [false; 7];
+        matches[5] = true; // Cumartesi hazırlık maçı
+        let early = CalendarWeek {
+            start: NaiveDate::from_ymd_opt(2027, 7, 5).unwrap(),
+            kind: WeekKind::PreSeasonEarly,
+            matches,
+            note: String::new(),
+        };
+        let eff = Effectiveness::default();
+        let plan_e = plan_week(&early, false, false, &eff, &PlannerSettings::default(), 1);
+        assert_eq!(plan_e.days[0].slots[0], "Heavy Conditioning");
+        assert_eq!(plan_e.days[0].slots[1], "Conditioning");
+        for d in 1..4 {
+            assert_eq!(plan_e.days[d].slots[0], "Heavy Conditioning");
+        }
+        // Hazırlık maçı öncesi (Cuma, index 4): Kondisyon + Taktik + Maç Hazırlığı
+        assert_eq!(plan_e.days[4].slots[0], "Conditioning");
+        assert_eq!(
+            crate::model::category_of(&plan_e.days[4].slots[2]),
+            crate::model::Category::MatchPreparation
+        );
+
+        let mid = CalendarWeek { kind: WeekKind::PreSeasonMid, ..early };
+        let plan_m = plan_week(&mid, false, false, &eff, &PlannerSettings::default(), 2);
+        let heavy_cnt = plan_m
+            .days
+            .iter()
+            .flat_map(|d| d.slots.iter())
+            .filter(|s| *s == "Heavy Conditioning")
+            .count();
+        assert!(heavy_cnt >= 2, "expected heavy conditioning in PreSeasonMid, got {heavy_cnt}");
+    }
+
+    #[test]
+    fn fitness_camp_applies_heavy_conditioning_on_first_week_only() {
+        let week = CalendarWeek {
+            start: NaiveDate::from_ymd_opt(2027, 9, 13).unwrap(),
+            kind: WeekKind::Season,
+            matches: [false; 7],
+            note: String::new(),
+        };
+        let eff = Effectiveness::default();
+        let settings = PlannerSettings { camp_mode: CampMode::PreSeasonFitness, ..Default::default() };
+        let w1 = plan_week(&week, false, false, &eff, &settings, 1);
+        let w2 = plan_week(&week, false, false, &eff, &settings, 2);
+        let heavy_w1 = w1.days.iter().filter(|d| d.slots[0] == "Heavy Conditioning").count();
+        let heavy_w2 = w2.days.iter().filter(|d| d.slots[0] == "Heavy Conditioning").count();
+        assert_eq!(heavy_w1, 2);
+        assert_eq!(heavy_w2, 0);
     }
 }
