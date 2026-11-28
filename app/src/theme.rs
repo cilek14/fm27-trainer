@@ -719,30 +719,46 @@ pub fn component_tile(
     });
 }
 
-/// Compact 1-row factor bar: fixed-width name + aligned progress bar + right-aligned tabular score + fixed delta.
+/// Compact factor bar: aligned label (wraps only if wider than 40% cap) + progress bar + right-aligned Inter score & delta.
 pub fn factor_bar_row(ui: &mut Ui, name_w: f32, name: &str, value: f32, color: Color32, delta: Option<f32>) {
     let d_opt = delta.filter(|x| x.abs() >= 1.0);
     let total_w = ui.available_width().max(220.0);
-    let score_w = 34.0;
-    let delta_w = 42.0;
+    let score_font = FontId::new(13.0, bold());
+    let delta_font = FontId::new(11.0, bold());
+    let label_font = FontId::new(13.0, FontFamily::Proportional);
+    let (score_w, delta_w) = ui.fonts(|f| {
+        let sw = f.layout_no_wrap("100".to_string(), score_font.clone(), TEXT).size().x.ceil() + 4.0;
+        let dw_up = f.layout_no_wrap("▲+10".to_string(), delta_font.clone(), TEXT).size().x;
+        let dw_dn = f.layout_no_wrap("▼-10".to_string(), delta_font.clone(), TEXT).size().x;
+        (sw, dw_up.max(dw_dn).ceil() + 4.0)
+    });
     let gap = 8.0;
-    let name_w = name_w.min((total_w - score_w - delta_w - gap * 3.0 - 44.0).max(110.0));
+    let max_name_w = (total_w * 0.40).max(135.0);
+    let name_w = name_w
+        .min(max_name_w)
+        .min((total_w - score_w - delta_w - gap * 3.0 - 44.0).max(110.0));
     let bar_w = (total_w - name_w - score_w - delta_w - gap * 3.0).max(44.0);
+    let row_h = ui.fonts(|f| {
+        f.layout(name.to_string(), label_font.clone(), TEXT_DIM, name_w)
+            .size()
+            .y
+            .ceil()
+            .max(20.0)
+    });
 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
         ui.allocate_ui_with_layout(
-            vec2(name_w, 20.0),
+            vec2(name_w, row_h),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.set_min_width(name_w);
                 ui.set_max_width(name_w);
-                ui.add(egui::Label::new(RichText::new(name).size(13.0).color(TEXT_DIM)).truncate())
-                    .on_hover_text(name);
+                ui.add(egui::Label::new(RichText::new(name).font(label_font).color(TEXT_DIM)).wrap());
             },
         );
         ui.allocate_ui_with_layout(
-            vec2(bar_w, 20.0),
+            vec2(bar_w, row_h),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.set_min_width(bar_w);
@@ -751,21 +767,16 @@ pub fn factor_bar_row(ui: &mut Ui, name_w: f32, name: &str, value: f32, color: C
             },
         );
         ui.allocate_ui_with_layout(
-            vec2(score_w, 20.0),
+            vec2(score_w, row_h),
             egui::Layout::right_to_left(egui::Align::Center),
             |ui| {
                 ui.set_min_width(score_w);
                 ui.set_max_width(score_w);
-                ui.label(
-                    RichText::new(format!("{value:.0}"))
-                        .font(FontId::new(13.0, FontFamily::Monospace))
-                        .strong()
-                        .color(color),
-                );
+                ui.label(RichText::new(format!("{value:.0}")).font(score_font).color(color));
             },
         );
         ui.allocate_ui_with_layout(
-            vec2(delta_w, 20.0),
+            vec2(delta_w, row_h),
             egui::Layout::right_to_left(egui::Align::Center),
             |ui| {
                 ui.set_min_width(delta_w);
@@ -774,12 +785,7 @@ pub fn factor_bar_row(ui: &mut Ui, name_w: f32, name: &str, value: f32, color: C
                     let up = d > 0.0;
                     let dc = if up { SUCCESS } else { DANGER };
                     let txt = if up { format!("▲+{:.0}", d) } else { format!("▼{:.0}", d) };
-                    ui.label(
-                        RichText::new(txt)
-                            .font(FontId::new(11.0, FontFamily::Monospace))
-                            .strong()
-                            .color(dc),
-                    );
+                    ui.label(RichText::new(txt).font(delta_font).color(dc));
                 }
             },
         );

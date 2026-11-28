@@ -522,8 +522,19 @@ impl App {
     /// Testhulp: FM27_SNAPSHOT=pad.png legt na het laden het eigen venster vast en sluit af.
     fn snapshot(&mut self, ctx: &egui::Context) {
         let Ok(path) = std::env::var("FM27_SNAPSHOT") else { return };
-        self.frames += 1;
-        if self.frames == 90 {
+        self.frames = self.frames.saturating_add(1);
+        let t = ctx.input(|i| i.time);
+        if self.frames == 2 || (self.live.connected && self.individual.bottlenecks.is_empty()) {
+            self.sync_from_bepinex(false);
+        }
+        if self.live.connected && self.live.training.is_none() && !self.live.busy() && t < 20.0 {
+            self.live.training(ctx, &self.eff, &self.settings.planner, false, true);
+        }
+        let players_ready = self.page != Page::Individual || !self.individual.bottlenecks.is_empty() || t >= 5.0;
+        let connected_ready = self.live.connected && t >= 1.5 && !self.live.busy() && self.live.training.is_some() && players_ready;
+        let offline_ready = !self.live.connected && t >= 3.5 && !self.live.busy();
+        if self.frames < 100_000 && (connected_ready || offline_ready || t >= 25.0) {
+            self.frames = 100_000;
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
         }
         let shot = ctx.input(|i| {
@@ -1479,7 +1490,8 @@ impl App {
                         .map(|fac| f.layout_no_wrap(fac.display_label().to_string(), label_font.clone(), theme::TEXT_DIM).size().x)
                         .fold(0.0_f32, f32::max)
                 });
-                let name_w = (max_label_w + 6.0).clamp(135.0, 235.0);
+                let max_name_w = (ui.available_width() * 0.40).max(160.0);
+                let name_w = (max_label_w + 6.0).clamp(135.0, max_name_w);
 
                 let render_factor = |ui: &mut Ui, f: Factor, eff: &mut Effectiveness, diff: Option<history::HistoryDiff>, edit: bool, changed: &mut bool| {
                     let v = eff.get(f);
@@ -3379,14 +3391,13 @@ impl eframe::App for App {
             self.show_camp_modal = true;
         }
         // BepInEx köprüsünden gelen kesin Taktiksel Verimlilik verisini otomatik izle (1.5 sn aralıkla)
-        if !self.edit_mode
-            && std::env::var_os("FM27_SNAPSHOT").is_none()
-            && self.last_bepinex_check.elapsed().as_millis() >= 1500
-        {
+        if !self.edit_mode && self.last_bepinex_check.elapsed().as_millis() >= 1500 {
             self.last_bepinex_check = std::time::Instant::now();
             self.sync_from_bepinex(false);
             self.individual.poll_result();
-            self.individual.maybe_auto_apply(&self.live);
+            if std::env::var_os("FM27_SNAPSHOT").is_none() {
+                self.individual.maybe_auto_apply(&self.live);
+            }
         }
         self.last_memory_rev = self.live.memory_rev;
         let _ = (self.settings.auto_memory_sync, self.memory_sync_pending);
