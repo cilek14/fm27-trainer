@@ -505,6 +505,18 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Checking license…" => "Verifica della licenza…",
         "Pro license activated! Youth teams are unlocked." => "Licenza Pro attivata! Le squadre giovanili sono sbloccate.",
         "License deactivated on this device." => "Licenza disattivata su questo dispositivo.",
+        "Heavy conditioning" => "Preparazione pesante",
+        "Tactical focus" => "Focus tattico",
+        "Heavy" => "Pesante",
+        "Maximum physical build-up with Heavy Conditioning on training days — helps prevent mid-season fatigue issues." => "Massimo carico fisico con Preparazione pesante nei giorni di allenamento — per evitare cali di forma in stagione.",
+        "Balanced mix of conditioning and tactical familiarity, alternating heavy and standard conditioning." => "Mix equilibrato tra preparazione atletica e comprensione tattica, alternando carico pesante e standard.",
+        "Lighter conditioning so most slots go to tactical familiarity and team cohesion." => "Preparazione più leggera per dedicare più sessioni alla tattica e alla coesione di squadra.",
+        "Camp style" => "Stile ritiro",
+        "How should the fitness camp run?" => "Come impostare il ritiro atletico?",
+        "Choose the intensity for pre-season weeks and the fitness camp. You can change this anytime." => "Scegli l'intensità per le settimane di pre-campionato e il ritiro atletico. Modificabile in qualsiasi momento.",
+        "Save & apply" => "Salva e applica",
+        "Cancel" => "Annulla",
+        "Pre-season & fitness camp" => "Pre-campionato e ritiro atletico",
         _ => en,
     }
 }

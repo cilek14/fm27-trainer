@@ -48,7 +48,7 @@ impl WeekKind {
         }
     }
 
-    fn is_preseason(self) -> bool {
+    pub fn is_preseason(self) -> bool {
         matches!(self, WeekKind::PreSeasonEarly | WeekKind::PreSeasonMid | WeekKind::PreSeasonLate)
     }
 }
@@ -284,6 +284,59 @@ impl CampMode {
     }
 }
 
+/// Sezon öncesi ve kondisyon kampı yoğunluk tarzı (kullanıcıya sorulur).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PreSeasonIntensity {
+    #[default]
+    Heavy,
+    Balanced,
+    TacticalFocus,
+}
+
+impl PreSeasonIntensity {
+    pub const ALL: [PreSeasonIntensity; 3] = [
+        Self::Heavy,
+        Self::Balanced,
+        Self::TacticalFocus,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Heavy => crate::t!("Zware conditie", "Heavy conditioning", "Ağır kondisyon"),
+            Self::Balanced => crate::t!("Gebalanceerd", "Balanced", "Dengeli"),
+            Self::TacticalFocus => crate::t!("Tactiekgericht", "Tactical focus", "Taktik ağırlıklı"),
+        }
+    }
+
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Self::Heavy => crate::t!("Zwaar", "Heavy", "Ağır"),
+            Self::Balanced => crate::t!("Gebalanceerd", "Balanced", "Dengeli"),
+            Self::TacticalFocus => crate::t!("Tactiek", "Tactical", "Taktik"),
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::Heavy => crate::t!(
+                "Maximale conditie-opbouw met Heavy Conditioning op trainingsdagen — om conditieproblemen in het seizoen te voorkomen.",
+                "Maximum physical build-up with Heavy Conditioning on training days — helps prevent mid-season fatigue issues.",
+                "Antrenman günlerinde Ağır Kondisyon ile maksimum fiziksel yükleme — sezon içinde kondisyon sorunu yaşamamak için."
+            ),
+            Self::Balanced => crate::t!(
+                "Evenwicht tussen conditie en tactisch begrip met afwisselend zware en normale conditiesessies.",
+                "Balanced mix of conditioning and tactical familiarity, alternating heavy and standard conditioning.",
+                "Kondisyon ve taktik uyumu arasında denge; ağır ve normal kondisyon seanslarını dönüşümlü uygular."
+            ),
+            Self::TacticalFocus => crate::t!(
+                "Lichte conditie-opbouw zodat de meeste plekken naar tactisch begrip en samenspel gaan.",
+                "Lighter conditioning so most slots go to tactical familiarity and team cohesion.",
+                "Hafif kondisyonla sakatlık riskini düşük tutar; seansların çoğunu taktik anlayış ve takım uyumuna ayırır."
+            ),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlannerSettings {
     /// Onder deze Buy-In-score komt er Team Bonding na wedstrijden.
@@ -319,6 +372,9 @@ pub struct PlannerSettings {
     /// Özel kamp modu (Kondisyon / Derbi sadece ilk haftaya uygulanır).
     #[serde(default)]
     pub camp_mode: CampMode,
+    /// Sezon öncesi ve kondisyon kampı yoğunluk tarzı (Ağır / Dengeli / Taktik ağırlıklı).
+    #[serde(default)]
+    pub preseason_intensity: PreSeasonIntensity,
     /// Maçsız haftalarda (veya Pazar dinlenme gününde) 1 Takım Kaynaşması seansını Pazar gününe taşır.
     #[serde(default)]
     pub sunday_team_bonding: bool,
@@ -355,6 +411,7 @@ impl Default for PlannerSettings {
             auto_light_congested: true,
             tactic_mode: TacticMode::Auto,
             camp_mode: CampMode::Auto,
+            preseason_intensity: PreSeasonIntensity::Heavy,
             sunday_team_bonding: false,
         }
     }
@@ -663,14 +720,21 @@ pub fn plan_week(
         settings,
     };
     let matches = week.match_count();
+    let intensity = settings.preseason_intensity;
     let set_piece_week = active_camp == CampMode::BigMatchPrep
         || (settings.set_pieces_every > 0 && season_week_no % settings.set_pieces_every == 0);
-    // Sezon içi kondisyon yüklemesi: normalde 1× Light Conditioning, WinterBreak 2×, Kondisyon kampı 2–3× (ağır)
+    // Sezon içi kondisyon yüklemesi: normalde 1× Light Conditioning, WinterBreak 2×, Kondisyon kampı seçilen tarza göre
     let mut conditioning_left: u32 = match (week.kind, matches) {
         (k, _) if k.is_preseason() => 0,
         (WeekKind::OffSeason, _) => 0,
-        (_, 0) if active_camp == CampMode::PreSeasonFitness => 3,
-        (_, 1) if active_camp == CampMode::PreSeasonFitness => 2,
+        (_, 0) if active_camp == CampMode::PreSeasonFitness => match intensity {
+            PreSeasonIntensity::Heavy => 3,
+            PreSeasonIntensity::Balanced | PreSeasonIntensity::TacticalFocus => 2,
+        },
+        (_, 1) if active_camp == CampMode::PreSeasonFitness => match intensity {
+            PreSeasonIntensity::Heavy | PreSeasonIntensity::Balanced => 2,
+            PreSeasonIntensity::TacticalFocus => 1,
+        },
         (WeekKind::WinterBreak, 0) if settings.load != Load::Light => 2,
         (_, 0 | 1) => 1,
         _ => 0,
@@ -697,12 +761,17 @@ pub fn plan_week(
             DayRole::PostMatch => [Slot::Fixed("Recovery"), Slot::Fixed("Rest"), Slot::Extra],
             DayRole::PostAndPreMatch => [Slot::Fixed("Recovery"), Slot::MatchPrep, Slot::Fixed("Rest")],
             DayRole::PreMatch => match week.kind {
-                WeekKind::PreSeasonEarly | WeekKind::PreSeasonMid => {
-                    [Slot::Fixed("Conditioning"), Slot::Tactical, Slot::MatchPrep]
-                }
-                WeekKind::PreSeasonLate => {
-                    [Slot::Fixed("Light Conditioning"), Slot::Tactical, Slot::MatchPrep]
-                }
+                WeekKind::PreSeasonEarly | WeekKind::PreSeasonMid => match intensity {
+                    PreSeasonIntensity::Heavy => [Slot::Fixed("Conditioning"), Slot::Tactical, Slot::MatchPrep],
+                    PreSeasonIntensity::Balanced => [Slot::Fixed("Light Conditioning"), Slot::Tactical, Slot::MatchPrep],
+                    PreSeasonIntensity::TacticalFocus => [Slot::Tactical, Slot::Tactical, Slot::MatchPrep],
+                },
+                WeekKind::PreSeasonLate => match intensity {
+                    PreSeasonIntensity::Heavy => [Slot::Fixed("Light Conditioning"), Slot::Tactical, Slot::MatchPrep],
+                    PreSeasonIntensity::Balanced | PreSeasonIntensity::TacticalFocus => {
+                        [Slot::Tactical, Slot::MatchPrep, Slot::MatchPrep]
+                    }
+                },
                 _ => [Slot::MatchPrep, Slot::MatchPrep, Slot::MatchPrep],
             },
             DayRole::Recovery => {
@@ -717,52 +786,120 @@ pub fn plan_week(
                 let td = train_day_idx;
                 train_day_idx += 1;
                 match week.kind {
-                    WeekKind::PreSeasonEarly => {
-                        if matches >= 2 {
-                            [Slot::Fixed("Conditioning"), Slot::Tactical, Slot::Tactical]
-                        } else if (td == 0 || (active_camp == CampMode::PreSeasonFitness && td == 2))
-                            && settings.load != Load::Light
-                        {
-                            [Slot::Fixed("Heavy Conditioning"), Slot::Fixed("Conditioning"), Slot::Tactical]
-                        } else {
-                            [Slot::Fixed("Heavy Conditioning"), Slot::Tactical, Slot::Tactical]
+                    WeekKind::PreSeasonEarly => match intensity {
+                        PreSeasonIntensity::Heavy => {
+                            if matches >= 2 {
+                                [Slot::Fixed("Conditioning"), Slot::Tactical, Slot::Tactical]
+                            } else if (td == 0 || (active_camp == CampMode::PreSeasonFitness && td == 2))
+                                && settings.load != Load::Light
+                            {
+                                [Slot::Fixed("Heavy Conditioning"), Slot::Fixed("Conditioning"), Slot::Tactical]
+                            } else {
+                                [Slot::Fixed("Heavy Conditioning"), Slot::Tactical, Slot::Tactical]
+                            }
                         }
-                    }
-                    WeekKind::PreSeasonMid => {
-                        if active_camp == CampMode::PreSeasonFitness && matches <= 1 {
-                            [Slot::Fixed("Heavy Conditioning"), Slot::Tactical, Slot::Tactical]
-                        } else {
-                            [
-                                Slot::Fixed(if td % 2 == 0 { "Heavy Conditioning" } else { "Conditioning" }),
-                                Slot::Tactical,
-                                Slot::Tactical,
-                            ]
+                        PreSeasonIntensity::Balanced => {
+                            if matches >= 2 {
+                                [Slot::Fixed("Light Conditioning"), Slot::Tactical, Slot::Tactical]
+                            } else {
+                                [
+                                    Slot::Fixed(if td % 2 == 0 { "Heavy Conditioning" } else { "Conditioning" }),
+                                    Slot::Tactical,
+                                    Slot::Tactical,
+                                ]
+                            }
                         }
-                    }
-                    WeekKind::PreSeasonLate => {
-                        if active_camp == CampMode::PreSeasonFitness && matches <= 1 {
-                            [
-                                Slot::Fixed(if td % 2 == 0 { "Heavy Conditioning" } else { "Conditioning" }),
-                                Slot::Tactical,
-                                Slot::Tactical,
-                            ]
-                        } else {
-                            [
-                                Slot::Fixed(if td % 2 == 0 { "Conditioning" } else { "Light Conditioning" }),
-                                Slot::Tactical,
-                                Slot::Tactical,
-                            ]
+                        PreSeasonIntensity::TacticalFocus => {
+                            if td % 2 == 0 {
+                                [Slot::Fixed("Light Conditioning"), Slot::Tactical, Slot::Tactical]
+                            } else {
+                                [Slot::Tactical, Slot::Tactical, Slot::Extra]
+                            }
                         }
-                    }
+                    },
+                    WeekKind::PreSeasonMid => match intensity {
+                        PreSeasonIntensity::Heavy => {
+                            if active_camp == CampMode::PreSeasonFitness && matches <= 1 {
+                                [Slot::Fixed("Heavy Conditioning"), Slot::Tactical, Slot::Tactical]
+                            } else {
+                                [
+                                    Slot::Fixed(if td % 2 == 0 { "Heavy Conditioning" } else { "Conditioning" }),
+                                    Slot::Tactical,
+                                    Slot::Tactical,
+                                ]
+                            }
+                        }
+                        PreSeasonIntensity::Balanced => [
+                            Slot::Fixed(if td == 0 {
+                                "Heavy Conditioning"
+                            } else if td % 2 == 0 {
+                                "Conditioning"
+                            } else {
+                                "Light Conditioning"
+                            }),
+                            Slot::Tactical,
+                            Slot::Tactical,
+                        ],
+                        PreSeasonIntensity::TacticalFocus => {
+                            if td == 0 || td == 2 {
+                                [Slot::Fixed("Light Conditioning"), Slot::Tactical, Slot::Tactical]
+                            } else {
+                                [Slot::Tactical, Slot::Tactical, Slot::Extra]
+                            }
+                        }
+                    },
+                    WeekKind::PreSeasonLate => match intensity {
+                        PreSeasonIntensity::Heavy => {
+                            if active_camp == CampMode::PreSeasonFitness && matches <= 1 {
+                                [
+                                    Slot::Fixed(if td % 2 == 0 { "Heavy Conditioning" } else { "Conditioning" }),
+                                    Slot::Tactical,
+                                    Slot::Tactical,
+                                ]
+                            } else {
+                                [
+                                    Slot::Fixed(if td % 2 == 0 { "Conditioning" } else { "Light Conditioning" }),
+                                    Slot::Tactical,
+                                    Slot::Tactical,
+                                ]
+                            }
+                        }
+                        PreSeasonIntensity::Balanced => {
+                            if td % 2 == 0 {
+                                [Slot::Fixed("Light Conditioning"), Slot::Tactical, Slot::Tactical]
+                            } else {
+                                [Slot::Tactical, Slot::Tactical, Slot::Extra]
+                            }
+                        }
+                        PreSeasonIntensity::TacticalFocus => {
+                            if td == 0 {
+                                [Slot::Fixed("Light Conditioning"), Slot::Tactical, Slot::Tactical]
+                            } else {
+                                [Slot::Tactical, Slot::Tactical, Slot::Extra]
+                            }
+                        }
+                    },
                     _ if conditioning_left > 0
                         && (Some(i) == lc_day || Some(i) == lc_day2 || Some(i) == lc_day3) =>
                     {
                         conditioning_left -= 1;
                         let cond_name = if active_camp == CampMode::PreSeasonFitness {
-                            if Some(i) == lc_day2 || Some(i) == lc_day3 {
-                                "Heavy Conditioning"
-                            } else {
-                                "Conditioning"
+                            match intensity {
+                                PreSeasonIntensity::Heavy => {
+                                    if Some(i) == lc_day2 || Some(i) == lc_day3 {
+                                        "Heavy Conditioning"
+                                    } else {
+                                        "Conditioning"
+                                    }
+                                }
+                                PreSeasonIntensity::Balanced => {
+                                    if Some(i) == lc_day2 {
+                                        "Conditioning"
+                                    } else {
+                                        "Light Conditioning"
+                                    }
+                                }
+                                PreSeasonIntensity::TacticalFocus => "Light Conditioning",
                             }
                         } else {
                             "Light Conditioning"
@@ -1071,5 +1208,72 @@ mod tests {
         let heavy_w2 = w2.days.iter().filter(|d| d.slots[0] == "Heavy Conditioning").count();
         assert_eq!(heavy_w1, 2);
         assert_eq!(heavy_w2, 0);
+    }
+
+    #[test]
+    fn preseason_intensity_changes_heavy_balanced_and_tactical_schedules() {
+        let eff = Effectiveness::default();
+        let early = CalendarWeek {
+            start: NaiveDate::from_ymd_opt(2027, 7, 5).unwrap(),
+            kind: WeekKind::PreSeasonEarly,
+            matches: [false; 7],
+            note: String::new(),
+        };
+        let count_slot = |plan: &WeekPlan, name: &str| -> usize {
+            plan.days.iter().flat_map(|d| d.slots.iter()).filter(|s| s.as_str() == name).count()
+        };
+
+        let p_heavy = plan_week(&early, false, false, &eff, &PlannerSettings { preseason_intensity: PreSeasonIntensity::Heavy, ..Default::default() }, 1);
+        let p_bal = plan_week(&early, false, false, &eff, &PlannerSettings { preseason_intensity: PreSeasonIntensity::Balanced, ..Default::default() }, 1);
+        let p_tac = plan_week(&early, false, false, &eff, &PlannerSettings { preseason_intensity: PreSeasonIntensity::TacticalFocus, ..Default::default() }, 1);
+
+        assert!(count_slot(&p_heavy, "Heavy Conditioning") > count_slot(&p_bal, "Heavy Conditioning"));
+        assert_eq!(count_slot(&p_tac, "Heavy Conditioning"), 0);
+        assert!(count_slot(&p_tac, "Light Conditioning") >= 2);
+
+        let mut one_match = [false; 7];
+        one_match[5] = true;
+        let season = CalendarWeek {
+            start: NaiveDate::from_ymd_opt(2027, 9, 13).unwrap(),
+            kind: WeekKind::Season,
+            matches: one_match,
+            note: String::new(),
+        };
+        let camp_heavy = plan_week(
+            &season,
+            false,
+            false,
+            &eff,
+            &PlannerSettings { camp_mode: CampMode::PreSeasonFitness, preseason_intensity: PreSeasonIntensity::Heavy, ..Default::default() },
+            1,
+        );
+        let camp_bal = plan_week(
+            &season,
+            false,
+            false,
+            &eff,
+            &PlannerSettings { camp_mode: CampMode::PreSeasonFitness, preseason_intensity: PreSeasonIntensity::Balanced, ..Default::default() },
+            1,
+        );
+        let camp_tac = plan_week(
+            &season,
+            false,
+            false,
+            &eff,
+            &PlannerSettings { camp_mode: CampMode::PreSeasonFitness, preseason_intensity: PreSeasonIntensity::TacticalFocus, ..Default::default() },
+            1,
+        );
+
+        assert!(count_slot(&camp_heavy, "Heavy Conditioning") >= 1);
+        assert!(count_slot(&camp_bal, "Conditioning") >= 1);
+        assert!(count_slot(&camp_bal, "Light Conditioning") >= 1);
+        assert_eq!(count_slot(&camp_tac, "Heavy Conditioning"), 0);
+        assert_eq!(count_slot(&camp_tac, "Conditioning"), 0);
+        assert_eq!(count_slot(&camp_tac, "Light Conditioning"), 1);
+
+        let mut val = serde_json::to_value(PlannerSettings::default()).unwrap();
+        val.as_object_mut().unwrap().remove("preseason_intensity");
+        let decoded: PlannerSettings = serde_json::from_value(val).unwrap();
+        assert_eq!(decoded.preseason_intensity, PreSeasonIntensity::Heavy);
     }
 }

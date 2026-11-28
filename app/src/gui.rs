@@ -157,12 +157,15 @@ struct Settings {
     /// Altyapı takımlarında Akademi Gelişim Modu.
     #[serde(default = "yes")]
     youth_dev_mode: bool,
+    /// Kullanıcı sezon öncesi / kondisyon kampı yoğunluk tarzını en az bir kez seçti mi.
+    #[serde(default)]
+    preseason_intensity_chosen: bool,
     planner: PlannerSettings,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { lang: i18n::detect(), rate: 1.17, capture_delay: true, auto_training: true, allow_untested: false, keep_understanding: false, auto_read: false, auto_memory_sync: false, no_cheat_mode: true, auto_individual_intensity: false, intensity_profile: individual::IntensityProfile::default(), auto_read_secs: 10, manager_club: None, training_team: None, auto_update: true, role_training_mode: true, ui_scale: UiScale::Auto, youth_dev_mode: true, planner: PlannerSettings::default() }
+        Settings { lang: i18n::detect(), rate: 1.17, capture_delay: true, auto_training: true, allow_untested: false, keep_understanding: false, auto_read: false, auto_memory_sync: false, no_cheat_mode: true, auto_individual_intensity: false, intensity_profile: individual::IntensityProfile::default(), auto_read_secs: 10, manager_club: None, training_team: None, auto_update: true, role_training_mode: true, ui_scale: UiScale::Auto, youth_dev_mode: true, preseason_intensity_chosen: false, planner: PlannerSettings::default() }
     }
 }
 
@@ -420,6 +423,9 @@ struct App {
     license: LicenseState,
     show_pro_modal: bool,
     pro_modal_team: Option<String>,
+    show_camp_modal: bool,
+    camp_modal_draft: planner::PreSeasonIntensity,
+    camp_prompted_this_session: bool,
     history: history::HistoryStore,
     /// de tactiek die de tactiekpagina toont (None: de tactiek die in FM in gebruik is)
     tactic_pick: Option<usize>,
@@ -472,6 +478,8 @@ impl App {
         individual.role_training_mode = settings.role_training_mode;
         let show_pro_modal = std::env::var_os("FM27_PRO_MODAL").is_some();
         let pro_modal_team = show_pro_modal.then(|| "U21".to_string());
+        let show_camp_modal = std::env::var_os("FM27_CAMP_MODAL").is_some();
+        let camp_modal_draft = settings.planner.preseason_intensity;
         App {
             page,
             shown_page: None,
@@ -528,6 +536,9 @@ impl App {
             license,
             show_pro_modal,
             pro_modal_team,
+            show_camp_modal,
+            camp_modal_draft,
+            camp_prompted_this_session: false,
             frames: 0,
         }
     }
@@ -1710,6 +1721,13 @@ impl App {
                         kind_combo(ui, "weekkind", &mut self.week_kind);
                         if self.week_kind != before_kind {
                             rebuild_week = true;
+                            if !before_kind.is_preseason()
+                                && self.week_kind.is_preseason()
+                                && !self.settings.preseason_intensity_chosen
+                            {
+                                self.camp_modal_draft = self.settings.planner.preseason_intensity;
+                                self.show_camp_modal = true;
+                            }
                         }
                     },
                 );
@@ -1748,6 +1766,12 @@ impl App {
 
             ui.add_space(8.0);
             let mut mode_changed = false;
+            let prev_camp = self.settings.planner.camp_mode;
+            let live_has_preseason = self
+                .live
+                .training
+                .as_ref()
+                .is_some_and(|t| t.weeks.iter().any(|w| !w.rest && w.kind.is_preseason()));
             ui.horizontal_wrapped(|ui| {
                 ui.label(theme::label_strong(t!("Planinstellingen:", "Plan settings:", "Plan ayarları:")));
                 ui.label(theme::dim(t!("Tactiekstijl", "Tactic style", "Taktik tarzı")));
@@ -1776,11 +1800,34 @@ impl App {
                 if self.settings.planner.camp_mode != planner::CampMode::Auto {
                     theme::pill(ui, self.settings.planner.camp_mode.label(), theme::WARNING);
                 }
+                if self.settings.planner.camp_mode == planner::CampMode::PreSeasonFitness
+                    || self.week_kind.is_preseason()
+                    || live_has_preseason
+                {
+                    let camp_btn_lbl = format!(
+                        "{}: {}",
+                        t!("Kampstijl", "Camp style", "Kamp tarzı"),
+                        self.settings.planner.preseason_intensity.short_label()
+                    );
+                    if theme::small_button(ui, &camp_btn_lbl, true).clicked() {
+                        self.camp_modal_draft = self.settings.planner.preseason_intensity;
+                        self.show_camp_modal = true;
+                    }
+                }
             });
+            if self.settings.planner.camp_mode == planner::CampMode::PreSeasonFitness
+                && prev_camp != planner::CampMode::PreSeasonFitness
+            {
+                self.camp_modal_draft = self.settings.planner.preseason_intensity;
+                self.show_camp_modal = true;
+            }
             if mode_changed {
                 self.save_settings();
                 rebuild_week = true;
                 self.year.clear();
+                if connected && !self.live.busy() {
+                    self.live.training(ctx, &self.eff, &self.settings.planner, false, false);
+                }
             }
         });
 
@@ -2631,6 +2678,31 @@ impl App {
             theme::setting_row(
                 ui,
                 t!(
+                    "Voorbereiding & conditiekamp",
+                    "Pre-season & fitness camp",
+                    "Sezon öncesi ve kondisyon kampı"
+                ),
+                Some(app.settings.planner.preseason_intensity.description()),
+                |ui| {
+                    use planner::PreSeasonIntensity;
+                    if theme::segmented(
+                        ui,
+                        &mut app.settings.planner.preseason_intensity,
+                        &[
+                            (PreSeasonIntensity::Heavy, PreSeasonIntensity::Heavy.short_label()),
+                            (PreSeasonIntensity::Balanced, PreSeasonIntensity::Balanced.short_label()),
+                            (PreSeasonIntensity::TacticalFocus, PreSeasonIntensity::TacticalFocus.short_label()),
+                        ],
+                    ) {
+                        *dirty = true;
+                        app.settings.preseason_intensity_chosen = true;
+                    }
+                },
+            );
+
+            theme::setting_row(
+                ui,
+                t!(
                     "Automatisch meer rust in drukke weken",
                     "Auto extra rest in busy weeks",
                     "Yoğun haftalarda otomatik fazla dinlenme"
@@ -3353,6 +3425,146 @@ impl App {
             self.show_pro_modal = false;
         }
     }
+
+    fn render_camp_modal(&mut self, ctx: &egui::Context) {
+        if !self.show_camp_modal {
+            return;
+        }
+        let screen = ctx.screen_rect();
+        egui::Area::new(egui::Id::new("camp_modal_backdrop"))
+            .fixed_pos(screen.min)
+            .order(egui::Order::Middle)
+            .show(ctx, |ui| {
+                let (rect, resp) = ui.allocate_exact_size(screen.size(), egui::Sense::click());
+                ui.painter().rect_filled(rect, CornerRadius::ZERO, egui::Color32::from_rgba_unmultiplied(6, 10, 13, 185));
+                if resp.clicked() {
+                    self.show_camp_modal = false;
+                }
+            });
+
+        let mut close_now = false;
+        let mut apply_now = false;
+        egui::Window::new("camp_modal_win")
+            .title_bar(false)
+            .resizable(false)
+            .collapsible(false)
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
+            .default_width(480.0)
+            .max_width(480.0)
+            .frame(
+                Frame::new()
+                    .fill(theme::SURFACE)
+                    .stroke(Stroke::new(1.2_f32, theme::tint(theme::ACCENT, 0.72)))
+                    .corner_radius(CornerRadius::same(14))
+                    .inner_margin(Margin::same(22)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(theme::ic(icon::LIGHTNING).color(theme::ACCENT_HI).size(22.0));
+                    ui.label(
+                        RichText::new(t!(
+                            "Hoe wil je het conditiekamp indelen?",
+                            "How should the fitness camp run?",
+                            "Kondisyon kampı nasıl yapılsın?"
+                        ))
+                        .font(egui::FontId::new(18.0, theme::bold()))
+                        .color(theme::TEXT),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if theme::small_button(ui, icon::X, true).clicked() {
+                            close_now = true;
+                        }
+                    });
+                });
+
+                ui.add_space(6.0);
+                ui.add(
+                    egui::Label::new(theme::dim(t!(
+                        "Kies de intensiteit voor voorbereidingsweken en het conditiekamp. Je kunt dit later altijd wijzigen.",
+                        "Choose the intensity for pre-season weeks and the fitness camp. You can change this anytime.",
+                        "Sezon öncesi haftalar ve kondisyon kampı için yoğunluk tarzını seçin. Bunu daha sonra istediğiniz zaman değiştirebilirsiniz."
+                    )))
+                    .wrap(),
+                );
+                ui.add_space(12.0);
+
+                for (idx, opt) in planner::PreSeasonIntensity::ALL.into_iter().enumerate() {
+                    let (col, ic_name) = match opt {
+                        planner::PreSeasonIntensity::Heavy => (theme::WARNING, icon::LIGHTNING),
+                        planner::PreSeasonIntensity::Balanced => (theme::ACCENT, icon::SCALES),
+                        planner::PreSeasonIntensity::TacticalFocus => (theme::INFO, icon::COMPASS),
+                    };
+                    let selected = self.camp_modal_draft == opt;
+                    let bg = if selected { theme::tint(col, 0.14) } else { theme::SURFACE2 };
+                    let border = if selected { col } else { theme::BORDER };
+                    let stroke_w = if selected { 1.5_f32 } else { 1.0_f32 };
+
+                    let frame_resp = Frame::new()
+                        .fill(bg)
+                        .stroke(Stroke::new(stroke_w, border))
+                        .corner_radius(CornerRadius::same(10))
+                        .inner_margin(Margin::symmetric(14, 10))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.horizontal(|ui| {
+                                ui.label(theme::ic(ic_name).color(col).size(17.0));
+                                ui.label(
+                                    RichText::new(opt.label())
+                                        .font(egui::FontId::new(14.5, theme::bold()))
+                                        .color(theme::TEXT),
+                                );
+                                if selected {
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        ui.label(theme::ic(icon::CHECK_CIRCLE).color(col).size(16.0));
+                                    });
+                                }
+                            });
+                            ui.add_space(4.0);
+                            ui.add(egui::Label::new(theme::dim(opt.description())).wrap());
+                        });
+
+                    let click_resp = ui
+                        .interact(frame_resp.response.rect, egui::Id::new(("camp_opt", idx)), egui::Sense::click())
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if click_resp.clicked() {
+                        self.camp_modal_draft = opt;
+                    }
+                    ui.add_space(8.0);
+                }
+
+                ui.add_space(6.0);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if theme::primary_button(
+                        ui,
+                        icon::CHECK,
+                        t!("Opslaan en toepassen", "Save & apply", "Kaydet ve uygula"),
+                        true,
+                    )
+                    .clicked()
+                    {
+                        apply_now = true;
+                    }
+                    if theme::small_button(ui, t!("Annuleren", "Cancel", "İptal"), true).clicked() {
+                        close_now = true;
+                    }
+                });
+            });
+
+        if apply_now {
+            self.settings.planner.preseason_intensity = self.camp_modal_draft;
+            self.settings.preseason_intensity_chosen = true;
+            self.save_settings();
+            self.week_plan = None;
+            self.year.clear();
+            self.show_camp_modal = false;
+            if self.live.connected && !self.live.busy() {
+                self.live.training(ctx, &self.eff, &self.settings.planner, false, false);
+            }
+        } else if close_now || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.show_camp_modal = false;
+        }
+    }
 }
 
 impl eframe::App for App {
@@ -3382,6 +3594,21 @@ impl eframe::App for App {
         self.live.choice = (self.settings.manager_club, self.active_team_slot());
         self.live.keep_understanding = false;
         self.live.tick(ctx, &self.eff, &self.settings.planner, self.settings.auto_training);
+        if !self.settings.preseason_intensity_chosen
+            && !self.camp_prompted_this_session
+            && !self.show_camp_modal
+            && !self.show_pro_modal
+            && std::env::var_os("FM27_SNAPSHOT").is_none()
+            && self
+                .live
+                .training
+                .as_ref()
+                .is_some_and(|t| t.weeks.iter().any(|w| !w.rest && w.kind.is_preseason()))
+        {
+            self.camp_prompted_this_session = true;
+            self.camp_modal_draft = self.settings.planner.preseason_intensity;
+            self.show_camp_modal = true;
+        }
         // BepInEx köprüsünden gelen kesin Taktiksel Verimlilik verisini otomatik izle (1.5 sn aralıkla)
         if !self.edit_mode
             && std::env::var_os("FM27_SNAPSHOT").is_none()
@@ -3515,6 +3742,7 @@ impl eframe::App for App {
                 });
             });
         self.render_pro_modal(ctx);
+        self.render_camp_modal(ctx);
         let minimized = ctx.input(|i| i.viewport().minimized == Some(true));
         if minimized {
             ctx.request_repaint_after(std::time::Duration::from_secs(5));

@@ -505,6 +505,18 @@ pub fn translate_static(en: &'static str) -> &'static str {
         "Checking license…" => "Comprobando licencia…",
         "Pro license activated! Youth teams are unlocked." => "¡Licencia Pro activada! Equipos juveniles desbloqueados.",
         "License deactivated on this device." => "Licencia desactivada en este dispositivo.",
+        "Heavy conditioning" => "Físico intenso",
+        "Tactical focus" => "Enfoque táctico",
+        "Heavy" => "Intenso",
+        "Maximum physical build-up with Heavy Conditioning on training days — helps prevent mid-season fatigue issues." => "Máxima carga física con Físico intenso en los días de entrenamiento — para evitar bajones físicos en temporada.",
+        "Balanced mix of conditioning and tactical familiarity, alternating heavy and standard conditioning." => "Equilibrio entre preparación física y comprensión táctica, alternando físico intenso y estándar.",
+        "Lighter conditioning so most slots go to tactical familiarity and team cohesion." => "Preparación física más ligera para dedicar la mayoría de las sesiones a la táctica y la cohesión.",
+        "Camp style" => "Estilo de concentración",
+        "How should the fitness camp run?" => "¿Cómo realizar la concentración física?",
+        "Choose the intensity for pre-season weeks and the fitness camp. You can change this anytime." => "Elige la intensidad para la pretemporada y la concentración física. Puedes cambiarlo en cualquier momento.",
+        "Save & apply" => "Guardar y aplicar",
+        "Cancel" => "Cancelar",
+        "Pre-season & fitness camp" => "Pretemporada y concentración física",
         _ => en,
     }
 }
